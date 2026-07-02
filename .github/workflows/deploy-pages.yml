@@ -39,7 +39,7 @@ jobs:
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
 
       - name: Copy CNAME
-        run: cp CNAME app/dist/CNAME
+        run: cp CNAME app/dist/CNAME && touch app/dist/.nojekyll
 
       # Pages-Quelle auf gh-pages umstellen (deploy-pages API hängt sonst ewig in Queue)
       - name: Pages-Quelle auf gh-pages setzen
