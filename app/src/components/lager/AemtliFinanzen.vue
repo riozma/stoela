@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import AemtliTodos from './AemtliTodos.vue'
 
 interface TN {
   id: string
@@ -18,6 +19,7 @@ interface TnFinanz {
 
 const props = defineProps<{
   lagerId: string
+  aemtliId: string
   istKassier: boolean
 }>()
 
@@ -81,6 +83,7 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
 <template>
   <section class="finanzen">
     <h2>Finanzen – TN-Anmeldungen</h2>
+    <AemtliTodos :lager-id="lagerId" :aemtli-id="aemtliId" aemtli-name="Finanzen" />
     <p class="hint">
       {{ bezahltCount }} / {{ tnListe.length }} als bezahlt markiert
       <span v-if="istKassier"> · Du bist Kassier/in – Quittungen findest du im Reiter «Quittungen»</span>

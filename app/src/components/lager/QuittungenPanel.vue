@@ -220,6 +220,19 @@ async function speichereBearbeitung() {
   await laden()
 }
 
+async function statusZuruecksetzen(id: string) {
+  if (!props.istKassier) return
+  if (!confirm('Status auf «ausstehend» zurücksetzen?')) return
+  const { error } = await supabase.from('quittungen').update({
+    status: 'pending',
+    ablehnungsgrund: null,
+    bearbeitet_von: null,
+    bearbeitet_am: null,
+  }).eq('id', id)
+  if (error) { fehler.value = error.message; return }
+  await laden()
+}
+
 async function statusSetzen(id: string, status: 'bezahlt' | 'abgelehnt', grund?: string) {
   const payload: Record<string, unknown> = {
     status,
@@ -358,6 +371,13 @@ async function loeschen(id: string) {
               <button class="klein" @click="statusSetzen(q.id, 'bezahlt')">Als bezahlt markieren</button>
               <button class="secondary klein" @click="ablehnung = { id: q.id, grund: '' }">Ablehnen</button>
             </template>
+            <button
+              v-else
+              class="secondary klein"
+              @click="statusZuruecksetzen(q.id)"
+            >
+              Rückgängig (ausstehend)
+            </button>
           </div>
 
           <div v-if="ablehnung?.id === q.id" class="ablehnung-form">

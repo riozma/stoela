@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import LagerEinkauf from './LagerEinkauf.vue'
+import AemtliTodos from './AemtliTodos.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
 
@@ -37,18 +39,20 @@ interface Ausnahme {
 
 const props = defineProps<{
   lagerId: string
+  aemtliId: string
+  lagerName: string
+  userId: string
   startDatum: string | null
   endDatum: string | null
+  bloecke: { id: string; titel: string; code: string }[]
 }>()
 
-const emit = defineEmits<{ einkauf: [] }>()
-
+const ansicht = ref<'plan' | 'vorlagen' | 'einkauf'>('plan')
+const ausgewaehlterTag = ref<string>('')
 const vorlagen = ref<Vorlage[]>([])
 const mahlzeiten = ref<Mahlzeit[]>([])
 const ausnahmen = ref<Ausnahme[]>([])
 const fehler = ref('')
-const ansicht = ref<'plan' | 'vorlagen'>('plan')
-const ausgewaehlterTag = ref<string>('')
 
 const vorlageForm = ref({
   name: '',
@@ -249,24 +253,27 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     name: m.name,
     menge: m.menge ? Number(m.menge) : null,
     einheit: m.einheit || null,
-    bereich: 'kueche',
+    bereich: 'lager',
+    mahlzeit: null,
     notiz: 'Aus Kochplan',
   }))
   await supabase.from('einkaufsliste_items').insert(rows)
-  emit('einkauf')
+  ansicht.value = 'einkauf'
 }
 </script>
 
 <template>
   <section class="kueche">
     <header class="kopf">
-      <h2>Küche – Kochplan</h2>
-      <button class="secondary" @click="emit('einkauf')">Zur Einkaufsliste →</button>
+      <h2>Küche</h2>
     </header>
 
+    <AemtliTodos :lager-id="lagerId" :aemtli-id="aemtliId" aemtli-name="Küche" />
+
     <nav class="sub-tabs">
-      <button :class="{ aktiv: ansicht === 'plan' }" @click="ansicht = 'plan'">Wochenplan</button>
-      <button :class="{ aktiv: ansicht === 'vorlagen' }" @click="ansicht = 'vorlagen'">Wiederkehrende Mahlzeiten</button>
+      <button :class="{ aktiv: ansicht === 'plan' }" @click="ansicht = 'plan'">Kochplan</button>
+      <button :class="{ aktiv: ansicht === 'vorlagen' }" @click="ansicht = 'vorlagen'">Wiederkehrend</button>
+      <button :class="{ aktiv: ansicht === 'einkauf' }" @click="ansicht = 'einkauf'">Einkaufsliste</button>
     </nav>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -341,6 +348,16 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
         </label>
         <button type="submit">Speichern</button>
       </form>
+    </div>
+
+    <div v-if="ansicht === 'einkauf'">
+      <LagerEinkauf
+        :lager-id="lagerId"
+        :lager-name="lagerName"
+        :user-id="userId"
+        :ist-kueche="true"
+        :bloecke="bloecke"
+      />
     </div>
 
     <div v-if="ansicht === 'vorlagen'">

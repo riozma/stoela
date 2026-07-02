@@ -75,6 +75,11 @@ interface Aemtli {
   id: string
   name: string
 }
+interface LeiterRolleZuweisung {
+  zuweisungId: string
+  id: string
+  name: string
+}
 interface GruppenMitglied {
   id: string
   name: string
@@ -251,7 +256,7 @@ const leiterForm = ref({ vorname: '', nachname: '', geburtsdatum: '', geschlecht
 const leiterSpeichern = ref(false)
 const leiterFehler = ref('')
 const aemtliListe = ref<Aemtli[]>([])
-const leiterRollenMap = ref<Record<string, Aemtli[]>>({})
+const leiterRollenMap = ref<Record<string, LeiterRolleZuweisung[]>>({})
 const neueRolleName = ref<Record<string, string>>({})
 
 async function ladeLeiter() {
@@ -278,17 +283,32 @@ async function ladeAemtli() {
 }
 
 async function ladeLeiterRollen() {
+  const leiterIds = leiterListe.value.map((l) => l.id)
+  if (!leiterIds.length) {
+    leiterRollenMap.value = {}
+    return
+  }
   const { data } = await supabase
     .from('leiter_rollen')
-    .select('anmeldung_leiter_id, aemtli:aemtli_id (id, name)')
+    .select('id, anmeldung_leiter_id, aemtli:aemtli_id (id, name)')
+    .in('anmeldung_leiter_id', leiterIds)
   if (!data) return
-  const map: Record<string, Aemtli[]> = {}
+  const map: Record<string, LeiterRolleZuweisung[]> = {}
   for (const row of data) {
     const aemtli = row.aemtli as unknown as Aemtli
+    if (!aemtli?.id) continue
     if (!map[row.anmeldung_leiter_id]) map[row.anmeldung_leiter_id] = []
-    map[row.anmeldung_leiter_id].push(aemtli)
+    map[row.anmeldung_leiter_id].push({ zuweisungId: row.id, id: aemtli.id, name: aemtli.name })
   }
   leiterRollenMap.value = map
+}
+
+async function rolleEntfernen(zuweisungId: string) {
+  if (!isLeitung.value) return
+  await supabase.from('leiter_rollen').delete().eq('id', zuweisungId)
+  await ladeLeiterRollen()
+  await ladeMeineAemtli()
+  await programmZuordnungenAktualisieren(true)
 }
 
 async function leiterHinzufuegen() {
@@ -985,7 +1005,16 @@ onMounted(async () => {
               <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
               <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
               <td>
-                <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.id" class="rollen-pill">{{ r.name }}</span>
+                <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
+                  {{ r.name }}
+                  <button
+                    v-if="isLeitung"
+                    type="button"
+                    class="rollen-entfernen"
+                    title="Rolle entfernen"
+                    @click="rolleEntfernen(r.zuweisungId)"
+                  >×</button>
+                </span>
                 <select @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
                   <option value="">+ Rolle</option>
                   <option v-for="a in aemtliListe" :key="a.id" :value="a.id">{{ a.name }}</option>
@@ -1068,18 +1097,22 @@ onMounted(async () => {
       <!-- Dynamische Ämtli-Tabs -->
       <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
         <AemtliKueche
-          v-if="aemtliKomponente(a.name) === 'kueche'"
+          v-if="aemtliKomponente(a.name) === 'kueche' && session"
           :lager-id="lagerId"
+          :aemtli-id="a.id"
+          :lager-name="lager.name"
+          :user-id="session.user.id"
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
-          @einkauf="activeTab = 'einkauf'"
+          :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
         <AemtliFinanzen
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId"
+          :aemtli-id="a.id"
           :ist-kassier="istFinanzen"
         />
-        <AemtliGeneric v-else :aemtli-name="a.name" />
+        <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
       </section>
 
       <!-- Quittungen (alle Leiter) -->
@@ -1222,7 +1255,9 @@ main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .liste th, .liste td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 .liste th { color: var(--color-text-muted); font-weight: 700; font-size: 0.8rem; }
 .gruppen-tag { display: inline-block; background: var(--color-accent); color: #fdfbf3; border-radius: var(--radius-pill); padding: 0.1rem 0.55rem; font-size: 0.78rem; }
-.rollen-pill { display: inline-block; background: var(--color-pill-bg); border-radius: var(--radius-pill); padding: 0.15rem 0.6rem; font-size: 0.78rem; margin: 0.1rem 0.3rem 0.1rem 0; }
+.rollen-pill { display: inline-flex; align-items: center; gap: 0.15rem; background: var(--color-pill-bg); border-radius: var(--radius-pill); padding: 0.15rem 0.45rem 0.15rem 0.6rem; font-size: 0.78rem; margin: 0.1rem 0.3rem 0.1rem 0; }
+.rollen-entfernen { background: none; border: none; color: var(--color-text-muted); padding: 0 0.2rem; font-size: 0.85rem; line-height: 1; cursor: pointer; }
+.rollen-entfernen:hover { color: var(--color-danger); }
 .neue-rolle-input { width: 110px; margin-left: 0.4rem; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.75rem 0 1rem; }
 .inline-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
