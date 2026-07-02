@@ -53,7 +53,10 @@ class GeminiFehler extends Error {
 // automatisch halbiert und erneut versucht -- so passt sich die Grösse an
 // unterschiedlich dichte PDF-Seiten an, ohne dass ein fixer Wert je nach
 // Lager mal zu gross, mal unnötig klein ist.
-const SEITEN_PRO_HAPPEN = 4
+const SEITEN_PRO_HAPPEN = 8
+// Anzahl gleichzeitiger Gemini-Aufrufe. Bleibt unter dem Free-Tier-Limit von
+// 10 Anfragen/Minute, beschleunigt aber gegenüber rein sequentiell spürbar.
+const GLEICHZEITIGE_ANFRAGEN = 2
 
 const router = useRouter()
 const { session } = useAuth()
@@ -98,28 +101,34 @@ async function analysiereHaeppchenweise(
   let verarbeiteteSeiten = 0
 
   const queue = [...seitenGruppen]
-  while (queue.length) {
-    const gruppe = queue.shift()!
-    fortschrittRef.value = {
-      phase: `Analysiere Programm (${verarbeiteteSeiten} von ${gesamtSeiten} Seiten)...`,
-      aktuell: verarbeiteteSeiten,
-      total: gesamtSeiten,
-    }
-    try {
-      const teil = await rufeGeminiAuf(titelseite + '\n\n' + gruppe.join('\n\n'))
-      if (!lager && teil.lager?.jahr) lager = teil.lager
-      bloecke.push(...(teil.bloecke ?? []))
-      verarbeiteteSeiten += gruppe.length
-    } catch (e) {
-      if (e instanceof GeminiFehler && e.code === 'MAX_TOKENS' && gruppe.length > 1) {
-        const mitte = Math.ceil(gruppe.length / 2)
-        queue.unshift(gruppe.slice(mitte))
-        queue.unshift(gruppe.slice(0, mitte))
-        continue
+
+  async function worker() {
+    while (queue.length) {
+      const gruppe = queue.shift()
+      if (!gruppe) return
+      try {
+        const teil = await rufeGeminiAuf(titelseite + '\n\n' + gruppe.join('\n\n'))
+        if (!lager && teil.lager?.jahr) lager = teil.lager
+        bloecke.push(...(teil.bloecke ?? []))
+        verarbeiteteSeiten += gruppe.length
+        fortschrittRef.value = {
+          phase: `Analysiere Programm (${verarbeiteteSeiten} von ${gesamtSeiten} Seiten)...`,
+          aktuell: verarbeiteteSeiten,
+          total: gesamtSeiten,
+        }
+      } catch (e) {
+        if (e instanceof GeminiFehler && e.code === 'MAX_TOKENS' && gruppe.length > 1) {
+          const mitte = Math.ceil(gruppe.length / 2)
+          queue.unshift(gruppe.slice(mitte))
+          queue.unshift(gruppe.slice(0, mitte))
+          continue
+        }
+        throw e
       }
-      throw e
     }
   }
+
+  await Promise.all(Array.from({ length: GLEICHZEITIGE_ANFRAGEN }, worker))
 
   return { lager, bloecke }
 }
