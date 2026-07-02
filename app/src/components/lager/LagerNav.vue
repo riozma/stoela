@@ -139,9 +139,12 @@ function navKlick() {
       </div>
     </div>
 
-    <div v-if="isLeitung" class="nav-dropdown" data-label="Leitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['team', 'einstellungen']) }">
+    <div v-if="isLeitung" class="nav-dropdown" data-label="Leitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['team', 'einstellungen', 'statistik']) }">
       <span class="nav-dropdown-label">Leitung</span>
       <div class="nav-dropdown-menu">
+        <router-link :to="sectionPath('statistik')" class="nav-link" :class="{ aktiv: isActive('statistik') }" @click="navKlick">
+          Statistik
+        </router-link>
         <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }" @click="navKlick">
           Team &amp; Zugriff
         </router-link>
