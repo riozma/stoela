@@ -48,6 +48,40 @@ const lager = ref<Lager[]>([])
 const loading = ref(true)
 const error = ref('')
 
+interface LearningErinnerung {
+  aemtliId: string
+  aemtliName: string
+}
+const learningErinnerungen = ref<LearningErinnerung[]>([])
+
+async function ladeLearningErinnerungen() {
+  if (!session.value) return
+  const heute = new Date().toISOString().slice(0, 10)
+
+  const { data: zuweisungen } = await supabase
+    .from('aemtli_zuweisungen')
+    .select('aemtli_id, aemtli:aemtli_id (name), lager:lager_id (end_datum)')
+    .eq('profile_id', session.value.user.id)
+
+  const { data: bereitsFestgehalten } = await supabase
+    .from('aemtli_learnings')
+    .select('aemtli_id')
+    .eq('autor_id', session.value.user.id)
+
+  const erledigt = new Set((bereitsFestgehalten ?? []).map((l) => l.aemtli_id))
+  const gesehen = new Set<string>()
+  const ergebnis: LearningErinnerung[] = []
+
+  for (const z of zuweisungen ?? []) {
+    const endDatum = (z.lager as any)?.end_datum as string | null
+    if (!endDatum || endDatum >= heute) continue
+    if (erledigt.has(z.aemtli_id) || gesehen.has(z.aemtli_id)) continue
+    gesehen.add(z.aemtli_id)
+    ergebnis.push({ aemtliId: z.aemtli_id, aemtliName: (z.aemtli as any)?.name ?? 'Ämtli' })
+  }
+  learningErinnerungen.value = ergebnis
+}
+
 const naechstesJahr = new Date().getFullYear() + 1
 const form = ref({
   jahr: naechstesJahr,
@@ -134,6 +168,7 @@ async function erstellen() {
 }
 
 onMounted(ladeLager)
+onMounted(ladeLearningErinnerungen)
 </script>
 
 <template>
@@ -141,11 +176,23 @@ onMounted(ladeLager)
     <header>
       <h1>Stöckli Lager</h1>
       <div class="user">
+        <router-link to="/aemtli" class="secondary aemtli-link">Ämtli</router-link>
+        <router-link to="/events" class="secondary aemtli-link">Events</router-link>
         <span>{{ session?.user.email }}</span>
         <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
         <button class="secondary" @click="logout">Logout</button>
       </div>
     </header>
+
+    <section v-if="learningErinnerungen.length" class="erinnerung">
+      <h2>Learnings festhalten</h2>
+      <p class="hint">Diese Lager sind vorbei – trag deine Erfahrungen bei deinem Ämtli ein, bevor sie vergessen gehen:</p>
+      <ul>
+        <li v-for="e in learningErinnerungen" :key="e.aemtliId">
+          <router-link :to="`/aemtli/${e.aemtliId}`">{{ e.aemtliName }} – Learning ergänzen</router-link>
+        </li>
+      </ul>
+    </section>
 
     <section v-if="kontoOffen">
       <h2>Konto</h2>
@@ -290,5 +337,29 @@ th {
   color: var(--color-text-muted);
   margin-top: -0.5rem;
   margin-bottom: 1rem;
+}
+.aemtli-link {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  text-decoration: none;
+}
+.aemtli-link:hover {
+  background: var(--color-surface-muted);
+}
+.erinnerung {
+  background: var(--color-pill-bg);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.erinnerung h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.1rem;
+}
+.erinnerung ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
 }
 </style>

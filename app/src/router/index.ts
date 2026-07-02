@@ -6,6 +6,9 @@ import LagerImport from '../views/LagerImport.vue'
 import LagerDetail from '../views/LagerDetail.vue'
 import AnmeldungTN from '../views/AnmeldungTN.vue'
 import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
+import AemtliUebersicht from '../views/AemtliUebersicht.vue'
+import AemtliDetail from '../views/AemtliDetail.vue'
+import EventsUebersicht from '../views/EventsUebersicht.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,6 +20,9 @@ const router = createRouter({
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
     { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter },
     { path: '/lager/:id', name: 'lager-detail', component: LagerDetail, meta: { requiresAuth: true } },
+    { path: '/aemtli', name: 'aemtli', component: AemtliUebersicht, meta: { requiresAuth: true } },
+    { path: '/aemtli/:id', name: 'aemtli-detail', component: AemtliDetail, meta: { requiresAuth: true } },
+    { path: '/events', name: 'events', component: EventsUebersicht, meta: { requiresAuth: true } },
   ],
 })
 
