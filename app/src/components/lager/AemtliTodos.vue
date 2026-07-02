@@ -173,7 +173,7 @@ onMounted(async () => {
       <li v-for="t in todos" :key="t.id" :class="{ done: t.done }">
         <label>
           <input type="checkbox" :checked="t.done" @change="toggle(t)" />
-          <span>{{ t.text }}</span>
+          <input class="text-input" v-model="t.text" @change="speichern" />
         </label>
         <button type="button" class="secondary klein" @click="entfernen(t.id)">×</button>
       </li>
@@ -195,7 +195,7 @@ onMounted(async () => {
       </p>
       <ul class="todo-liste">
         <li v-for="t in vorlage" :key="t.id">
-          <span>{{ t.text }}</span>
+          <input class="text-input" v-model="t.text" />
           <button type="button" class="secondary klein" @click="vorlageTodoEntfernen(t.id)">×</button>
         </li>
       </ul>
@@ -226,8 +226,21 @@ header h3 { margin: 0; font-size: 1rem; }
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
   padding: 0.35rem 0; border-bottom: 1px solid var(--color-border);
 }
-.todo-liste li.done span { text-decoration: line-through; color: var(--color-text-muted); }
 .todo-liste label { display: flex; align-items: center; gap: 0.5rem; flex: 1; font-size: 0.9rem; }
+.text-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0.3rem;
+  font-size: inherit;
+  color: inherit;
+}
+.text-input:hover,
+.text-input:focus {
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+}
+.todo-liste li.done .text-input { text-decoration: line-through; color: var(--color-text-muted); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .inline-form input { flex: 1; min-width: 180px; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
