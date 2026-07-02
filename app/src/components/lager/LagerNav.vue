@@ -11,6 +11,7 @@ interface AemtliTab {
 const props = defineProps<{
   lagerId: string
   activeTab: string
+  programmLink?: string
   meineAemtli: AemtliTab[]
   isLeitung: boolean
   hatKuecheTab: boolean
@@ -64,7 +65,7 @@ function navKlick() {
       Dashboard
     </router-link>
 
-    <router-link :to="sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }" @click="navKlick">
+    <router-link :to="programmLink ?? sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }" @click="navKlick">
       Programm
     </router-link>
 

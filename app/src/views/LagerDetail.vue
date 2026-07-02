@@ -8,7 +8,10 @@ import { ladeWetter, type TagesWetter } from '../lib/weather'
 import LagerDashboard from '../components/lager/LagerDashboard.vue'
 import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
 import LagerMap from '../components/lager/LagerMap.vue'
-import ProgrammHoeck from '../components/lager/ProgrammHoeck.vue'
+import ProgrammGesamt from '../components/lager/ProgrammGesamt.vue'
+import ProgrammTag from '../components/lager/ProgrammTag.vue'
+import ProgrammBlockEdit from '../components/lager/ProgrammBlockEdit.vue'
+import { heuteIso, lagerLaeuft, tageZwischen } from '../lib/programmUtils'
 import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
@@ -18,7 +21,7 @@ import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
 import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
-import { aemtliName, leiterName, type MaterialMitZuordnung, type NamensZuordnung, type ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
+import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
@@ -124,7 +127,30 @@ type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'ein
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
+  if (typeof route.name === 'string' && route.name.startsWith('programm')) return 'programm'
   return (route.params.section as string) || 'dashboard'
+})
+
+const programmRoute = computed(() => {
+  if (route.name === 'programm-tag') return { view: 'tag' as const, date: route.params.programmTag as string }
+  if (route.name === 'programm-block') return { view: 'block' as const, blockId: route.params.blockId as string }
+  if (route.name === 'programm-neu') return { view: 'neu' as const }
+  return { view: 'gesamt' as const }
+})
+
+const alleProgrammTage = computed(() => {
+  if (lager.value?.start_datum && lager.value?.end_datum) {
+    return tageZwischen(lager.value.start_datum, lager.value.end_datum)
+  }
+  return tage.value
+})
+
+const programmLink = computed(() => {
+  const heute = heuteIso()
+  if (lager.value && lagerLaeuft(lager.value.start_datum, lager.value.end_datum) && alleProgrammTage.value.includes(heute)) {
+    return `/lager/${lagerId.value}/programm/tag/${heute}`
+  }
+  return `/lager/${lagerId.value}/programm`
 })
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
 const istKueche = ref(false)
@@ -176,41 +202,23 @@ const leiterAnfragen = computed(() => leiterListe.value.filter((l) => l.status =
 const leiterBestaetigt = computed(() => leiterListe.value.filter((l) => l.status === 'bestaetigt' || l.status === 'angemeldet'))
 
 // --- Programm ---
-const ausgewaehlterTag = ref<string | null>(null)
-const offenerBlock = ref<string | null>(null)
-
 const tage = computed(() => {
   const einzigartig = new Set(bloecke.value.map((b) => b.tag).filter((t): t is string => !!t))
   return [...einzigartig].sort()
 })
-
-const blocksFuerTag = computed(() =>
-  bloecke.value
-    .filter((b) => b.tag === ausgewaehlterTag.value)
-    .sort((a, b) => (a.start_zeit ?? '').localeCompare(b.start_zeit ?? '')),
-)
-
-const codeLabel: Record<Block['code'], string> = {
-  LP: 'Lagerprogramm',
-  LS: 'Lagersport',
-  LA: 'Lageraktivität',
-  ES: 'Essen',
-}
 
 function formatTag(tag: string) {
   const datum = new Date(tag + 'T00:00:00')
   return new Intl.DateTimeFormat('de-CH', { weekday: 'short', day: 'numeric', month: 'numeric' }).format(datum)
 }
 
-function formatZeit(zeit: string | null) {
-  if (!zeit) return '–'
-  const datum = new Date(zeit)
-  if (Number.isNaN(datum.getTime())) return zeit
-  return new Intl.DateTimeFormat('de-CH', { hour: '2-digit', minute: '2-digit' }).format(datum)
+function programmEinstieg() {
+  router.push(programmLink.value)
 }
 
-function toggleBlock(id: string) {
-  offenerBlock.value = offenerBlock.value === id ? null : id
+async function programmBlockGespeichert() {
+  bloeckeVollGeladen.value = false
+  await ladeBloeckeVoll()
 }
 
 function berechneAlter(geburtsdatum: string | null): number | null {
@@ -658,12 +666,7 @@ async function lagerSpeichernFn() {
 }
 
 function zuBlockSpringen(blockId: string) {
-  const block = bloecke.value.find((b) => b.id === blockId)
-  if (block?.tag) {
-    ausgewaehlterTag.value = block.tag
-    offenerBlock.value = blockId
-  }
-  router.push(`/lager/${lagerId.value}/programm`)
+  router.push(`/lager/${lagerId.value}/programm/block/${blockId}`)
 }
 
 async function pruefeKueche() {
@@ -711,57 +714,23 @@ function zuHoeckImProgramm() {
   const morgen = new Date()
   morgen.setDate(morgen.getDate() + 1)
   const tag = morgen.toISOString().slice(0, 10)
-  if (tage.value.includes(tag)) ausgewaehlterTag.value = tag
-  else if (tage.value.length) ausgewaehlterTag.value = tage.value[0]
-  router.push(`/lager/${lagerId.value}/programm`)
+  if (alleProgrammTage.value.includes(tag)) {
+    router.push(`/lager/${lagerId.value}/programm/tag/${tag}`)
+    return
+  }
+  programmEinstieg()
 }
 
 function tabWechseln(tab: Tab) {
+  if (tab === 'programm') {
+    programmEinstieg()
+    return
+  }
   if (tab.startsWith('aemtli:')) {
     router.push(`/lager/${lagerId.value}/aemtli/${tab.slice(7)}`)
     return
   }
   router.push(`/lager/${lagerId.value}/${tab}`)
-}
-
-function leiterFuerMatching() {
-  return leiterListe.value.map((l) => ({ id: l.id, vorname: l.vorname, nachname: l.nachname }))
-}
-
-function formatZuordnung(z: NamensZuordnung): string {
-  if (z.leiter_id) {
-    const n = leiterName(leiterFuerMatching(), z.leiter_id)
-    if (n) return n
-  }
-  if (z.aemtli_id) {
-    const n = aemtliName(aemtliListe.value, z.aemtli_id)
-    if (n) return `Ämtli: ${n}`
-  }
-  return `${z.name} (unzugeordnet)`
-}
-
-function formatMaterialWer(m: MaterialItem): string {
-  if (m.wer_leiter_id) {
-    const n = leiterName(leiterFuerMatching(), m.wer_leiter_id)
-    if (n) return n
-  }
-  if (m.wer_aemtli_id) {
-    const n = aemtliName(aemtliListe.value, m.wer_aemtli_id)
-    if (n) return `Ämtli: ${n}`
-  }
-  return m.wer ?? '–'
-}
-
-function formatAbschnittVerantwortlich(a: Programmabschnitt): string {
-  if (a.verantwortlich_leiter_id) {
-    const n = leiterName(leiterFuerMatching(), a.verantwortlich_leiter_id)
-    if (n) return n
-  }
-  if (a.verantwortlich_aemtli_id) {
-    const n = aemtliName(aemtliListe.value, a.verantwortlich_aemtli_id)
-    if (n) return `Ämtli: ${n}`
-  }
-  return a.verantwortlich ?? '–'
 }
 
 async function programmZuordnungenAktualisieren(silent = false) {
@@ -809,7 +778,6 @@ async function ladeBloeckeBasis() {
     .eq('lager_id', lagerId.value)
   if (!bErr && data) {
     bloecke.value = mapBloecke(data)
-    if (!ausgewaehlterTag.value) ausgewaehlterTag.value = tage.value[0] ?? null
   }
   bloeckeLaden.value = false
 }
@@ -824,7 +792,6 @@ async function ladeBloeckeVoll() {
   if (!bErr && data) {
     bloecke.value = mapBloecke(data)
     bloeckeVollGeladen.value = true
-    if (!ausgewaehlterTag.value) ausgewaehlterTag.value = tage.value[0] ?? null
   }
   bloeckeLaden.value = false
 }
@@ -926,6 +893,17 @@ async function ladeWetterFallsNoetig() {
 }
 
 watch(activeTab, (tab) => { void ladeTabDaten(tab) })
+
+watch(
+  () => route.name,
+  (name) => {
+    if (name !== 'programm' || !lager.value) return
+    const heute = heuteIso()
+    if (lagerLaeuft(lager.value.start_datum, lager.value.end_datum) && alleProgrammTage.value.includes(heute)) {
+      router.replace(`/lager/${lagerId.value}/programm/tag/${heute}`)
+    }
+  },
+)
 </script>
 
 <template>
@@ -942,6 +920,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         v-if="lager"
         :lager-id="lagerId"
         :active-tab="activeTab"
+        :programm-link="programmLink"
         :meine-aemtli="meineAemtli"
         :is-leitung="isLeitung"
         :hat-kueche-tab="hatKuecheTab"
@@ -982,91 +961,57 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         />
       </section>
 
-      <!-- Programm (nur Leiterteam) -->
+      <!-- Programm -->
       <section v-if="activeTab === 'programm'">
         <p v-if="bloeckeLaden && !bloeckeVollGeladen" class="hint">Lade Programmdetails…</p>
 
-        <div v-if="wetter.length" class="wetter-banner">
+        <div v-if="programmRoute.view !== 'block' && programmRoute.view !== 'neu' && wetter.length" class="wetter-banner">
           <span v-for="w in wetter.slice(0, 5)" :key="w.datum" class="wetter-tag">
             {{ formatTag(w.datum) }}: {{ w.beschreibung }} {{ w.tempMin }}–{{ w.tempMax }}°
           </span>
         </div>
 
-        <div v-if="bloecke.length" class="programm-toolbar">
+        <div v-if="programmRoute.view !== 'block' && programmRoute.view !== 'neu' && bloecke.length" class="programm-toolbar">
           <button class="secondary klein" :disabled="zuordnungLade" @click="programmZuordnungenAktualisieren()">
             {{ zuordnungLade ? 'Gleiche ab...' : 'Namen mit Leitern/Ämtli abgleichen' }}
           </button>
           <span v-if="zuordnungNachricht" class="hint">{{ zuordnungNachricht }}</span>
         </div>
 
-        <p v-if="!bloecke.length" class="hint">Noch keine Programmblöcke. Import über eCamp-PDF möglich.</p>
-
-        <nav v-else class="tage">
-          <button v-for="tag in tage" :key="tag" :class="{ aktiv: tag === ausgewaehlterTag }" @click="ausgewaehlterTag = tag; offenerBlock = null">
-            {{ formatTag(tag) }}
-          </button>
-        </nav>
-
-        <ProgrammHoeck
-          v-if="ausgewaehlterTag && session"
+        <ProgrammGesamt
+          v-if="programmRoute.view === 'gesamt'"
           :lager-id="lagerId"
-          :tag="ausgewaehlterTag"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
           :bloecke="bloecke"
-          :user-id="session.user.id"
-          :user-name="userName"
         />
 
-        <div v-if="blocksFuerTag.length" class="timetable">
-          <template v-for="b in blocksFuerTag" :key="b.id">
-            <div class="block-zeile" :id="'block-' + b.id" @click="toggleBlock(b.id)">
-              <span class="zeit">{{ formatZeit(b.start_zeit) }}–{{ formatZeit(b.end_zeit) }}</span>
-              <span class="code" :class="'code-' + b.code">{{ b.code }}</span>
-              <span class="titel">{{ b.nummer ? b.nummer + ' ' : '' }}{{ b.titel }}</span>
-              <span class="verantwortlich">{{ b.verantwortlich }}</span>
-            </div>
-            <div v-if="offenerBlock === b.id" class="block-detail">
-              <p v-if="b.ort"><strong>Ort:</strong> {{ b.ort }}</p>
-              <p v-if="b.verantwortlich || b.verantwortlich_zuordnungen?.length">
-                <strong>Verantwortlich:</strong>
-                <span v-if="b.verantwortlich_zuordnungen?.length">
-                  <span
-                    v-for="(z, zi) in b.verantwortlich_zuordnungen"
-                    :key="zi"
-                    class="zuordnung-pill"
-                    :class="{ unzugeordnet: !z.leiter_id && !z.aemtli_id }"
-                  >{{ formatZuordnung(z) }}</span>
-                </span>
-                <span v-else>{{ b.verantwortlich }}</span>
-              </p>
-              <p v-if="b.geschichte"><strong>Geschichte:</strong> {{ b.geschichte }}</p>
-              <p v-if="b.sicherheitsueberlegungen"><strong>Sicherheitsüberlegungen:</strong> {{ b.sicherheitsueberlegungen }}</p>
-              <div v-if="b.programmabschnitt?.length">
-                <strong>Programmabschnitt</strong>
-                <table class="abschnitt-tabelle">
-                  <tbody>
-                    <tr v-for="(a, i) in b.programmabschnitt" :key="i">
-                      <td class="abschnitt-zeit">{{ a.zeit ?? '–' }}</td>
-                      <td>{{ a.programm }}</td>
-                      <td class="abschnitt-verantwortlich">{{ formatAbschnittVerantwortlich(a) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div v-if="b.material?.length">
-                <strong>Material</strong>
-                <ul class="material-liste">
-                  <li v-for="(m, i) in b.material" :key="i">
-                    {{ m.name }}
-                    <span class="material-wer" :class="{ unzugeordnet: m.wer && !m.wer_leiter_id && !m.wer_aemtli_id }">
-                      – {{ formatMaterialWer(m) }}
-                    </span>
-                  </li>
-                </ul>
-              </div>
-              <p v-if="b.notizen"><strong>Notizen:</strong> {{ b.notizen }}</p>
-            </div>
-          </template>
-        </div>
+        <ProgrammTag
+          v-else-if="programmRoute.view === 'tag' && session"
+          :lager-id="lagerId"
+          :tag="programmRoute.date"
+          :bloecke="bloecke"
+          :session-user-id="session.user.id"
+          :user-name="userName"
+          :alle-tage="alleProgrammTage"
+        />
+
+        <ProgrammBlockEdit
+          v-else-if="programmRoute.view === 'block'"
+          :lager-id="lagerId"
+          :block-id="programmRoute.blockId"
+          @saved="programmBlockGespeichert"
+        />
+
+        <ProgrammBlockEdit
+          v-else-if="programmRoute.view === 'neu'"
+          :lager-id="lagerId"
+          @saved="programmBlockGespeichert"
+        />
+
+        <p v-if="programmRoute.view === 'gesamt' && !bloecke.length" class="hint">
+          Noch keine Programmblöcke. «Neues Programm» klicken oder eCamp-PDF importieren.
+        </p>
       </section>
 
       <!-- Teilnehmer -->

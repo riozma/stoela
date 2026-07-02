@@ -11,7 +11,7 @@ interface Block {
   start_zeit: string | null
   end_zeit: string | null
   verantwortlich: string | null
-  sicherheitsueberlegungen: string | null
+  sicherheitsueberlegungen?: string | null
 }
 
 const props = defineProps<{

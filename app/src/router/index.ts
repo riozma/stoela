@@ -29,6 +29,30 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/lager/:id/programm/neu',
+      name: 'programm-neu',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lager/:id/programm/block/:blockId',
+      name: 'programm-block',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lager/:id/programm/tag/:programmTag',
+      name: 'programm-tag',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lager/:id/programm',
+      name: 'programm',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/lager/:id/:section',
       name: 'lager-section',
       component: LagerDetail,
