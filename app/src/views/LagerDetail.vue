@@ -5,6 +5,9 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { generateIcs, downloadIcs } from '../lib/ics'
 import { ladeWetter, type TagesWetter } from '../lib/weather'
+import LagerDashboard from '../components/lager/LagerDashboard.vue'
+import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
+import HoeckPanel from '../components/lager/HoeckPanel.vue'
 
 interface Programmabschnitt {
   zeit: string | null
@@ -55,8 +58,10 @@ interface TN {
 }
 interface LeiterAnmeldung {
   id: string
+  profile_id: string | null
   vorname: string
   nachname: string
+  email?: string
   geburtsdatum: string | null
   geschlecht: string | null
   ahv_nr: string | null
@@ -102,8 +107,13 @@ const route = useRoute()
 const { session } = useAuth()
 const lagerId = route.params.id as string
 
-type Tab = 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'team' | 'reminders' | 'einstellungen'
-const activeTab = ref<Tab>('programm')
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'reminders' | 'einstellungen'
+const activeTab = ref<Tab>('dashboard')
+const hoeckOffen = ref(false)
+const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
+const istKueche = ref(false)
+const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
+const lagerSpeichern = ref(false)
 
 const lager = ref<Lager | null>(null)
 const bloecke = ref<Block[]>([])
@@ -117,6 +127,26 @@ const isLeitung = computed(() => {
   const me = teamListe.value.find((t) => t.profile_id === session.value!.user.id)
   return me?.rolle === 'lagerleitung' && me?.status === 'bestaetigt'
 })
+
+const userName = computed(() => {
+  const p = profil.value
+  if (p?.vorname) return `${p.vorname} ${p.nachname ?? ''}`.trim()
+  return session.value?.user.email?.split('@')[0] ?? ''
+})
+
+const istAnwesend = computed(() => {
+  const heute = new Date().toISOString().slice(0, 10)
+  if (lager.value?.start_datum && heute < lager.value.start_datum) return false
+  if (lager.value?.end_datum && heute > lager.value.end_datum) return false
+  const uid = session.value?.user.id
+  const me = leiterListe.value.find((l) => l.profile_id === uid && l.status === 'bestaetigt')
+  if (me?.anwesend_von && heute < me.anwesend_von) return false
+  if (me?.anwesend_bis && heute > me.anwesend_bis) return false
+  return !!teamListe.value.find((t) => t.profile_id === uid && t.status === 'bestaetigt')
+})
+
+const leiterAnfragen = computed(() => leiterListe.value.filter((l) => l.status === 'angefragt'))
+const leiterBestaetigt = computed(() => leiterListe.value.filter((l) => l.status === 'bestaetigt' || l.status === 'angemeldet'))
 
 // --- Programm ---
 const ausgewaehlterTag = ref<string | null>(null)
@@ -216,10 +246,19 @@ const neueRolleName = ref<Record<string, string>>({})
 async function ladeLeiter() {
   const { data } = await supabase
     .from('anmeldungen_leiter')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status')
+    .select('id, profile_id, vorname, nachname, email, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status')
     .eq('lager_id', lagerId)
     .order('nachname')
   leiterListe.value = data ?? []
+}
+
+async function leiterAnfrageBearbeiten(anmeldungId: string, entscheidung: 'genehmigen' | 'ablehnen') {
+  const { error: err } = await supabase.rpc('leiter_anfrage_bearbeiten', {
+    p_anmeldung_id: anmeldungId,
+    p_entscheidung: entscheidung,
+  })
+  if (err) { leiterFehler.value = err.message; return }
+  await Promise.all([ladeLeiter(), ladeTeam()])
 }
 
 async function ladeAemtli() {
@@ -524,6 +563,37 @@ async function statusAendern(neuerStatus: string) {
   statusSpeichern.value = false
 }
 
+async function lagerSpeichernFn() {
+  if (!lager.value) return
+  lagerSpeichern.value = true
+  const { error: err } = await supabase.from('lager').update({
+    name: lagerForm.value.name,
+    ort: lagerForm.value.ort || null,
+    start_datum: lagerForm.value.start_datum || null,
+    end_datum: lagerForm.value.end_datum || null,
+    jahr: lagerForm.value.jahr,
+  }).eq('id', lagerId)
+  lagerSpeichern.value = false
+  if (!err && lager.value) {
+    Object.assign(lager.value, lagerForm.value)
+  }
+}
+
+function zuBlockSpringen(blockId: string) {
+  const block = bloecke.value.find((b) => b.id === blockId)
+  if (block?.tag) {
+    ausgewaehlterTag.value = block.tag
+    offenerBlock.value = blockId
+  }
+  activeTab.value = 'programm'
+}
+
+async function pruefeKueche() {
+  if (!session.value) return
+  const { data, error } = await supabase.rpc('is_kueche', { p_lager_id: lagerId })
+  istKueche.value = !error && !!data
+}
+
 function icsExport(modus: 'ganzes' | 'eigen') {
   if (!lager.value) return
   let zeitraum: { von: string; bis: string } | undefined
@@ -554,6 +624,13 @@ onMounted(async () => {
   }
 
   lager.value = lagerData
+  lagerForm.value = {
+    name: lagerData.name,
+    ort: lagerData.ort ?? '',
+    start_datum: lagerData.start_datum ?? '',
+    end_datum: lagerData.end_datum ?? '',
+    jahr: lagerData.jahr,
+  }
   bloecke.value = bloeckeData ?? []
   ausgewaehlterTag.value = tage.value[0] ?? null
 
@@ -561,6 +638,12 @@ onMounted(async () => {
     try {
       wetter.value = await ladeWetter(lager.value.ort_lat, lager.value.ort_lng, lager.value.start_datum, lager.value.end_datum)
     } catch { /* optional */ }
+  }
+
+  if (session.value) {
+    const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
+    profil.value = p
+    await pruefeKueche()
   }
 
   await Promise.all([ladeTeilnehmer(), ladeLeiter(), ladeAemtli(), ladeLeiterRollen(), ladeGruppen(), ladeTeam(), ladeReminders()])
@@ -576,18 +659,30 @@ onMounted(async () => {
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="lager">
-      <h1>{{ lager.name }}</h1>
-      <p class="hint" v-if="lager.ort">📍 {{ lager.ort }}</p>
-
       <nav class="tabs">
+        <button :class="{ aktiv: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
         <button :class="{ aktiv: activeTab === 'programm' }" @click="activeTab = 'programm'">Programm</button>
         <button :class="{ aktiv: activeTab === 'teilnehmer' }" @click="activeTab = 'teilnehmer'">TN ({{ tnListe.length }})</button>
-        <button :class="{ aktiv: activeTab === 'leiter' }" @click="activeTab = 'leiter'">Leiter ({{ leiterListe.length }})</button>
+        <button :class="{ aktiv: activeTab === 'leiter' }" @click="activeTab = 'leiter'">Leiter ({{ leiterBestaetigt.length }})</button>
         <button :class="{ aktiv: activeTab === 'gruppen' }" @click="activeTab = 'gruppen'">Gruppen</button>
+        <button :class="{ aktiv: activeTab === 'einkauf' }" @click="activeTab = 'einkauf'">Einkauf</button>
         <button :class="{ aktiv: activeTab === 'team' }" @click="activeTab = 'team'">Team</button>
         <button :class="{ aktiv: activeTab === 'reminders' }" @click="activeTab = 'reminders'">Reminder</button>
         <button :class="{ aktiv: activeTab === 'einstellungen' }" @click="activeTab = 'einstellungen'">Einstellungen</button>
       </nav>
+
+      <section v-if="activeTab === 'dashboard'">
+        <LagerDashboard
+          :lager="lager"
+          :bloecke="bloecke"
+          :user-name="userName"
+          :ist-anwesend="istAnwesend"
+          :bearbeiten="true"
+          @tab="activeTab = $event as Tab"
+          @hoeck="hoeckOffen = true"
+          @block="zuBlockSpringen"
+        />
+      </section>
 
       <!-- Programm (nur Leiterteam) -->
       <section v-if="activeTab === 'programm'">
@@ -607,7 +702,7 @@ onMounted(async () => {
 
         <div v-if="blocksFuerTag.length" class="timetable">
           <template v-for="b in blocksFuerTag" :key="b.id">
-            <div class="block-zeile" @click="toggleBlock(b.id)">
+            <div class="block-zeile" :id="'block-' + b.id" @click="toggleBlock(b.id)">
               <span class="zeit">{{ formatZeit(b.start_zeit) }}–{{ formatZeit(b.end_zeit) }}</span>
               <span class="code" :class="'code-' + b.code">{{ b.code }}</span>
               <span class="titel">{{ b.nummer ? b.nummer + ' ' : '' }}{{ b.titel }}</span>
@@ -679,11 +774,27 @@ onMounted(async () => {
 
       <!-- Leiter -->
       <section v-if="activeTab === 'leiter'">
-        <p class="hint">Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link></p>
-        <table v-if="leiterListe.length" class="liste">
+        <p class="hint">
+          Bewerbungs-Link (Login nötig):
+          <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
+        </p>
+
+        <div v-if="leiterAnfragen.length && isLeitung" class="anfragen-box">
+          <h3>Offene Anfragen ({{ leiterAnfragen.length }})</h3>
+          <div v-for="a in leiterAnfragen" :key="a.id" class="anfrage-karte">
+            <strong>{{ a.vorname }} {{ a.nachname }}</strong>
+            <span class="hint">{{ a.email }} · {{ a.anwesend_von ?? '?' }} – {{ a.anwesend_bis ?? '?' }}</span>
+            <div class="inline-form">
+              <button @click="leiterAnfrageBearbeiten(a.id, 'genehmigen')">Freischalten</button>
+              <button class="secondary" @click="leiterAnfrageBearbeiten(a.id, 'ablehnen')">Ablehnen</button>
+            </div>
+          </div>
+        </div>
+
+        <table v-if="leiterBestaetigt.length" class="liste">
           <thead><tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Ämtli</th></tr></thead>
           <tbody>
-            <tr v-for="l in leiterListe" :key="l.id">
+            <tr v-for="l in leiterBestaetigt" :key="l.id">
               <td>{{ l.vorname }} {{ l.nachname }}</td>
               <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
               <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
@@ -758,6 +869,17 @@ onMounted(async () => {
         <p v-else class="hint">Noch keine Gruppen.</p>
       </section>
 
+      <!-- Einkauf -->
+      <section v-if="activeTab === 'einkauf' && session">
+        <LagerEinkauf
+          :lager-id="lagerId"
+          :lager-name="lager.name"
+          :user-id="session.user.id"
+          :ist-kueche="istKueche"
+          :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
+        />
+      </section>
+
       <!-- Team / Berechtigungen -->
       <section v-if="activeTab === 'team'">
         <p class="hint">Nur freigeschaltete Teammitglieder und die Ersteller/in sehen dieses Lager.</p>
@@ -822,6 +944,16 @@ onMounted(async () => {
 
       <!-- Einstellungen -->
       <section v-if="activeTab === 'einstellungen'">
+        <h3>Lager bearbeiten</h3>
+        <form @submit.prevent="lagerSpeichernFn" class="lager-form">
+          <label>Name <input v-model="lagerForm.name" required /></label>
+          <label>Ort <input v-model="lagerForm.ort" /></label>
+          <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required /></label>
+          <label>Start <input v-model="lagerForm.start_datum" type="date" /></label>
+          <label>Ende <input v-model="lagerForm.end_datum" type="date" /></label>
+          <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Speichern' }}</button>
+        </form>
+
         <h3>Lager-Status</h3>
         <select :value="lager.status" @change="statusAendern(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
           <option value="planung">Planung</option>
@@ -841,6 +973,8 @@ onMounted(async () => {
           <button class="secondary" @click="icsExport('eigen')">Nur Lagerzeitraum (.ics)</button>
         </div>
       </section>
+
+      <HoeckPanel v-if="hoeckOffen && session" :lager-id="lagerId" :bloecke="bloecke" :user-id="session.user.id" @close="hoeckOffen = false" />
     </template>
   </main>
 </template>
@@ -889,4 +1023,9 @@ button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .reminder-form { display: flex; flex-direction: column; gap: 0.6rem; max-width: 400px; margin-top: 1rem; }
 .link-box { display: block; background: var(--color-surface-muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; word-break: break-all; margin: 0.5rem 0 1.5rem; }
 .error { color: var(--color-danger); }
+.anfragen-box { margin-bottom: 1.25rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
+.anfrage-karte { padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
+.anfrage-karte:last-child { border-bottom: none; }
+.lager-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+.lager-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
 </style>

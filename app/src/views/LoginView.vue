@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
+const route = useRoute()
+const router = useRouter()
 const { signInWithPassword, signInWithGoogle } = useAuth()
 
 const email = ref('')
@@ -14,6 +17,8 @@ async function submitPassword() {
   loading.value = true
   try {
     await signInWithPassword(email.value, password.value)
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/lager'
+    await router.push(redirect)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Login fehlgeschlagen.'
   } finally {

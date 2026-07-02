@@ -17,7 +17,7 @@ const router = createRouter({
     { path: '/lager/import', name: 'lager-import', component: LagerImport, meta: { requiresAuth: true } },
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
-    { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter },
+    { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter, meta: { requiresAuth: true } },
     { path: '/lager/:id', name: 'lager-detail', component: LagerDetail, meta: { requiresAuth: true } },
   ],
 })
@@ -26,7 +26,9 @@ router.beforeEach(async (to) => {
   const { data } = await supabase.auth.getSession()
   const loggedIn = !!data.session
 
-  if (to.meta.requiresAuth && !loggedIn) return '/login'
+  if (to.meta.requiresAuth && !loggedIn) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
   if (to.name === 'login' && loggedIn) return '/lager'
   return true
 })

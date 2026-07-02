@@ -24,16 +24,12 @@ const form = ref({
 })
 
 onMounted(async () => {
-  const { data, error } = await supabase.from('lager').select('name, status').eq('id', lagerId).single()
+  const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId })
   if (error || !data) {
-    ladefehler.value = 'Lager wurde nicht gefunden.'
-    return
-  }
-  if (data.status !== 'anmeldung_offen') {
     ladefehler.value = 'Die Anmeldung für dieses Lager ist aktuell nicht offen.'
     return
   }
-  lagerName.value = data.name
+  lagerName.value = (data as { name: string }).name
 })
 
 async function absenden() {
