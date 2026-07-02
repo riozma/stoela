@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
+import { useGooglePlaces } from '../composables/useGooglePlaces'
 
 interface Lager {
   id: string
@@ -45,10 +46,27 @@ const form = ref({
   jahr: naechstesJahr,
   name: `Stöckli-Lager ${naechstesJahr}`,
   ort: '',
+  ort_lat: null as number | null,
+  ort_lng: null as number | null,
+  ort_place_id: null as string | null,
   start_datum: '',
   end_datum: '',
 })
 const saving = ref(false)
+
+const { attachAutocomplete } = useGooglePlaces()
+const ortInput = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  if (ortInput.value) {
+    attachAutocomplete(ortInput.value, (gewaehlt) => {
+      form.value.ort = gewaehlt.adresse
+      form.value.ort_lat = gewaehlt.lat
+      form.value.ort_lng = gewaehlt.lng
+      form.value.ort_place_id = gewaehlt.placeId
+    })
+  }
+})
 
 async function ladeLager() {
   loading.value = true
@@ -65,22 +83,44 @@ async function ladeLager() {
 async function erstellen() {
   error.value = ''
   saving.value = true
-  const { error: insertError } = await supabase.from('lager').insert({
-    jahr: form.value.jahr,
-    name: form.value.name,
-    ort: form.value.ort || null,
-    start_datum: form.value.start_datum || null,
-    end_datum: form.value.end_datum || null,
-  })
-  saving.value = false
+  const { data: neuesLager, error: insertError } = await supabase
+    .from('lager')
+    .insert({
+      jahr: form.value.jahr,
+      name: form.value.name,
+      ort: form.value.ort || null,
+      ort_lat: form.value.ort_lat,
+      ort_lng: form.value.ort_lng,
+      ort_place_id: form.value.ort_place_id,
+      start_datum: form.value.start_datum || null,
+      end_datum: form.value.end_datum || null,
+    })
+    .select('id')
+    .single()
 
   if (insertError) {
     error.value = insertError.message
+    saving.value = false
     return
   }
+
+  // Ersteller/in wird automatisch bestätigtes Teammitglied dieses Lagers
+  if (session.value) {
+    await supabase.from('lager_leiter').insert({
+      lager_id: neuesLager.id,
+      profile_id: session.value.user.id,
+      rolle: 'lagerleitung',
+      status: 'bestaetigt',
+    })
+  }
+
+  saving.value = false
   form.value.name = `Stöckli-Lager ${form.value.jahr + 1}`
   form.value.jahr += 1
   form.value.ort = ''
+  form.value.ort_lat = null
+  form.value.ort_lng = null
+  form.value.ort_place_id = null
   form.value.start_datum = ''
   form.value.end_datum = ''
   await ladeLager()
@@ -117,6 +157,9 @@ onMounted(ladeLager)
 
     <section>
       <h2>Neues Lager erstellen</h2>
+      <p class="hint">
+        Oder <router-link to="/lager/import">aus eCamp-PDF importieren</router-link> (Blöcke werden automatisch übernommen).
+      </p>
       <form @submit.prevent="erstellen">
         <label>
           Jahr
@@ -128,7 +171,7 @@ onMounted(ladeLager)
         </label>
         <label>
           Ort
-          <input v-model="form.ort" type="text" />
+          <input ref="ortInput" v-model="form.ort" type="text" placeholder="Adresse eingeben..." />
         </label>
         <label>
           Start
@@ -227,5 +270,11 @@ td {
 }
 .error {
   color: #b00020;
+}
+.hint {
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
 }
 </style>
