@@ -35,6 +35,17 @@ Solange keine Domain verifiziert ist:
 - **Nur Test:** Mails gehen ausschliesslich an die E-Mail deines Resend-Accounts
 - Für echte Reminder an Leiter/TN: Domain unter https://resend.com/domains verifizieren, dann z.B. `lager@stoecklilager.com`
 
+## GitHub Pages deployen
+
+Die App wird per GitHub Actions auf den Branch `gh-pages` gepusht (kein langsames Pages-Queue-API mehr).
+
+**Einmalig prüfen** (Settings → Pages → Build and deployment):
+
+- **Source:** Deploy from a branch
+- **Branch:** `gh-pages` / `/ (root)`
+
+Solange dort noch «GitHub Actions» steht, wird die alte Version ausgeliefert – auch wenn `gh-pages` bereits aktuell ist.
+
 ## GitHub Pages Secrets aktualisieren
 
 Nach Org-Wechsel im Repo unter Settings → Secrets:
