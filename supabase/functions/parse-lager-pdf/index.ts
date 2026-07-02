@@ -61,8 +61,8 @@ const RESPONSE_SCHEMA = {
             items: {
               type: 'OBJECT',
               properties: {
-                name: { type: 'STRING' },
-                wer: { type: 'STRING', nullable: true },
+                name: { type: 'STRING', description: 'Material/Gegenstand inkl. Menge falls angegeben' },
+                wer: { type: 'STRING', nullable: true, description: 'Person oder Ämtli die es mitbringt' },
               },
               required: ['name'],
             },
@@ -80,12 +80,21 @@ const PROMPT_PREFIX =
   'Das ist der per PDF-Textextraktion gewonnene Inhalt eines eCamp-Lagerprogramm-Exports ' +
   '("Layout 2"). Die Reihenfolge der Wörter kann durch die Spaltenextraktion leicht durcheinander ' +
   'geraten sein (z.B. bei "Geschichte"/"Sicherheitsüberlegungen" nebeneinander). Nutze die ' +
-  'Abschnittsüberschriften (Ort:, Verantwortlich:, Geschichte, Sicherheitsüberlegungen, ' +
-  'Programmabschnitt, Material, Notizen) als Anker, um den "Detailprogramm: Lager"-Teil in ' +
-  'einzelne Blöcke zu zerlegen. Jeder Block beginnt mit Code (LP/LS/LA/ES), optionaler Nummer, ' +
-  'Titel und Datum/Zeit. Ignoriere das "Grobprogramm"-Raster und das Inhaltsverzeichnis inhaltlich, ' +
-  'nutze sie höchstens um Lücken zu ergänzen. Ignoriere Scherz-/Fake-Notizen nicht, gib sie als ' +
-  'notizen einfach unverändert wieder. Extrahiere jetzt vollständig:\n\n'
+  'Abschnittsüberschriften als Anker, um den "Detailprogramm: Lager"-Teil in einzelne Blöcke zu zerlegen.\n\n' +
+  'Jeder Programmblock hat diese getrennten Felder – ALLE vollständig extrahieren:\n' +
+  '- titel (Pflicht), code (LP/LS/LA/ES), nummer, tag, start_zeit, end_zeit\n' +
+  '- ort: genauer Ort/Standort des Blocks\n' +
+  '- verantwortlich: Namen der verantwortlichen Person(en), kommagetrennt\n' +
+  '- sicherheitsueberlegungen: eigener Abschnitt, nicht mit Geschichte vermischen\n' +
+  '- geschichte: eigener Abschnitt falls vorhanden\n' +
+  '- programmabschnitt: Array mit { zeit, programm, verantwortlich } für jeden Unterabschnitt\n' +
+  '- material: Array mit { name, wer } – JEDE Materialzeile aus dem Material-Abschnitt, ' +
+  'name = Gegenstand/Menge, wer = wer es mitbringt/beschafft (Name oder Ämtli)\n' +
+  '- notizen: Freitext aus dem Notizen-Abschnitt\n\n' +
+  'WICHTIG zum Material: Nicht weglassen! Tabellenzeilen wie "Seile 20m – Max" werden zu ' +
+  '{ "name": "Seile 20m", "wer": "Max" }. Zeilen ohne Person: wer = null.\n' +
+  'Ignoriere das Grobprogramm-Raster und Inhaltsverzeichnis inhaltlich. ' +
+  'Scherz-Notizen als notizen unverändert übernehmen. Extrahiere jetzt vollständig:\n\n'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

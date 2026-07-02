@@ -14,16 +14,11 @@ import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
+import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
+import { aemtliName, leiterName, type MaterialMitZuordnung, type NamensZuordnung, type ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 
-interface Programmabschnitt {
-  zeit: string | null
-  programm: string
-  verantwortlich: string | null
-}
-interface MaterialItem {
-  name: string
-  wer: string | null
-}
+interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
+interface MaterialItem extends MaterialMitZuordnung {}
 interface Block {
   id: string
   code: 'LP' | 'LS' | 'LA' | 'ES'
@@ -39,6 +34,7 @@ interface Block {
   programmabschnitt: Programmabschnitt[]
   material: MaterialItem[]
   notizen: string | null
+  verantwortlich_zuordnungen: NamensZuordnung[]
 }
 interface Lager {
   id: string
@@ -119,6 +115,8 @@ const profil = ref<{ vorname: string | null; nachname: string | null } | null>(n
 const istKueche = ref(false)
 const istFinanzen = ref(false)
 const meineAemtli = ref<Aemtli[]>([])
+const zuordnungLade = ref(false)
+const zuordnungNachricht = ref('')
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
 const lagerSpeichern = ref(false)
 
@@ -236,6 +234,12 @@ async function tnHinzufuegen() {
   await ladeTeilnehmer()
 }
 
+async function leiterNachAenderung() {
+  await ladeLeiter()
+  await ladeMeineAemtli()
+  await programmZuordnungenAktualisieren(true)
+}
+
 async function tnRolleAendern(tn: TN, rolle: 'TN' | 'HL') {
   await supabase.from('anmeldungen_tn').update({ rolle }).eq('id', tn.id)
   tn.rolle = rolle
@@ -265,7 +269,7 @@ async function leiterAnfrageBearbeiten(anmeldungId: string, entscheidung: 'geneh
     p_entscheidung: entscheidung,
   })
   if (err) { leiterFehler.value = err.message; return }
-  await Promise.all([ladeLeiter(), ladeTeam()])
+  await Promise.all([leiterNachAenderung(), ladeTeam()])
 }
 
 async function ladeAemtli() {
@@ -303,7 +307,7 @@ async function leiterHinzufuegen() {
   leiterSpeichern.value = false
   if (err) { leiterFehler.value = err.message; return }
   leiterForm.value = { vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', email: '', anwesend_von: '', anwesend_bis: '' }
-  await ladeLeiter()
+  await leiterNachAenderung()
 }
 
 async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
@@ -311,6 +315,7 @@ async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
   await supabase.from('leiter_rollen').insert({ anmeldung_leiter_id: anmeldungLeiterId, aemtli_id: aemtliId })
   await ladeLeiterRollen()
   await ladeMeineAemtli()
+  await programmZuordnungenAktualisieren(true)
 }
 
 async function neueRolleErstellen(anmeldungLeiterId: string) {
@@ -666,6 +671,61 @@ function tabWechseln(tab: Tab) {
   activeTab.value = tab
 }
 
+function leiterFuerMatching() {
+  return leiterListe.value.map((l) => ({ id: l.id, vorname: l.vorname, nachname: l.nachname }))
+}
+
+function formatZuordnung(z: NamensZuordnung): string {
+  if (z.leiter_id) {
+    const n = leiterName(leiterFuerMatching(), z.leiter_id)
+    if (n) return n
+  }
+  if (z.aemtli_id) {
+    const n = aemtliName(aemtliListe.value, z.aemtli_id)
+    if (n) return `Ämtli: ${n}`
+  }
+  return `${z.name} (unzugeordnet)`
+}
+
+function formatMaterialWer(m: MaterialItem): string {
+  if (m.wer_leiter_id) {
+    const n = leiterName(leiterFuerMatching(), m.wer_leiter_id)
+    if (n) return n
+  }
+  if (m.wer_aemtli_id) {
+    const n = aemtliName(aemtliListe.value, m.wer_aemtli_id)
+    if (n) return `Ämtli: ${n}`
+  }
+  return m.wer ?? '–'
+}
+
+function formatAbschnittVerantwortlich(a: Programmabschnitt): string {
+  if (a.verantwortlich_leiter_id) {
+    const n = leiterName(leiterFuerMatching(), a.verantwortlich_leiter_id)
+    if (n) return n
+  }
+  if (a.verantwortlich_aemtli_id) {
+    const n = aemtliName(aemtliListe.value, a.verantwortlich_aemtli_id)
+    if (n) return `Ämtli: ${n}`
+  }
+  return a.verantwortlich ?? '–'
+}
+
+async function programmZuordnungenAktualisieren(silent = false) {
+  zuordnungLade.value = true
+  if (!silent) zuordnungNachricht.value = ''
+  await synchronisiereProgrammZuordnungen(lagerId)
+  const { data: bloeckeData } = await supabase.from('programmbloecke').select(
+    'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen',
+  ).eq('lager_id', lagerId)
+  bloecke.value = (bloeckeData ?? []).map((b) => ({
+    ...b,
+    verantwortlich_zuordnungen: b.verantwortlich_zuordnungen ?? [],
+  }))
+  zuordnungLade.value = false
+  if (!silent) zuordnungNachricht.value = 'Programm-Verantwortliche abgeglichen.'
+}
+
 function icsExport(modus: 'ganzes' | 'eigen') {
   if (!lager.value) return
   let zeitraum: { von: string; bis: string } | undefined
@@ -685,7 +745,7 @@ onMounted(async () => {
   const [{ data: lagerData, error: lagerError }, { data: bloeckeData, error: bloeckeError }] = await Promise.all([
     supabase.from('lager').select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by').eq('id', lagerId).single(),
     supabase.from('programmbloecke').select(
-      'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen',
+      'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen',
     ).eq('lager_id', lagerId),
   ])
 
@@ -703,7 +763,10 @@ onMounted(async () => {
     end_datum: lagerData.end_datum ?? '',
     jahr: lagerData.jahr,
   }
-  bloecke.value = bloeckeData ?? []
+  bloecke.value = (bloeckeData ?? []).map((b) => ({
+    ...b,
+    verantwortlich_zuordnungen: b.verantwortlich_zuordnungen ?? [],
+  }))
   ausgewaehlterTag.value = tage.value[0] ?? null
 
   if (lager.value.ort_lat && lager.value.ort_lng && lager.value.start_datum && lager.value.end_datum) {
@@ -720,6 +783,7 @@ onMounted(async () => {
   }
 
   await Promise.all([ladeTeilnehmer(), ladeLeiter(), ladeAemtli(), ladeLeiterRollen(), ladeGruppen(), ladeTeam(), ladeReminders()])
+  await programmZuordnungenAktualisieren(true)
   loading.value = false
 })
 </script>
@@ -780,6 +844,13 @@ onMounted(async () => {
           </span>
         </div>
 
+        <div v-if="bloecke.length" class="programm-toolbar">
+          <button class="secondary klein" :disabled="zuordnungLade" @click="programmZuordnungenAktualisieren()">
+            {{ zuordnungLade ? 'Gleiche ab...' : 'Namen mit Leitern/Ämtli abgleichen' }}
+          </button>
+          <span v-if="zuordnungNachricht" class="hint">{{ zuordnungNachricht }}</span>
+        </div>
+
         <p v-if="!bloecke.length" class="hint">Noch keine Programmblöcke. Import über eCamp-PDF möglich.</p>
 
         <nav v-else class="tage">
@@ -807,6 +878,18 @@ onMounted(async () => {
             </div>
             <div v-if="offenerBlock === b.id" class="block-detail">
               <p v-if="b.ort"><strong>Ort:</strong> {{ b.ort }}</p>
+              <p v-if="b.verantwortlich || b.verantwortlich_zuordnungen?.length">
+                <strong>Verantwortlich:</strong>
+                <span v-if="b.verantwortlich_zuordnungen?.length">
+                  <span
+                    v-for="(z, zi) in b.verantwortlich_zuordnungen"
+                    :key="zi"
+                    class="zuordnung-pill"
+                    :class="{ unzugeordnet: !z.leiter_id && !z.aemtli_id }"
+                  >{{ formatZuordnung(z) }}</span>
+                </span>
+                <span v-else>{{ b.verantwortlich }}</span>
+              </p>
               <p v-if="b.geschichte"><strong>Geschichte:</strong> {{ b.geschichte }}</p>
               <p v-if="b.sicherheitsueberlegungen"><strong>Sicherheitsüberlegungen:</strong> {{ b.sicherheitsueberlegungen }}</p>
               <div v-if="b.programmabschnitt?.length">
@@ -814,9 +897,9 @@ onMounted(async () => {
                 <table class="abschnitt-tabelle">
                   <tbody>
                     <tr v-for="(a, i) in b.programmabschnitt" :key="i">
-                      <td class="abschnitt-zeit">{{ a.zeit }}</td>
+                      <td class="abschnitt-zeit">{{ a.zeit ?? '–' }}</td>
                       <td>{{ a.programm }}</td>
-                      <td class="abschnitt-verantwortlich">{{ a.verantwortlich }}</td>
+                      <td class="abschnitt-verantwortlich">{{ formatAbschnittVerantwortlich(a) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -824,7 +907,12 @@ onMounted(async () => {
               <div v-if="b.material?.length">
                 <strong>Material</strong>
                 <ul class="material-liste">
-                  <li v-for="(m, i) in b.material" :key="i">{{ m.name }} <span v-if="m.wer">– {{ m.wer }}</span></li>
+                  <li v-for="(m, i) in b.material" :key="i">
+                    {{ m.name }}
+                    <span class="material-wer" :class="{ unzugeordnet: m.wer && !m.wer_leiter_id && !m.wer_aemtli_id }">
+                      – {{ formatMaterialWer(m) }}
+                    </span>
+                  </li>
                 </ul>
               </div>
               <p v-if="b.notizen"><strong>Notizen:</strong> {{ b.notizen }}</p>
@@ -1126,6 +1214,10 @@ main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .abschnitt-zeit { white-space: nowrap; color: var(--color-text-muted); }
 .abschnitt-verantwortlich { color: var(--color-text-muted); white-space: nowrap; }
 .material-liste { margin: 0.4rem 0 0.8rem; padding-left: 1.2rem; }
+.material-wer.unzugeordnet { color: var(--color-text-muted); font-style: italic; }
+.zuordnung-pill { display: inline-block; background: var(--color-pill-bg); border-radius: var(--radius-pill); padding: 0.1rem 0.5rem; font-size: 0.78rem; margin: 0.15rem 0.3rem 0.15rem 0; }
+.zuordnung-pill.unzugeordnet { background: var(--color-surface-muted); color: var(--color-text-muted); font-style: italic; }
+.programm-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; }
 .liste { width: 100%; border-collapse: collapse; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin: 1rem 0; font-size: 0.9rem; }
 .liste th, .liste td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 .liste th { color: var(--color-text-muted); font-weight: 700; font-size: 0.8rem; }
