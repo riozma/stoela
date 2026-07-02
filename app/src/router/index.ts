@@ -6,6 +6,7 @@ import LagerImport from '../views/LagerImport.vue'
 import LagerDetail from '../views/LagerDetail.vue'
 import AnmeldungTN from '../views/AnmeldungTN.vue'
 import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
+import Willkommen from '../views/Willkommen.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -14,6 +15,7 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/lager', name: 'lager', component: LagerUebersicht, meta: { requiresAuth: true } },
     { path: '/lager/import', name: 'lager-import', component: LagerImport, meta: { requiresAuth: true } },
+    { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
     { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter },
     { path: '/lager/:id', name: 'lager-detail', component: LagerDetail, meta: { requiresAuth: true } },

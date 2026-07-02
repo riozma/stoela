@@ -1,15 +1,15 @@
 # Stöckli Lager App
 
 Interne Web-App fürs Jugendlager (J+S/Jubla) des Stöckli-Teams: Leiter-/TN-Anmeldung,
-Ämtli mit Übergabe-Learnings, Einkaufsliste und Erinnerungen. Läuft auf GitHub Pages
+Programm, Gruppen, Reminder und Team-Berechtigungen. Läuft auf GitHub Pages
 (`app.stoecklilager.com`) mit Supabase als Backend.
 
 ## Struktur
 
 - `app/` – Vue 3 + TypeScript SPA (Vite)
-- `supabase/migrations/` – Datenbankschema
+- `supabase/migrations/` – Datenbankschema & RLS
+- `supabase/functions/` – Edge Functions (PDF-Import, Reminder)
 - `.github/workflows/deploy-pages.yml` – Build & Deploy auf GitHub Pages
-- `CNAME` – Custom Domain für GitHub Pages
 
 ## Lokale Entwicklung
 
@@ -22,23 +22,37 @@ npm run dev
 
 ## Supabase
 
-Migration liegt in `supabase/migrations/20260702000001_init.sql`. Mit der Supabase CLI
-gegen ein Projekt anwenden:
+Migrationen in `supabase/migrations/` anwenden:
 
 ```bash
 supabase link --project-ref <project-ref>
 supabase db push
+supabase functions deploy parse-lager-pdf
+supabase functions deploy send-reminder
 ```
+
+### Secrets (Supabase Edge Functions)
+
+| Secret | Funktion |
+|---|---|
+| `GEMINI_API_KEY` | `parse-lager-pdf` |
+| `RESEND_API_KEY` | `send-reminder` |
+| `RESEND_FROM` | `send-reminder` (z.B. `Stöckli Lager <lager@stoecklilager.com>`) |
+
+### Zugriffskontrolle
+
+- Nur Ersteller/in oder freigeschaltete Teammitglieder (`lager_leiter`, Status `bestaetigt`) sehen ein Lager
+- TN/Eltern sehen nur `/lager/:id/willkommen` (Ort, Zeitraum, Wetter) – kein Programm
+- Freischalten neuer Leiter über Tab „Team" (E-Mail muss bereits registriert sein)
 
 ## Deployment (GitHub Pages)
 
-1. Repo-Settings → Pages → Source: „GitHub Actions".
-2. Repo-Secrets setzen: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
-3. DNS beim Domain-Registrar: `CNAME app.stoecklilager.com → <username>.github.io`.
-4. Push auf `main` löst den Workflow aus.
+1. Repo-Settings → Pages → Source: „GitHub Actions"
+2. Secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optional `VITE_GOOGLE_MAPS_API_KEY`
+3. DNS: `CNAME app.stoecklilager.com → <username>.github.io`
 
-## Noch offen
+## Noch offen (später)
 
-- Resend-Integration (Edge Function `supabase/functions/send-reminder`)
-- Anbindung eCamp / jubla.db (OAuth-Zugänge nötig, siehe Konzept-Diskussion)
-- TN-/Leiter-Anmeldeformular, Ämtli- und Einkaufslisten-UI
+- eCamp API (OAuth)
+- jubla.db Anbindung
+- J+S-Portal

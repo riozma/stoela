@@ -15,14 +15,6 @@ supabase.auth.onAuthStateChange((_event, newSession) => {
 })
 
 export function useAuth() {
-  async function sendMagicLink(email: string) {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    if (error) throw error
-  }
-
   async function signInWithPassword(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
@@ -48,7 +40,6 @@ export function useAuth() {
   return {
     session,
     ready,
-    sendMagicLink,
     signInWithPassword,
     signInWithGoogle,
     setPassword,

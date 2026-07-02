@@ -112,7 +112,10 @@ async function absenden() {
       <p v-if="fehler" class="error">{{ fehler }}</p>
     </template>
 
-    <p v-else>Danke, die Anmeldung ist eingegangen!</p>
+    <p v-else>
+      Danke, die Anmeldung ist eingegangen!
+      <router-link :to="`/lager/${lagerId}/willkommen`">Zur Lager-Infoseite</router-link>
+    </p>
   </main>
 </template>
 

@@ -101,6 +101,7 @@ async function erstellen() {
       ort_place_id: form.value.ort_place_id,
       start_datum: form.value.start_datum || null,
       end_datum: form.value.end_datum || null,
+      created_by: session.value?.user.id ?? null,
     })
     .select('id')
     .single()
