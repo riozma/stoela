@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
@@ -388,6 +388,7 @@ async function neueRolleErstellen(anmeldungLeiterId: string) {
 
 // --- Gruppen ---
 const gruppenListe = ref<Gruppe[]>([])
+const gruppenNamen = ref<Record<string, string>>({})
 const anzahlGruppenInput = ref(4)
 const gruppenErstellen = ref(false)
 const gruppenFehler = ref('')
@@ -441,6 +442,10 @@ async function ladeGruppen() {
       }
     }),
   }))
+
+  const namen: Record<string, string> = {}
+  for (const g of gruppenListe.value) namen[g.id] = g.name
+  gruppenNamen.value = namen
 }
 
 function interleaveNachGeschlecht<T extends { geschlecht: string | null; alter?: number | null }>(liste: T[]): T[] {
@@ -519,11 +524,19 @@ async function gruppeManuellErstellen() {
   await ladeGruppen()
 }
 
-async function gruppeUmbenennen(gruppeId: string, neuerName: string) {
-  const name = neuerName.trim()
+async function gruppeUmbenennen(gruppeId: string) {
+  const name = (gruppenNamen.value[gruppeId] ?? '').trim()
   if (!name) return
-  await supabase.from('lagergruppen').update({ name }).eq('id', gruppeId)
-  await ladeGruppen()
+  const alt = gruppenListe.value.find((g) => g.id === gruppeId)?.name
+  if (alt === name) return
+  const { error: err } = await supabase.from('lagergruppen').update({ name }).eq('id', gruppeId)
+  if (err) {
+    gruppenFehler.value = err.message
+    if (alt) gruppenNamen.value[gruppeId] = alt
+    return
+  }
+  const g = gruppenListe.value.find((x) => x.id === gruppeId)
+  if (g) g.name = name
 }
 
 async function mitgliedZuGruppeHinzufuegen(gruppeId: string, typ: 'tn' | 'leiter', anmeldungId: string) {
@@ -698,7 +711,6 @@ async function pruefeKueche() {
 async function ladeMeineAemtli() {
   if (!session.value) return
   const email = session.value.user.email ?? ''
-  const uid = session.value.user.id
 
   const { data: meineLeiter } = await supabase
     .from('anmeldungen_leiter')
@@ -719,17 +731,6 @@ async function ladeMeineAemtli() {
       const a = row.aemtli as unknown as Aemtli
       if (a?.id) set.set(a.id, a)
     }
-  }
-
-  const { data: az } = await supabase
-    .from('aemtli_zuweisungen')
-    .select('aemtli:aemtli_id ( id, name )')
-    .eq('lager_id', lagerId)
-    .eq('profile_id', uid)
-
-  for (const row of az ?? []) {
-    const a = row.aemtli as unknown as Aemtli
-    if (a?.id) set.set(a.id, a)
   }
 
   meineAemtli.value = [...set.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -866,9 +867,18 @@ onMounted(async () => {
     await ladeMeineAemtli()
   }
 
-  await Promise.all([ladeTeilnehmer(), ladeLeiter(), ladeAemtli(), ladeLeiterRollen(), ladeGruppen(), ladeTeam(), ladeReminders()])
+  await Promise.all([ladeTeilnehmer(), ladeAemtli(), ladeGruppen(), ladeTeam(), ladeReminders()])
+  await ladeLeiter()
+  await ladeLeiterRollen()
   await programmZuordnungenAktualisieren(true)
   loading.value = false
+})
+
+watch(activeTab, async (tab) => {
+  if (tab === 'leiter') {
+    await ladeLeiter()
+    await ladeLeiterRollen()
+  }
 })
 </script>
 
@@ -1071,31 +1081,35 @@ onMounted(async () => {
               <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
               <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
               <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
-              <td>
-                <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
-                  {{ r.name }}
-                  <button
-                    v-if="isLeitung"
-                    type="button"
-                    class="rollen-entfernen"
-                    title="Rolle entfernen"
-                    @click="rolleEntfernen(r.zuweisungId)"
-                  >×</button>
-                </span>
-                <select
-                  v-if="zuweisbareAemtli(l.id).length"
-                  @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
-                >
-                  <option value="">+ Ämtli</option>
-                  <option v-for="a in zuweisbareAemtli(l.id)" :key="a.id" :value="a.id">{{ a.name }}</option>
-                </select>
-                <input
-                  v-if="isLeitung"
-                  v-model="neueRolleName[l.id]"
-                  placeholder="neues Ämtli..."
-                  class="neue-rolle-input"
-                  @keyup.enter="neueRolleErstellen(l.id)"
-                />
+              <td class="aemtli-zelle">
+                <div class="rollen-zeile">
+                  <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
+                    {{ r.name }}
+                    <button
+                      v-if="isLeitung"
+                      type="button"
+                      class="rollen-entfernen"
+                      title="Rolle entfernen"
+                      @click="rolleEntfernen(r.zuweisungId)"
+                    >×</button>
+                  </span>
+                  <span v-if="!(leiterRollenMap[l.id] ?? []).length" class="hint rollen-leer">–</span>
+                </div>
+                <div v-if="isLeitung" class="rollen-zuweisen">
+                  <select
+                    v-if="zuweisbareAemtli(l.id).length"
+                    @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
+                  >
+                    <option value="">+ Ämtli</option>
+                    <option v-for="a in zuweisbareAemtli(l.id)" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input
+                    v-model="neueRolleName[l.id]"
+                    placeholder="neues Ämtli..."
+                    class="neue-rolle-input"
+                    @keyup.enter="neueRolleErstellen(l.id)"
+                  />
+                </div>
               </td>
             </tr>
           </tbody>
@@ -1135,9 +1149,11 @@ onMounted(async () => {
         <div v-if="gruppenListe.length" class="gruppen-grid">
           <div v-for="g in gruppenListe" :key="g.id" class="gruppe-karte">
             <input
+              v-model="gruppenNamen[g.id]"
               class="gruppe-name-input"
-              :value="g.name"
-              @change="gruppeUmbenennen(g.id, ($event.target as HTMLInputElement).value)"
+              title="Gruppenname bearbeiten"
+              @blur="gruppeUmbenennen(g.id)"
+              @keyup.enter="($event.target as HTMLInputElement).blur()"
             />
             <ul>
               <li v-for="m in g.mitglieder" :key="m.id">
@@ -1208,6 +1224,7 @@ onMounted(async () => {
       <!-- Quittungen (alle Leiter) -->
       <section v-if="activeTab === 'quittungen' && session">
         <QuittungenPanel
+          :key="`quittungen-${hatFinanzenAemtli}`"
           :lager-id="lagerId"
           :user-id="session.user.id"
           :ist-kassier="hatFinanzenAemtli"
@@ -1354,7 +1371,19 @@ main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .inline-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
 .gruppen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
 .gruppe-karte { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; }
-.gruppe-name-input { font-weight: 700; font-size: 1rem; border: none; background: transparent; width: 100%; margin-bottom: 0.5rem; padding: 0; }
+.gruppe-name-input {
+  font-weight: 700; font-size: 1rem; width: 100%; margin-bottom: 0.5rem;
+  border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm);
+  padding: 0.25rem 0.4rem; transition: border-color 0.15s, background 0.15s;
+}
+.gruppe-name-input:hover,
+.gruppe-name-input:focus {
+  border-color: var(--color-border); background: var(--color-surface-muted); outline: none;
+}
+.aemtli-zelle { min-width: 180px; }
+.rollen-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; min-height: 1.5rem; margin-bottom: 0.25rem; }
+.rollen-leer { font-size: 0.85rem; }
+.rollen-zuweisen { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
 .gruppe-karte ul { list-style: none; padding: 0; margin: 0 0 0.5rem; font-size: 0.88rem; }
 .gruppe-karte li { padding: 0.15rem 0; display: flex; align-items: center; gap: 0.4rem; }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
