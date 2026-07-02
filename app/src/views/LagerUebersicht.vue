@@ -187,8 +187,11 @@ onMounted(ladeLager)
 </script>
 
 <template>
-  <main>
-    <AppHeader :show-alle-lager="false" />
+  <div class="uebersicht-page">
+    <div class="top-full">
+      <AppHeader :show-alle-lager="false" />
+    </div>
+    <main>
 
     <section v-if="kontoOffen">
       <h2>Konto</h2>
@@ -260,10 +263,18 @@ onMounted(ladeLager)
       </form>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
-  </main>
+    </main>
+  </div>
 </template>
 
 <style scoped>
+.uebersicht-page { min-height: 100vh; }
+.top-full {
+  width: 100%;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1rem;
+}
 main {
   max-width: 960px;
   margin: 0 auto;

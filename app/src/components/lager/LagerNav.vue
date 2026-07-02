@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { aemtliSlug, tabIdForAemtli } from '../../lib/aemtliSlug'
 
 interface AemtliTab {
@@ -16,8 +17,12 @@ const props = defineProps<{
   leiterAnfragen: number
   tnCount: number
   leiterCount: number
+  mobileOpen?: boolean
 }>()
 
+const emit = defineEmits<{ close: [] }>()
+
+const route = useRoute()
 const base = computed(() => `/lager/${props.lagerId}`)
 
 function sectionPath(section: string) {
@@ -43,35 +48,39 @@ function gruppeAktiv(sections: string[]) {
 function aemtliGruppeAktiv() {
   return props.activeTab.startsWith('aemtli:')
 }
+
+function navKlick() {
+  if (route.meta?.mobileNavClose !== false) emit('close')
+}
 </script>
 
 <template>
-  <nav class="lager-top-nav" aria-label="Lager-Navigation">
-    <router-link :to="sectionPath('dashboard')" class="nav-link" :class="{ aktiv: isActive('dashboard') }">
+  <nav class="lager-top-nav" :class="{ 'mobile-open': mobileOpen }" aria-label="Lager-Navigation">
+    <router-link :to="sectionPath('dashboard')" class="nav-link" :class="{ aktiv: isActive('dashboard') }" @click="navKlick">
       Dashboard
     </router-link>
 
-    <router-link :to="sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }">
+    <router-link :to="sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }" @click="navKlick">
       Programm
     </router-link>
 
-    <div class="nav-dropdown" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">
+    <div class="nav-dropdown" data-label="Leute" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">
       <span class="nav-dropdown-label">Leute</span>
       <div class="nav-dropdown-menu">
-        <router-link :to="sectionPath('teilnehmer')" class="nav-link" :class="{ aktiv: isActive('teilnehmer') }">
+        <router-link :to="sectionPath('teilnehmer')" class="nav-link" :class="{ aktiv: isActive('teilnehmer') }" @click="navKlick">
           Teilnehmer <span class="badge">{{ tnCount }}</span>
         </router-link>
-        <router-link :to="sectionPath('leiter')" class="nav-link" :class="{ aktiv: isActive('leiter') }">
+        <router-link :to="sectionPath('leiter')" class="nav-link" :class="{ aktiv: isActive('leiter') }" @click="navKlick">
           Leiter <span class="badge">{{ leiterCount }}</span>
           <span v-if="leiterAnfragen && isLeitung" class="badge warn">{{ leiterAnfragen }} offen</span>
         </router-link>
-        <router-link :to="sectionPath('gruppen')" class="nav-link" :class="{ aktiv: isActive('gruppen') }">
+        <router-link :to="sectionPath('gruppen')" class="nav-link" :class="{ aktiv: isActive('gruppen') }" @click="navKlick">
           Gruppen
         </router-link>
       </div>
     </div>
 
-    <div v-if="meineAemtli.length" class="nav-dropdown" :class="{ 'gruppe-aktiv': aemtliGruppeAktiv() }">
+    <div v-if="meineAemtli.length" class="nav-dropdown" data-label="Meine Ämtli" :class="{ 'gruppe-aktiv': aemtliGruppeAktiv() }">
       <span class="nav-dropdown-label">Meine Ämtli</span>
       <div class="nav-dropdown-menu">
         <router-link
@@ -80,13 +89,14 @@ function aemtliGruppeAktiv() {
           :to="aemtliPath(a.name)"
           class="nav-link"
           :class="{ aktiv: isAemtliActive(a.name) }"
+          @click="navKlick"
         >
           {{ a.name }}
         </router-link>
       </div>
     </div>
 
-    <div class="nav-dropdown" :class="{ 'gruppe-aktiv': gruppeAktiv(['einkauf', 'quittungen']) }">
+    <div class="nav-dropdown" data-label="Organisation" :class="{ 'gruppe-aktiv': gruppeAktiv(['einkauf', 'quittungen']) }">
       <span class="nav-dropdown-label">Organisation</span>
       <div class="nav-dropdown-menu">
         <router-link
@@ -94,25 +104,23 @@ function aemtliGruppeAktiv() {
           :to="sectionPath('einkauf')"
           class="nav-link"
           :class="{ aktiv: isActive('einkauf') }"
+          @click="navKlick"
         >
           Einkaufsliste
         </router-link>
-        <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }">
+        <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }" @click="navKlick">
           Quittungen
         </router-link>
       </div>
     </div>
 
-    <div v-if="isLeitung" class="nav-dropdown" :class="{ 'gruppe-aktiv': gruppeAktiv(['team', 'reminders', 'einstellungen']) }">
+    <div v-if="isLeitung" class="nav-dropdown" data-label="Leitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['team', 'einstellungen']) }">
       <span class="nav-dropdown-label">Leitung</span>
       <div class="nav-dropdown-menu">
-        <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }">
+        <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }" @click="navKlick">
           Team &amp; Zugriff
         </router-link>
-        <router-link :to="sectionPath('reminders')" class="nav-link" :class="{ aktiv: isActive('reminders') }">
-          Erinnerungen
-        </router-link>
-        <router-link :to="sectionPath('einstellungen')" class="nav-link" :class="{ aktiv: isActive('einstellungen') }">
+        <router-link :to="sectionPath('einstellungen')" class="nav-link" :class="{ aktiv: isActive('einstellungen') }" @click="navKlick">
           Einstellungen
         </router-link>
       </div>
@@ -126,9 +134,10 @@ function aemtliGruppeAktiv() {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.5rem;
-  padding: 0.5rem 0 0.85rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.35rem 1rem 0.75rem;
 }
 .nav-link {
   display: inline-flex;
@@ -152,9 +161,7 @@ function aemtliGruppeAktiv() {
   color: #fdfbf3;
   border-color: var(--color-accent);
 }
-.nav-dropdown {
-  position: relative;
-}
+.nav-dropdown { position: relative; }
 .nav-dropdown-label {
   display: inline-flex;
   align-items: center;
@@ -167,7 +174,8 @@ function aemtliGruppeAktiv() {
   border: 1px solid transparent;
 }
 .nav-dropdown:hover .nav-dropdown-label,
-.nav-dropdown.gruppe-aktiv .nav-dropdown-label {
+.nav-dropdown.gruppe-aktiv .nav-dropdown-label,
+.nav-dropdown:focus-within .nav-dropdown-label {
   color: var(--color-text);
   background: var(--color-surface-muted);
   border-color: var(--color-border);
@@ -177,7 +185,7 @@ function aemtliGruppeAktiv() {
   position: absolute;
   top: 100%;
   left: 0;
-  z-index: 20;
+  z-index: 30;
   min-width: 11rem;
   padding: 0.35rem;
   margin-top: 0.15rem;
@@ -207,4 +215,36 @@ function aemtliGruppeAktiv() {
 .nav-link.aktiv .badge { background: rgba(255, 255, 255, 0.25); }
 .badge.warn { background: #c98a3f; color: #fff; }
 .nav-link.aktiv .badge.warn { background: rgba(255, 255, 255, 0.35); color: #fff; }
+
+@media (max-width: 768px) {
+  .lager-top-nav {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+    padding-bottom: 0.85rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .lager-top-nav.mobile-open { display: flex; }
+  .nav-dropdown-label { display: none; }
+  .nav-dropdown-menu {
+    display: flex;
+    position: static;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+  .nav-dropdown::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    padding: 0.5rem 0.75rem 0.15rem;
+  }
+  .nav-link { width: 100%; }
+}
 </style>

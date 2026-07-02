@@ -401,7 +401,12 @@ async function loeschen(id: string) {
 header { margin-bottom: 1rem; }
 header h2 { margin: 0 0 0.5rem; }
 .sub-tabs { display: flex; gap: 0.4rem; }
-.sub-tabs button { font-size: 0.85rem; background: var(--color-surface); border: 1px solid var(--color-border); }
+.sub-tabs button {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
 .sub-tabs button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .einreichen-box, .kassier-box { margin-top: 1rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }

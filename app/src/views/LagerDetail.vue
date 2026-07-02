@@ -102,23 +102,14 @@ interface TeamMitglied {
   status: string
   profiles: { email: string; vorname: string | null; nachname: string | null }
 }
-interface Reminder {
-  id: string
-  titel: string
-  nachricht: string | null
-  faellig_am: string
-  status: string
-  gesendet_am: string | null
-  ziel_rolle: string | null
-  ziel_aemtli_id: string | null
-}
+const navOffen = ref(false)
 
 const route = useRoute()
 const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'reminders' | 'einstellungen' | 'quittungen' | string
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -267,9 +258,10 @@ async function tnRolleAendern(tn: TN, rolle: 'TN' | 'HL') {
 
 // --- Leiter ---
 const leiterListe = ref<LeiterAnmeldung[]>([])
-const leiterForm = ref({ vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', email: '', anwesend_von: '', anwesend_bis: '' })
+const leiterForm = ref({ vorname: '', nachname: '' })
 const leiterSpeichern = ref(false)
 const leiterFehler = ref('')
+const verknuepfManuell = ref<Record<string, string>>({})
 const aemtliListe = ref<Aemtli[]>([])
 const leiterRollenMap = ref<Record<string, LeiterRolleZuweisung[]>>({})
 const neueRolleName = ref<Record<string, string>>({})
@@ -287,9 +279,21 @@ async function leiterAnfrageBearbeiten(anmeldungId: string, entscheidung: 'geneh
   const { error: err } = await supabase.rpc('leiter_anfrage_bearbeiten', {
     p_anmeldung_id: anmeldungId,
     p_entscheidung: entscheidung,
+    p_verknuepf_mit: entscheidung === 'genehmigen' ? verknuepfManuell.value[anmeldungId] || null : null,
   })
   if (err) { leiterFehler.value = err.message; return }
+  delete verknuepfManuell.value[anmeldungId]
   await Promise.all([leiterNachAenderung(), ladeTeam()])
+}
+
+function passendeManuelleLeiter(anfrage: LeiterAnmeldung) {
+  return leiterListe.value.filter(
+    (l) =>
+      !l.profile_id
+      && (l.status === 'bestaetigt' || l.status === 'angemeldet')
+      && l.vorname.toLowerCase() === anfrage.vorname.toLowerCase()
+      && l.nachname.toLowerCase() === anfrage.nachname.toLowerCase(),
+  )
 }
 
 async function ladeAemtli() {
@@ -331,17 +335,13 @@ async function leiterHinzufuegen() {
   leiterSpeichern.value = true
   const { error: err } = await supabase.from('anmeldungen_leiter').insert({
     lager_id: lagerId.value,
-    vorname: leiterForm.value.vorname,
-    nachname: leiterForm.value.nachname,
-    geburtsdatum: leiterForm.value.geburtsdatum || null,
-    geschlecht: leiterForm.value.geschlecht || null,
-    email: leiterForm.value.email,
-    anwesend_von: leiterForm.value.anwesend_von || null,
-    anwesend_bis: leiterForm.value.anwesend_bis || null,
+    vorname: leiterForm.value.vorname.trim(),
+    nachname: leiterForm.value.nachname.trim(),
+    status: 'bestaetigt',
   })
   leiterSpeichern.value = false
   if (err) { leiterFehler.value = err.message; return }
-  leiterForm.value = { vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', email: '', anwesend_von: '', anwesend_bis: '' }
+  leiterForm.value = { vorname: '', nachname: '' }
   await leiterNachAenderung()
 }
 
@@ -632,47 +632,6 @@ async function teamEntfernen(teamId: string) {
   await ladeTeam()
 }
 
-// --- Reminders ---
-const reminders = ref<Reminder[]>([])
-const reminderForm = ref({ titel: '', nachricht: '', faellig_am: '' })
-const reminderFehler = ref('')
-const reminderSenden = ref(false)
-
-async function ladeReminders() {
-  const { data } = await supabase
-    .from('reminders')
-    .select('id, titel, nachricht, faellig_am, status, gesendet_am, ziel_rolle, ziel_aemtli_id')
-    .eq('lager_id', lagerId.value)
-    .order('faellig_am')
-  reminders.value = data ?? []
-}
-
-async function reminderErstellen() {
-  reminderFehler.value = ''
-  const { error: err } = await supabase.from('reminders').insert({
-    lager_id: lagerId.value,
-    titel: reminderForm.value.titel,
-    nachricht: reminderForm.value.nachricht || null,
-    faellig_am: reminderForm.value.faellig_am,
-  })
-  if (err) { reminderFehler.value = err.message; return }
-  reminderForm.value = { titel: '', nachricht: '', faellig_am: '' }
-  await ladeReminders()
-}
-
-async function reminderJetztSenden(reminderId?: string) {
-  reminderSenden.value = true
-  const { data, error: err } = await supabase.functions.invoke('send-reminder', {
-    body: reminderId ? { reminder_id: reminderId } : {},
-  })
-  reminderSenden.value = false
-  if (err) { reminderFehler.value = err.message; return }
-  if (data?.ergebnis?.some((r: { status: string }) => r.status === 'fehlgeschlagen')) {
-    reminderFehler.value = 'Mindestens ein Reminder konnte nicht gesendet werden.'
-  }
-  await ladeReminders()
-}
-
 // --- Einstellungen / ICS ---
 const statusSpeichern = ref(false)
 
@@ -863,44 +822,51 @@ onMounted(async () => {
     verantwortlich_zuordnungen: b.verantwortlich_zuordnungen ?? [],
   }))
   ausgewaehlterTag.value = tage.value[0] ?? null
+  loading.value = false
 
-  if (lager.value.ort_lat && lager.value.ort_lng && lager.value.start_datum && lager.value.end_datum) {
-    try {
-      wetter.value = await ladeWetter(lager.value.ort_lat, lager.value.ort_lng, lager.value.start_datum, lager.value.end_datum)
-    } catch { /* optional */ }
-  }
+  void ladeHintergrundDaten()
+})
 
+async function ladeHintergrundDaten() {
   if (session.value) {
     const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
     profil.value = p
-    await pruefeKueche()
-    await ladeMeineAemtli()
+    await Promise.all([pruefeKueche(), ladeMeineAemtli()])
   }
 
-  await Promise.all([ladeTeilnehmer(), ladeAemtli(), ladeGruppen(), ladeTeam(), ladeReminders()])
+  await Promise.all([ladeTeilnehmer(), ladeAemtli(), ladeGruppen(), ladeTeam()])
   await ladeLeiter()
   await ladeLeiterRollen()
-  await programmZuordnungenAktualisieren(true)
-  loading.value = false
-})
+}
+
+async function ladeWetterFallsNoetig() {
+  if (wetter.value.length || !lager.value) return
+  if (!lager.value.ort_lat || !lager.value.ort_lng || !lager.value.start_datum || !lager.value.end_datum) return
+  try {
+    wetter.value = await ladeWetter(lager.value.ort_lat, lager.value.ort_lng, lager.value.start_datum, lager.value.end_datum)
+  } catch { /* optional */ }
+}
 
 watch(activeTab, async (tab) => {
   if (tab === 'leiter') {
     await ladeLeiter()
     await ladeLeiterRollen()
   }
+  if (tab === 'programm') await ladeWetterFallsNoetig()
 })
 </script>
 
 <template>
-  <main class="lager-main">
-    <AppHeader :lager-name="lager?.name" />
-
-    <p v-if="loading">Lade...</p>
-    <p v-else-if="error" class="error">{{ error }}</p>
-
-    <template v-else-if="lager">
+  <div class="lager-page">
+    <div class="lager-top-full">
+      <AppHeader
+        :lager-name="lager?.name"
+        show-nav-toggle
+        :nav-open="navOffen"
+        @toggle-nav="navOffen = !navOffen"
+      />
       <LagerNav
+        v-if="lager"
         :lager-id="lagerId"
         :active-tab="activeTab"
         :meine-aemtli="meineAemtli"
@@ -909,7 +875,16 @@ watch(activeTab, async (tab) => {
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnListe.length"
         :leiter-count="leiterBestaetigt.length"
+        :mobile-open="navOffen"
+        @close="navOffen = false"
       />
+    </div>
+
+    <main class="lager-main">
+    <p v-if="loading">Lade...</p>
+    <p v-else-if="error" class="error">{{ error }}</p>
+
+    <template v-else-if="lager">
 
       <section v-if="activeTab === 'dashboard'">
         <LagerDashboard
@@ -926,7 +901,7 @@ watch(activeTab, async (tab) => {
           @block="zuBlockSpringen"
         />
         <LagerMap
-          v-if="lager.ort_lat && lager.ort_lng"
+          v-if="lager.ort || (lager.ort_lat && lager.ort_lng)"
           :lat="lager.ort_lat"
           :lng="lager.ort_lng"
           :ort="lager.ort"
@@ -1069,6 +1044,17 @@ watch(activeTab, async (tab) => {
           <div v-for="a in leiterAnfragen" :key="a.id" class="anfrage-karte">
             <strong>{{ a.vorname }} {{ a.nachname }}</strong>
             <span class="hint">{{ a.email }} · {{ a.anwesend_von ?? '?' }} – {{ a.anwesend_bis ?? '?' }}</span>
+            <div v-if="passendeManuelleLeiter(a).length" class="verknuepf-box">
+              <label>
+                Mit manuellem Eintrag verknüpfen
+                <select v-model="verknuepfManuell[a.id]">
+                  <option value="">Als neuen Leiter freischalten</option>
+                  <option v-for="m in passendeManuelleLeiter(a)" :key="m.id" :value="m.id">
+                    {{ m.vorname }} {{ m.nachname }} (manuell erfasst)
+                  </option>
+                </select>
+              </label>
+            </div>
             <div class="inline-form">
               <button @click="leiterAnfrageBearbeiten(a.id, 'genehmigen')">Freischalten</button>
               <button class="secondary" @click="leiterAnfrageBearbeiten(a.id, 'ablehnen')">Ablehnen</button>
@@ -1077,10 +1063,14 @@ watch(activeTab, async (tab) => {
         </div>
 
         <table v-if="leiterBestaetigt.length" class="liste">
-          <thead><tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Ämtli</th></tr></thead>
+          <thead><tr><th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Ämtli</th></tr></thead>
           <tbody>
             <tr v-for="l in leiterBestaetigt" :key="l.id">
               <td>{{ l.vorname }} {{ l.nachname }}</td>
+              <td>
+                <span v-if="l.profile_id" class="hint">✓</span>
+                <span v-else class="login-offen">ohne Login</span>
+              </td>
               <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
               <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
               <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
@@ -1119,14 +1109,10 @@ watch(activeTab, async (tab) => {
         </table>
         <p v-else class="hint">Noch keine Leiter.</p>
         <h3>Manuell erfassen</h3>
+        <p class="hint">Nur Name nötig. Später kann eine Bewerbung mit dem manuellen Eintrag verknüpft werden.</p>
         <form @submit.prevent="leiterHinzufuegen" class="inline-form">
           <input v-model="leiterForm.vorname" placeholder="Vorname" required />
           <input v-model="leiterForm.nachname" placeholder="Nachname" required />
-          <input v-model="leiterForm.geburtsdatum" type="date" />
-          <select v-model="leiterForm.geschlecht"><option value="">Geschlecht</option><option value="m">m</option><option value="w">w</option><option value="d">d</option></select>
-          <input v-model="leiterForm.email" type="email" placeholder="E-Mail" required />
-          <input v-model="leiterForm.anwesend_von" type="date" />
-          <input v-model="leiterForm.anwesend_bis" type="date" />
           <button type="submit" :disabled="leiterSpeichern">{{ leiterSpeichern ? 'Speichere...' : 'Hinzufügen' }}</button>
         </form>
         <p v-if="leiterFehler" class="error">{{ leiterFehler }}</p>
@@ -1264,38 +1250,6 @@ watch(activeTab, async (tab) => {
         </div>
       </section>
 
-      <!-- Reminders -->
-      <section v-if="activeTab === 'reminders'">
-        <p class="hint">
-          Erinnerungen werden per E-Mail über Resend versendet.
-          Ohne eigene Domain (onboarding@resend.dev) gehen Test-Mails nur an die E-Mail deines Resend-Accounts.
-        </p>
-        <button @click="reminderJetztSenden()" :disabled="reminderSenden">Fällige Reminder jetzt senden</button>
-
-        <table v-if="reminders.length" class="liste">
-          <thead><tr><th>Titel</th><th>Fällig</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="r in reminders" :key="r.id">
-              <td>{{ r.titel }}</td>
-              <td>{{ new Date(r.faellig_am).toLocaleString('de-CH') }}</td>
-              <td>{{ r.status }}</td>
-              <td>
-                <button v-if="r.status === 'geplant'" class="secondary klein" @click="reminderJetztSenden(r.id)" :disabled="reminderSenden">Senden</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h3>Neuer Reminder</h3>
-        <form @submit.prevent="reminderErstellen" class="reminder-form">
-          <input v-model="reminderForm.titel" placeholder="Titel" required />
-          <textarea v-model="reminderForm.nachricht" placeholder="Nachricht" rows="3"></textarea>
-          <input v-model="reminderForm.faellig_am" type="datetime-local" required />
-          <button type="submit">Reminder erstellen</button>
-        </form>
-        <p v-if="reminderFehler" class="error">{{ reminderFehler }}</p>
-      </section>
-
       <!-- Einstellungen -->
       <section v-if="activeTab === 'einstellungen'">
         <h3>Lager bearbeiten</h3>
@@ -1328,19 +1282,28 @@ watch(activeTab, async (tab) => {
         </div>
       </section>
     </template>
-  </main>
+    </main>
+  </div>
 </template>
 
 <style scoped>
-main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .hint { color: var(--color-text-muted); font-size: 0.9rem; }
 .geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
+.lager-page { min-height: 100vh; }
+.lager-top-full {
+  width: 100%;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.5rem;
+}
 .lager-main {
   max-width: 960px;
   margin: 0 auto;
   padding: 0 1rem 2rem;
 }
-.lager-titel { margin: 0; font-size: 1.5rem; }
+.login-offen { font-size: 0.78rem; color: var(--color-text-muted); font-style: italic; }
+.verknuepf-box { margin: 0.5rem 0; }
+.verknuepf-box label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .lager-meta { margin: 0.25rem 0 0; font-size: 0.88rem; color: var(--color-text-muted); text-transform: capitalize; }
 .tage { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0; }
 .tage button { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
@@ -1395,7 +1358,6 @@ main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .gruppe-karte li { padding: 0.15rem 0; display: flex; align-items: center; gap: 0.4rem; }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .freischalten-box { margin-top: 1.5rem; padding: 1rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
-.reminder-form { display: flex; flex-direction: column; gap: 0.6rem; max-width: 400px; margin-top: 1rem; }
 .link-box { display: block; background: var(--color-surface-muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; word-break: break-all; margin: 0.5rem 0 1.5rem; }
 .error { color: var(--color-danger); }
 .anfragen-box { margin-bottom: 1.25rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
