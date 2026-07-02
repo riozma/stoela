@@ -139,9 +139,8 @@ function navKlick() {
   align-items: center;
   gap: 0.25rem 0.5rem;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0.35rem 1rem 0.75rem;
+  padding: 0.35rem 1.25rem 0.75rem;
+  box-sizing: border-box;
 }
 .nav-link {
   display: inline-flex;

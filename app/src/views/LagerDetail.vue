@@ -105,6 +105,15 @@ interface TeamMitglied {
 }
 const navOffen = ref(false)
 const letzteAenderungen = ref<LagerAenderung[]>([])
+const tnNavCount = ref(0)
+const bloeckeLaden = ref(false)
+const bloeckeVollGeladen = ref(false)
+
+const BLOECKE_BASIS_SELECT = 'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich'
+const BLOECKE_VOLL_SELECT =
+  `${BLOECKE_BASIS_SELECT}, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen`
+
+const tnCountNav = computed(() => (tnListe.value.length ? tnListe.value.length : tnNavCount.value))
 
 const route = useRoute()
 const router = useRouter()
@@ -800,18 +809,110 @@ function icsExport(modus: 'ganzes' | 'eigen') {
 
 const willkommenLink = computed(() => `${window.location.origin}/lager/${lagerId.value}/willkommen`)
 
-onMounted(async () => {
+function mapBloecke(data: Record<string, unknown>[]): Block[] {
+  return data.map((b) => ({
+    ...(b as unknown as Block),
+    programmabschnitt: (b.programmabschnitt as Programmabschnitt[] | undefined) ?? [],
+    material: (b.material as MaterialItem[] | undefined) ?? [],
+    verantwortlich_zuordnungen: (b.verantwortlich_zuordnungen as NamensZuordnung[] | undefined) ?? [],
+  }))
+}
+
+async function ladeBloeckeBasis() {
+  bloeckeLaden.value = true
+  const { data, error: bErr } = await supabase
+    .from('programmbloecke')
+    .select(BLOECKE_BASIS_SELECT)
+    .eq('lager_id', lagerId.value)
+  if (!bErr && data) {
+    bloecke.value = mapBloecke(data)
+    if (!ausgewaehlterTag.value) ausgewaehlterTag.value = tage.value[0] ?? null
+  }
+  bloeckeLaden.value = false
+}
+
+async function ladeBloeckeVoll() {
+  if (bloeckeVollGeladen.value) return
+  bloeckeLaden.value = true
+  const { data, error: bErr } = await supabase
+    .from('programmbloecke')
+    .select(BLOECKE_VOLL_SELECT)
+    .eq('lager_id', lagerId.value)
+  if (!bErr && data) {
+    bloecke.value = mapBloecke(data)
+    bloeckeVollGeladen.value = true
+    if (!ausgewaehlterTag.value) ausgewaehlterTag.value = tage.value[0] ?? null
+  }
+  bloeckeLaden.value = false
+}
+
+async function ladeTnNavCount() {
+  const { count } = await supabase
+    .from('anmeldungen_tn')
+    .select('*', { count: 'exact', head: true })
+    .eq('lager_id', lagerId.value)
+  tnNavCount.value = count ?? 0
+}
+
+async function ladeLetzteAenderungenListe() {
+  letzteAenderungen.value = await ladeLetzteAenderungen(lagerId.value, 10)
+}
+
+async function ladeNavKontext() {
+  const tasks: Promise<unknown>[] = [ladeLeiter(), ladeTnNavCount()]
+  if (session.value) {
+    const uid = session.value.user.id
+    tasks.push(
+      (async () => {
+        const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', uid).single()
+        profil.value = p
+      })(),
+      pruefeKueche(),
+      ladeMeineAemtli(),
+      ladeTeam(),
+    )
+  }
+  await Promise.all(tasks)
+}
+
+async function ladeTabDaten(tab: Tab) {
+  if (tab === 'programm') {
+    await Promise.all([ladeBloeckeVoll(), ladeWetterFallsNoetig()])
+    return
+  }
+  if (tab === 'leiter') {
+    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli()])
+    return
+  }
+  if (tab === 'teilnehmer') {
+    await ladeTeilnehmer()
+    return
+  }
+  if (tab === 'gruppen') {
+    await ladeGruppen()
+    return
+  }
+  if (tab === 'dashboard') {
+    await ladeLetzteAenderungenListe()
+  }
+}
+
+async function ladeLagerSeite() {
   loading.value = true
+  error.value = ''
+  bloeckeVollGeladen.value = false
+  bloecke.value = []
+  tnNavCount.value = 0
+  wetter.value = []
 
-  const [{ data: lagerData, error: lagerError }, { data: bloeckeData, error: bloeckeError }] = await Promise.all([
-    supabase.from('lager').select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by').eq('id', lagerId.value).single(),
-    supabase.from('programmbloecke').select(
-      'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen',
-    ).eq('lager_id', lagerId.value),
-  ])
+  const { data: lagerData, error: lagerError } = await supabase
+    .from('lager')
+    .select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by')
+    .eq('id', lagerId.value)
+    .single()
 
-  if (lagerError || bloeckeError) {
-    error.value = lagerError?.message ?? bloeckeError?.message ?? 'Lager konnte nicht geladen werden.'
+  if (lagerError) {
+    error.value = lagerError.message ?? 'Lager konnte nicht geladen werden.'
     loading.value = false
     return
   }
@@ -824,31 +925,14 @@ onMounted(async () => {
     end_datum: lagerData.end_datum ?? '',
     jahr: lagerData.jahr,
   }
-  bloecke.value = (bloeckeData ?? []).map((b) => ({
-    ...b,
-    verantwortlich_zuordnungen: b.verantwortlich_zuordnungen ?? [],
-  }))
-  ausgewaehlterTag.value = tage.value[0] ?? null
   loading.value = false
 
-  void ladeHintergrundDaten()
-})
-
-async function ladeLetzteAenderungenListe() {
-  letzteAenderungen.value = await ladeLetzteAenderungen(lagerId.value, 10)
+  await Promise.all([ladeBloeckeBasis(), ladeNavKontext()])
+  await ladeTabDaten(activeTab.value)
 }
-async function ladeHintergrundDaten() {
-  if (session.value) {
-    const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
-    profil.value = p
-    await Promise.all([pruefeKueche(), ladeMeineAemtli()])
-  }
 
-  await Promise.all([ladeTeilnehmer(), ladeAemtli(), ladeGruppen(), ladeTeam()])
-  await ladeLeiter()
-  await ladeLeiterRollen()
-  await ladeLetzteAenderungenListe()
-}
+onMounted(() => { void ladeLagerSeite() })
+watch(lagerId, () => { void ladeLagerSeite() })
 
 async function ladeWetterFallsNoetig() {
   if (wetter.value.length || !lager.value) return
@@ -858,14 +942,7 @@ async function ladeWetterFallsNoetig() {
   } catch { /* optional */ }
 }
 
-watch(activeTab, async (tab) => {
-  if (tab === 'leiter') {
-    await ladeLeiter()
-    await ladeLeiterRollen()
-  }
-  if (tab === 'programm') await ladeWetterFallsNoetig()
-  if (tab === 'dashboard') await ladeLetzteAenderungenListe()
-})
+watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 </script>
 
 <template>
@@ -886,7 +963,7 @@ watch(activeTab, async (tab) => {
         :is-leitung="isLeitung"
         :hat-kueche-tab="hatKuecheTab"
         :leiter-anfragen="leiterAnfragen.length"
-        :tn-count="tnListe.length"
+        :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length"
         :mobile-open="navOffen"
         @close="navOffen = false"
@@ -924,6 +1001,8 @@ watch(activeTab, async (tab) => {
 
       <!-- Programm (nur Leiterteam) -->
       <section v-if="activeTab === 'programm'">
+        <p v-if="bloeckeLaden && !bloeckeVollGeladen" class="hint">Lade Programmdetails…</p>
+
         <div v-if="wetter.length" class="wetter-banner">
           <span v-for="w in wetter.slice(0, 5)" :key="w.datum" class="wetter-tag">
             {{ formatTag(w.datum) }}: {{ w.beschreibung }} {{ w.tempMin }}–{{ w.tempMax }}°
@@ -1305,10 +1384,14 @@ watch(activeTab, async (tab) => {
 .geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
 .lager-page { min-height: 100vh; }
 .lager-top-full {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   width: 100%;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 0.5rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 .lager-main {
   max-width: 960px;

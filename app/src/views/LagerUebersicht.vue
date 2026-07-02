@@ -270,10 +270,14 @@ onMounted(ladeLager)
 <style scoped>
 .uebersicht-page { min-height: 100vh; }
 .top-full {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   width: 100%;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 1rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 main {
   max-width: 960px;

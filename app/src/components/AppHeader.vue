@@ -82,9 +82,8 @@ async function logout() {
   justify-content: space-between;
   gap: 1rem;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0.65rem 1rem;
+  padding: 0.65rem 1.25rem;
+  box-sizing: border-box;
 }
 .app-header-left {
   display: flex;
