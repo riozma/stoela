@@ -261,7 +261,7 @@ async function importieren() {
   }
 
   status.value = 'fertig'
-  router.push(`/lager/${neuesLager.id}`)
+  router.push(`/lager/${neuesLager.id}/dashboard`)
 }
 </script>
 

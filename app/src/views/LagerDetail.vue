@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { generateIcs, downloadIcs } from '../lib/ics'
@@ -14,6 +14,7 @@ import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerNav from '../components/lager/LagerNav.vue'
+import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
 import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
@@ -113,11 +114,16 @@ interface Reminder {
 }
 
 const route = useRoute()
+const router = useRouter()
 const { session } = useAuth()
-const lagerId = route.params.id as string
+const lagerId = computed(() => route.params.id as string)
 
 type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'reminders' | 'einstellungen' | 'quittungen' | string
-const activeTab = ref<Tab>('dashboard')
+
+const activeTab = computed<Tab>(() => {
+  if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
+  return (route.params.section as string) || 'dashboard'
+})
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
 const istKueche = ref(false)
 const meineAemtli = ref<Aemtli[]>([])
@@ -225,7 +231,7 @@ async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
     .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status')
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
     .order('nachname')
   tnListe.value = data ?? []
 }
@@ -234,7 +240,7 @@ async function tnHinzufuegen() {
   tnFehler.value = ''
   tnSpeichern.value = true
   const { error: err } = await supabase.from('anmeldungen_tn').insert({
-    lager_id: lagerId,
+    lager_id: lagerId.value,
     vorname: tnForm.value.vorname,
     nachname: tnForm.value.nachname,
     geburtsdatum: tnForm.value.geburtsdatum,
@@ -272,7 +278,7 @@ async function ladeLeiter() {
   const { data } = await supabase
     .from('anmeldungen_leiter')
     .select('id, profile_id, vorname, nachname, email, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status')
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
 }
@@ -324,7 +330,7 @@ async function leiterHinzufuegen() {
   leiterFehler.value = ''
   leiterSpeichern.value = true
   const { error: err } = await supabase.from('anmeldungen_leiter').insert({
-    lager_id: lagerId,
+    lager_id: lagerId.value,
     vorname: leiterForm.value.vorname,
     nachname: leiterForm.value.nachname,
     geburtsdatum: leiterForm.value.geburtsdatum || null,
@@ -425,7 +431,7 @@ async function ladeGruppen() {
          anmeldungen_leiter ( vorname, nachname, geschlecht )
        )`,
     )
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
     .order('name')
 
   gruppenListe.value = (data ?? []).map((g: any) => ({
@@ -500,7 +506,7 @@ async function gruppenAutomatischBilden() {
   for (let i = 0; i < anzahl; i++) {
     const { data: neueGruppe, error: err } = await supabase
       .from('lagergruppen')
-      .insert({ lager_id: lagerId, name: `Gruppe ${i + 1}` })
+      .insert({ lager_id: lagerId.value, name: `Gruppe ${i + 1}` })
       .select('id')
       .single()
     if (err || !neueGruppe) { gruppenFehler.value = err?.message ?? 'Fehler'; continue }
@@ -518,7 +524,7 @@ async function gruppenAutomatischBilden() {
 async function gruppeManuellErstellen() {
   gruppenFehler.value = ''
   const name = neueGruppeName.value.trim() || `Gruppe ${gruppenListe.value.length + 1}`
-  const { error: err } = await supabase.from('lagergruppen').insert({ lager_id: lagerId, name })
+  const { error: err } = await supabase.from('lagergruppen').insert({ lager_id: lagerId.value, name })
   if (err) { gruppenFehler.value = err.message; return }
   neueGruppeName.value = ''
   await ladeGruppen()
@@ -600,7 +606,7 @@ async function ladeTeam() {
   const { data } = await supabase
     .from('lager_leiter')
     .select('id, profile_id, rolle, status, profiles(email, vorname, nachname)')
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
   teamListe.value = (data ?? []).map((row: any) => ({
     ...row,
     profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
@@ -611,7 +617,7 @@ async function teamFreischalten() {
   freischaltFehler.value = ''
   freischaltNachricht.value = ''
   const { error: err } = await supabase.rpc('freischalten_teammitglied', {
-    p_lager_id: lagerId,
+    p_lager_id: lagerId.value,
     p_email: freischaltEmail.value.trim(),
     p_rolle: 'leiter',
   })
@@ -636,7 +642,7 @@ async function ladeReminders() {
   const { data } = await supabase
     .from('reminders')
     .select('id, titel, nachricht, faellig_am, status, gesendet_am, ziel_rolle, ziel_aemtli_id')
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
     .order('faellig_am')
   reminders.value = data ?? []
 }
@@ -644,7 +650,7 @@ async function ladeReminders() {
 async function reminderErstellen() {
   reminderFehler.value = ''
   const { error: err } = await supabase.from('reminders').insert({
-    lager_id: lagerId,
+    lager_id: lagerId.value,
     titel: reminderForm.value.titel,
     nachricht: reminderForm.value.nachricht || null,
     faellig_am: reminderForm.value.faellig_am,
@@ -672,7 +678,7 @@ const statusSpeichern = ref(false)
 
 async function statusAendern(neuerStatus: string) {
   statusSpeichern.value = true
-  await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId)
+  await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId.value)
   if (lager.value) lager.value.status = neuerStatus
   statusSpeichern.value = false
 }
@@ -686,7 +692,7 @@ async function lagerSpeichernFn() {
     start_datum: lagerForm.value.start_datum || null,
     end_datum: lagerForm.value.end_datum || null,
     jahr: lagerForm.value.jahr,
-  }).eq('id', lagerId)
+  }).eq('id', lagerId.value)
   lagerSpeichern.value = false
   if (!err && lager.value) {
     Object.assign(lager.value, lagerForm.value)
@@ -699,12 +705,12 @@ function zuBlockSpringen(blockId: string) {
     ausgewaehlterTag.value = block.tag
     offenerBlock.value = blockId
   }
-  activeTab.value = 'programm'
+  router.push(`/lager/${lagerId.value}/programm`)
 }
 
 async function pruefeKueche() {
   if (!session.value) return
-  const { data: kue } = await supabase.rpc('is_kueche', { p_lager_id: lagerId })
+  const { data: kue } = await supabase.rpc('is_kueche', { p_lager_id: lagerId.value })
   istKueche.value = !!kue
 }
 
@@ -715,7 +721,7 @@ async function ladeMeineAemtli() {
   const { data: meineLeiter } = await supabase
     .from('anmeldungen_leiter')
     .select('id')
-    .eq('lager_id', lagerId)
+    .eq('lager_id', lagerId.value)
     .eq('status', 'bestaetigt')
     .ilike('email', email)
 
@@ -749,11 +755,15 @@ function zuHoeckImProgramm() {
   const tag = morgen.toISOString().slice(0, 10)
   if (tage.value.includes(tag)) ausgewaehlterTag.value = tag
   else if (tage.value.length) ausgewaehlterTag.value = tage.value[0]
-  activeTab.value = 'programm'
+  router.push(`/lager/${lagerId.value}/programm`)
 }
 
 function tabWechseln(tab: Tab) {
-  activeTab.value = tab
+  if (tab.startsWith('aemtli:')) {
+    router.push(`/lager/${lagerId.value}/aemtli/${tab.slice(7)}`)
+    return
+  }
+  router.push(`/lager/${lagerId.value}/${tab}`)
 }
 
 function leiterFuerMatching() {
@@ -799,10 +809,10 @@ function formatAbschnittVerantwortlich(a: Programmabschnitt): string {
 async function programmZuordnungenAktualisieren(silent = false) {
   zuordnungLade.value = true
   if (!silent) zuordnungNachricht.value = ''
-  await synchronisiereProgrammZuordnungen(lagerId)
+  await synchronisiereProgrammZuordnungen(lagerId.value)
   const { data: bloeckeData } = await supabase.from('programmbloecke').select(
     'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen',
-  ).eq('lager_id', lagerId)
+  ).eq('lager_id', lagerId.value)
   bloecke.value = (bloeckeData ?? []).map((b) => ({
     ...b,
     verantwortlich_zuordnungen: b.verantwortlich_zuordnungen ?? [],
@@ -822,16 +832,16 @@ function icsExport(modus: 'ganzes' | 'eigen') {
   downloadIcs(`${lager.value.name}-${suffix}.ics`, ics)
 }
 
-const willkommenLink = computed(() => `${window.location.origin}/lager/${lagerId}/willkommen`)
+const willkommenLink = computed(() => `${window.location.origin}/lager/${lagerId.value}/willkommen`)
 
 onMounted(async () => {
   loading.value = true
 
   const [{ data: lagerData, error: lagerError }, { data: bloeckeData, error: bloeckeError }] = await Promise.all([
-    supabase.from('lager').select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by').eq('id', lagerId).single(),
+    supabase.from('lager').select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by').eq('id', lagerId.value).single(),
     supabase.from('programmbloecke').select(
       'id, code, nummer, titel, tag, start_zeit, end_zeit, ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt, material, notizen, verantwortlich_zuordnungen',
-    ).eq('lager_id', lagerId),
+    ).eq('lager_id', lagerId.value),
   ])
 
   if (lagerError || bloeckeError) {
@@ -883,21 +893,15 @@ watch(activeTab, async (tab) => {
 </script>
 
 <template>
-  <main>
-    <p><router-link to="/lager">← Zurück zur Übersicht</router-link></p>
+  <main class="lager-main">
+    <AppHeader :lager-name="lager?.name" />
 
     <p v-if="loading">Lade...</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="lager">
-      <header class="lager-header">
-        <div>
-          <h1 class="lager-titel">{{ lager.name }}</h1>
-          <p class="lager-meta">{{ lager.jahr }} · {{ lager.status.replace('_', ' ') }}</p>
-        </div>
-      </header>
-
       <LagerNav
+        :lager-id="lagerId"
         :active-tab="activeTab"
         :meine-aemtli="meineAemtli"
         :is-leitung="isLeitung"
@@ -905,7 +909,6 @@ watch(activeTab, async (tab) => {
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnListe.length"
         :leiter-count="leiterBestaetigt.length"
-        @navigate="tabWechseln($event as Tab)"
       />
 
       <section v-if="activeTab === 'dashboard'">
@@ -1332,7 +1335,11 @@ watch(activeTab, async (tab) => {
 main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .hint { color: var(--color-text-muted); font-size: 0.9rem; }
 .geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
-.lager-header { margin-bottom: 0.5rem; }
+.lager-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem 2rem;
+}
 .lager-titel { margin: 0; font-size: 1.5rem; }
 .lager-meta { margin: 0.25rem 0 0; font-size: 0.88rem; color: var(--color-text-muted); text-transform: capitalize; }
 .tage { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0; }

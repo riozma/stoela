@@ -109,7 +109,7 @@ async function absenden() {
     </template>
 
     <template v-else-if="bestehendeAnfrage === 'bestaetigt'">
-      <p>Du bist freigeschaltet! <router-link :to="`/lager/${lagerId}`">Zum Lager</router-link></p>
+      <p>Du bist freigeschaltet! <router-link :to="`/lager/${lagerId}/dashboard`">Zum Lager</router-link></p>
     </template>
 
     <template v-else-if="!gesendet">

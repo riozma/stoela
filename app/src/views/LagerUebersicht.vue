@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
+import AppHeader from '../components/AppHeader.vue'
 
 interface Lager {
   id: string
@@ -15,13 +16,8 @@ interface Lager {
   status: string
 }
 
-const { session, signOut, setPassword } = useAuth()
+const { session, setPassword } = useAuth()
 const router = useRouter()
-
-async function logout() {
-  await signOut()
-  await router.push('/login')
-}
 
 const kontoOffen = ref(false)
 const neuesPasswort = ref('')
@@ -135,7 +131,7 @@ async function ladeLager() {
     return true
   })
   if (kommende.length === 1) {
-    await router.replace(`/lager/${kommende[0].id}`)
+    await router.replace(`/lager/${kommende[0].id}/dashboard`)
   }
 }
 
@@ -192,14 +188,7 @@ onMounted(ladeLager)
 
 <template>
   <main>
-    <header>
-      <h1>Stöckli Lager</h1>
-      <div class="user">
-        <span>{{ session?.user.email }}</span>
-        <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
-        <button class="secondary" @click="logout">Logout</button>
-      </div>
-    </header>
+    <AppHeader :show-alle-lager="false" />
 
     <section v-if="kontoOffen">
       <h2>Konto</h2>
@@ -217,7 +206,10 @@ onMounted(ladeLager)
     </section>
 
     <section>
-      <h2>Deine Lager</h2>
+      <div class="section-kopf">
+        <h2>Deine Lager</h2>
+        <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
+      </div>
       <p class="hint">Klicke auf ein Lager, um Programm, Leiter, Gruppen und Ämtli zu verwalten.</p>
       <p v-if="loading">Lade...</p>
       <div v-else-if="lager.length" class="lager-karten">
@@ -225,7 +217,7 @@ onMounted(ladeLager)
           v-for="l in lager"
           :key="l.id"
           class="lager-karte"
-          @click="router.push(`/lager/${l.id}`)"
+          @click="router.push(`/lager/${l.id}/dashboard`)"
         >
           <strong>{{ l.name }}</strong>
           <span class="meta">{{ l.jahr }} · {{ l.status.replace('_', ' ') }}</span>
@@ -273,22 +265,18 @@ onMounted(ladeLager)
 
 <style scoped>
 main {
-  max-width: 760px;
-  margin: 2rem auto;
-  padding: 0 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem 2rem;
 }
-header {
+.section-kopf {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
 }
-.user {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  font-size: 0.9rem;
-}
+.section-kopf h2 { margin: 0; }
 form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

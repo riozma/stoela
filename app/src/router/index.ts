@@ -18,7 +18,22 @@ const router = createRouter({
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
     { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter, meta: { requiresAuth: true } },
-    { path: '/lager/:id', name: 'lager-detail', component: LagerDetail, meta: { requiresAuth: true } },
+    {
+      path: '/lager/:id',
+      redirect: (to) => ({ path: `/lager/${to.params.id}/dashboard` }),
+    },
+    {
+      path: '/lager/:id/aemtli/:aemtliSlug',
+      name: 'lager-aemtli',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lager/:id/:section',
+      name: 'lager-section',
+      component: LagerDetail,
+      meta: { requiresAuth: true },
+    },
   ],
 })
 
