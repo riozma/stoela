@@ -11,14 +11,13 @@ on:
 permissions:
   contents: write
   pages: write
-  id-token: write
 
 concurrency:
   group: pages-production
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,45 +41,21 @@ jobs:
       - name: Copy CNAME
         run: cp CNAME app/dist/CNAME
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: app/dist
+      # Pages-Quelle auf gh-pages umstellen (deploy-pages API hängt sonst ewig in Queue)
+      - name: Pages-Quelle auf gh-pages setzen
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pages" -X PUT \
+            -f build_type=legacy \
+            -f 'source[branch]=gh-pages' \
+            -f 'source[path]=/'
 
-      - uses: actions/upload-artifact@v4
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          name: dist
-          path: app/dist
-          retention-days: 1
-
-  # Aktualisiert app.stoecklilager.com (Pages-Quelle: GitHub Actions)
-  deploy-workflow:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy via Pages API
-        id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          timeout: '1800000'
-
-  # Backup auf gh-pages Branch (falls Pages-Quelle auf Branch umgestellt wird)
-  deploy-branch:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - name: Push to gh-pages branch
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: dist
-          branch: gh-pages
-          clean: true
-          single-commit: true
+          github_token: ${{ github.token }}
+          publish_dir: ./app/dist
+          publish_branch: gh-pages
+          cname: app.stoecklilager.com
