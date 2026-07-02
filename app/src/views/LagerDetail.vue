@@ -790,7 +790,10 @@ onMounted(async () => {
 
       <!-- Reminders -->
       <section v-if="activeTab === 'reminders'">
-        <p class="hint">Erinnerungen werden per E-Mail über Resend versendet.</p>
+        <p class="hint">
+          Erinnerungen werden per E-Mail über Resend versendet.
+          Ohne eigene Domain (onboarding@resend.dev) gehen Test-Mails nur an die E-Mail deines Resend-Accounts.
+        </p>
         <button @click="reminderJetztSenden()" :disabled="reminderSenden">Fällige Reminder jetzt senden</button>
 
         <table v-if="reminders.length" class="liste">

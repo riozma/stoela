@@ -88,7 +88,12 @@ async function sendViaResend(to: string[], subject: string, html: string) {
   })
   if (!response.ok) {
     const detail = await response.text()
-    throw new Error(`Resend Fehler: ${detail}`)
+    const ohneDomain = detail.includes('resend.dev') || response.status === 403
+    throw new Error(
+      ohneDomain
+        ? 'Resend Test-Modus: mit onboarding@resend.dev gehen Mails nur an deine Resend-Account-E-Mail. Für echte Empfänger brauchst du eine verifizierte Domain.'
+        : `Resend Fehler: ${detail}`,
+    )
   }
 }
 

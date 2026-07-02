@@ -37,7 +37,11 @@ supabase functions deploy send-reminder
 |---|---|
 | `GEMINI_API_KEY` | `parse-lager-pdf` |
 | `RESEND_API_KEY` | `send-reminder` |
-| `RESEND_FROM` | `send-reminder` (z.B. `Stöckli Lager <lager@stoecklilager.com>`) |
+| `RESEND_FROM` | optional; Default `Stöckli Lager <onboarding@resend.dev>` (nur Test an eigene Resend-E-Mail) |
+
+Ohne verifizierte Domain kannst du trotzdem testen: `RESEND_API_KEY` reicht, `RESEND_FROM` weglassen oder auf `onboarding@resend.dev` lassen. Echte Reminder an Leiter brauchen später eine Domain bei [resend.com/domains](https://resend.com/domains).
+
+Siehe auch `supabase/DEPLOY.md` für den kompletten Deploy nach Org-Wechsel.
 
 ### Zugriffskontrolle
 
