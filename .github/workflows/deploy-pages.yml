@@ -13,29 +13,36 @@ permissions:
   pages: write
   id-token: write
 
+# Nie abbrechen: schnelle Pushes haben Deployments in deployment_queued gekillt.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-production
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - run: npm ci
+
+      - name: Install & build
         working-directory: app
-      - run: npm run build
-        working-directory: app
+        run: |
+          npm ci
+          npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
-      - run: cp CNAME app/dist/CNAME
+
+      - name: Copy CNAME
+        run: cp CNAME app/dist/CNAME
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: app/dist
@@ -43,11 +50,14 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
-        timeout-minutes: 15
+        with:
+          # Default ist 600000 (10 Min.) – zu kurz wenn Pages-Queue voll ist
+          timeout: 1800000
