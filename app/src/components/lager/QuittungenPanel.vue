@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '../../supabaseClient'
 
 interface Iban {
@@ -40,7 +40,11 @@ const ibans = ref<Iban[]>([])
 const fehler = ref('')
 const nachricht = ref('')
 const speichern = ref(false)
-const ansicht = ref<'meine' | 'kassier'>(props.istKassier ? 'kassier' : 'meine')
+const ansicht = ref<'meine' | 'kassier'>('meine')
+
+watch(() => props.istKassier, (k) => {
+  if (!k) ansicht.value = 'meine'
+}, { immediate: true })
 
 const form = ref({
   betrag: '',
@@ -272,11 +276,12 @@ async function loeschen(id: string) {
 <template>
   <section class="quittungen">
     <header>
-      <h2>Quittungen</h2>
+      <h2>{{ istKassier ? 'Quittungen' : 'Quittungen einreichen' }}</h2>
       <nav v-if="istKassier" class="sub-tabs">
         <button :class="{ aktiv: ansicht === 'meine' }" @click="ansicht = 'meine'">Meine Einreichungen</button>
         <button :class="{ aktiv: ansicht === 'kassier' }" @click="ansicht = 'kassier'">Kassier-Übersicht</button>
       </nav>
+      <p v-else class="hint">Hier kannst du Auslagen einreichen. Die Kassier-Übersicht sehen nur Personen mit dem Finanzen-Ämtli.</p>
     </header>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>

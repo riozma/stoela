@@ -13,7 +13,9 @@ import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
+import LagerNav from '../components/lager/LagerNav.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
+import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import { aemtliName, leiterName, type MaterialMitZuordnung, type NamensZuordnung, type ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 
@@ -118,8 +120,15 @@ type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'ein
 const activeTab = ref<Tab>('dashboard')
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
 const istKueche = ref(false)
-const istFinanzen = ref(false)
 const meineAemtli = ref<Aemtli[]>([])
+
+/** Nur echtes Finanzen-Ämtli – Lagerleitung allein zählt nicht als Kassier */
+const hatFinanzenAemtli = computed(() =>
+  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'finanzen'),
+)
+const hatKuecheTab = computed(() =>
+  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kueche'),
+)
 const zuordnungLade = ref(false)
 const zuordnungNachricht = ref('')
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
@@ -332,15 +341,43 @@ async function leiterHinzufuegen() {
 
 async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
   if (!aemtliId) return
-  await supabase.from('leiter_rollen').insert({ anmeldung_leiter_id: anmeldungLeiterId, aemtli_id: aemtliId })
+  leiterFehler.value = ''
+  const aemtli = aemtliListe.value.find((a) => a.id === aemtliId)
+  if (aemtli && istGeschuetztesAemtli(aemtli.name) && !isLeitung.value) {
+    leiterFehler.value = `Nur die Lagerleitung kann «${aemtli.name}» zuweisen.`
+    return
+  }
+  const { error: err } = await supabase.from('leiter_rollen').insert({ anmeldung_leiter_id: anmeldungLeiterId, aemtli_id: aemtliId })
+  if (err) { leiterFehler.value = err.message; return }
   await ladeLeiterRollen()
   await ladeMeineAemtli()
   await programmZuordnungenAktualisieren(true)
 }
 
+function zuweisbareAemtli(leiterId: string) {
+  const zugewiesen = new Set((leiterRollenMap.value[leiterId] ?? []).map((r) => r.id))
+  return aemtliListe.value.filter((a) => {
+    if (zugewiesen.has(a.id)) return false
+    if (istGeschuetztesAemtli(a.name) && !isLeitung.value) return false
+    return true
+  })
+}
+
 async function neueRolleErstellen(anmeldungLeiterId: string) {
   const name = (neueRolleName.value[anmeldungLeiterId] ?? '').trim()
   if (!name) return
+  if (istGeschuetztesAemtli(name) && !isLeitung.value) {
+    leiterFehler.value = `Das Ämtli «${name}» kann nur die Lagerleitung vergeben.`
+    return
+  }
+  if ((GESCHUETZTE_AEMTLI as readonly string[]).includes(name)) {
+    const existing = aemtliListe.value.find((a) => a.name === name)
+    if (existing) {
+      neueRolleName.value[anmeldungLeiterId] = ''
+      await rolleZuweisen(anmeldungLeiterId, existing.id)
+      return
+    }
+  }
   const { data, error: err } = await supabase.from('aemtli').insert({ name }).select('id, name').single()
   if (err || !data) return
   aemtliListe.value.push(data)
@@ -491,12 +528,43 @@ async function gruppeUmbenennen(gruppeId: string, neuerName: string) {
 
 async function mitgliedZuGruppeHinzufuegen(gruppeId: string, typ: 'tn' | 'leiter', anmeldungId: string) {
   if (!anmeldungId) return
+  gruppenFehler.value = ''
   if (typ === 'tn') {
-    await supabase.from('gruppen_mitglieder').insert({ lagergruppe_id: gruppeId, anmeldung_tn_id: anmeldungId })
+    await supabase.from('gruppen_mitglieder').delete().eq('anmeldung_tn_id', anmeldungId)
+    const { error: err } = await supabase.from('gruppen_mitglieder').insert({ lagergruppe_id: gruppeId, anmeldung_tn_id: anmeldungId })
+    if (err) { gruppenFehler.value = err.message; return }
   } else {
-    await supabase.from('gruppen_mitglieder').insert({ lagergruppe_id: gruppeId, anmeldung_leiter_id: anmeldungId })
+    await supabase.from('gruppen_mitglieder').delete().eq('anmeldung_leiter_id', anmeldungId)
+    const { error: err } = await supabase.from('gruppen_mitglieder').insert({ lagergruppe_id: gruppeId, anmeldung_leiter_id: anmeldungId })
+    if (err) { gruppenFehler.value = err.message; return }
   }
   await ladeGruppen()
+}
+
+function tnGruppenLabel(tnId: string, aktuelleGruppeId: string): string {
+  for (const g of gruppenListe.value) {
+    if (g.id === aktuelleGruppeId) continue
+    if (g.mitglieder.some((m) => m.typ === 'tn' && m.anmeldungId === tnId)) return ` (${g.name})`
+  }
+  return ''
+}
+
+function leiterGruppenLabel(leiterId: string, aktuelleGruppeId: string): string {
+  for (const g of gruppenListe.value) {
+    if (g.id === aktuelleGruppeId) continue
+    if (g.mitglieder.some((m) => m.typ === 'leiter' && m.anmeldungId === leiterId)) return ` (${g.name})`
+  }
+  return ''
+}
+
+function tnInGruppe(tnId: string, gruppeId: string) {
+  const g = gruppenListe.value.find((x) => x.id === gruppeId)
+  return g?.mitglieder.some((m) => m.typ === 'tn' && m.anmeldungId === tnId) ?? false
+}
+
+function leiterInGruppe(leiterId: string, gruppeId: string) {
+  const g = gruppenListe.value.find((x) => x.id === gruppeId)
+  return g?.mitglieder.some((m) => m.typ === 'leiter' && m.anmeldungId === leiterId) ?? false
 }
 
 async function mitgliedEntfernen(mitgliedId: string) {
@@ -623,12 +691,8 @@ function zuBlockSpringen(blockId: string) {
 
 async function pruefeKueche() {
   if (!session.value) return
-  const [{ data: kue }, { data: fin }] = await Promise.all([
-    supabase.rpc('is_kueche', { p_lager_id: lagerId }),
-    supabase.rpc('hat_aemtli', { p_lager_id: lagerId, p_name: 'Finanzen' }),
-  ])
+  const { data: kue } = await supabase.rpc('is_kueche', { p_lager_id: lagerId })
   istKueche.value = !!kue
-  istFinanzen.value = !!fin
 }
 
 async function ladeMeineAemtli() {
@@ -816,26 +880,23 @@ onMounted(async () => {
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="lager">
-      <nav class="tabs">
-        <button :class="{ aktiv: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
-        <button :class="{ aktiv: activeTab === 'programm' }" @click="activeTab = 'programm'">Programm</button>
-        <button :class="{ aktiv: activeTab === 'teilnehmer' }" @click="activeTab = 'teilnehmer'">TN ({{ tnListe.length }})</button>
-        <button :class="{ aktiv: activeTab === 'leiter' }" @click="activeTab = 'leiter'">Leiter ({{ leiterBestaetigt.length }})</button>
-        <button :class="{ aktiv: activeTab === 'gruppen' }" @click="activeTab = 'gruppen'">Gruppen</button>
-        <button :class="{ aktiv: activeTab === 'einkauf' }" @click="activeTab = 'einkauf'">Einkauf</button>
-        <button
-          v-for="a in meineAemtli"
-          :key="a.id"
-          :class="{ aktiv: activeTab === tabIdForAemtli(a.name) }"
-          @click="activeTab = tabIdForAemtli(a.name)"
-        >
-          {{ a.name }}
-        </button>
-        <button :class="{ aktiv: activeTab === 'quittungen' }" @click="activeTab = 'quittungen'">Quittungen</button>
-        <button :class="{ aktiv: activeTab === 'team' }" @click="activeTab = 'team'">Team</button>
-        <button :class="{ aktiv: activeTab === 'reminders' }" @click="activeTab = 'reminders'">Reminder</button>
-        <button :class="{ aktiv: activeTab === 'einstellungen' }" @click="activeTab = 'einstellungen'">Einstellungen</button>
-      </nav>
+      <header class="lager-header">
+        <div>
+          <h1 class="lager-titel">{{ lager.name }}</h1>
+          <p class="lager-meta">{{ lager.jahr }} · {{ lager.status.replace('_', ' ') }}</p>
+        </div>
+      </header>
+
+      <LagerNav
+        :active-tab="activeTab"
+        :meine-aemtli="meineAemtli"
+        :is-leitung="isLeitung"
+        :hat-kueche-tab="hatKuecheTab"
+        :leiter-anfragen="leiterAnfragen.length"
+        :tn-count="tnListe.length"
+        :leiter-count="leiterBestaetigt.length"
+        @navigate="tabWechseln($event as Tab)"
+      />
 
       <section v-if="activeTab === 'dashboard'">
         <LagerDashboard
@@ -844,6 +905,9 @@ onMounted(async () => {
           :user-name="userName"
           :ist-anwesend="istAnwesend"
           :bearbeiten="true"
+          :hat-kueche-tab="hatKuecheTab"
+          :is-leitung="isLeitung"
+          :leiter-anfragen="leiterAnfragen.length"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
@@ -980,8 +1044,11 @@ onMounted(async () => {
       <!-- Leiter -->
       <section v-if="activeTab === 'leiter'">
         <p class="hint">
-          Bewerbungs-Link (Login nötig):
+          Leiterbewerbung:
           <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
+        </p>
+        <p v-if="isLeitung" class="hint geschuetzt-hinweis">
+          Nur die Lagerleitung kann die Ämtli <strong>Küche</strong> und <strong>Finanzen</strong> zuweisen.
         </p>
 
         <div v-if="leiterAnfragen.length && isLeitung" class="anfragen-box">
@@ -1015,11 +1082,20 @@ onMounted(async () => {
                     @click="rolleEntfernen(r.zuweisungId)"
                   >×</button>
                 </span>
-                <select @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-                  <option value="">+ Rolle</option>
-                  <option v-for="a in aemtliListe" :key="a.id" :value="a.id">{{ a.name }}</option>
+                <select
+                  v-if="zuweisbareAemtli(l.id).length"
+                  @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
+                >
+                  <option value="">+ Ämtli</option>
+                  <option v-for="a in zuweisbareAemtli(l.id)" :key="a.id" :value="a.id">{{ a.name }}</option>
                 </select>
-                <input v-model="neueRolleName[l.id]" placeholder="neue Rolle..." class="neue-rolle-input" @keyup.enter="neueRolleErstellen(l.id)" />
+                <input
+                  v-if="isLeitung"
+                  v-model="neueRolleName[l.id]"
+                  placeholder="neues Ämtli..."
+                  class="neue-rolle-input"
+                  @keyup.enter="neueRolleErstellen(l.id)"
+                />
               </td>
             </tr>
           </tbody>
@@ -1041,6 +1117,8 @@ onMounted(async () => {
 
       <!-- Gruppen -->
       <section v-if="activeTab === 'gruppen'">
+        <p class="hint">Jede Person kann höchstens in <strong>einer</strong> Gruppe sein. Beim Zuweisen zu einer neuen Gruppe wird die alte automatisch ersetzt.</p>
+
         <h3>Automatisch verteilen</h3>
         <div class="inline-form">
           <label>Anzahl Gruppen <input v-model.number="anzahlGruppenInput" type="number" min="1" max="20" /></label>
@@ -1069,12 +1147,24 @@ onMounted(async () => {
             </ul>
             <div class="inline-form">
               <select @change="mitgliedZuGruppeHinzufuegen(g.id, 'tn', ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-                <option value="">+ TN</option>
-                <option v-for="tn in tnListe" :key="tn.id" :value="tn.id">{{ tn.vorname }} {{ tn.nachname }}</option>
+                <option value="">+ TN hinzufügen</option>
+                <option
+                  v-for="tn in tnListe.filter((t) => !tnInGruppe(t.id, g.id))"
+                  :key="tn.id"
+                  :value="tn.id"
+                >
+                  {{ tn.vorname }} {{ tn.nachname }}{{ tnGruppenLabel(tn.id, g.id) }}
+                </option>
               </select>
               <select @change="mitgliedZuGruppeHinzufuegen(g.id, 'leiter', ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-                <option value="">+ Leiter</option>
-                <option v-for="l in leiterListe" :key="l.id" :value="l.id">{{ l.vorname }} {{ l.nachname }}</option>
+                <option value="">+ Leiter hinzufügen</option>
+                <option
+                  v-for="l in leiterListe.filter((x) => !leiterInGruppe(x.id, g.id))"
+                  :key="l.id"
+                  :value="l.id"
+                >
+                  {{ l.vorname }} {{ l.nachname }}{{ leiterGruppenLabel(l.id, g.id) }}
+                </option>
               </select>
               <button class="secondary klein" @click="gruppeLoeschen(g.id)">Gruppe löschen</button>
             </div>
@@ -1110,7 +1200,7 @@ onMounted(async () => {
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId"
           :aemtli-id="a.id"
-          :ist-kassier="istFinanzen"
+          :ist-kassier="hatFinanzenAemtli"
         />
         <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
       </section>
@@ -1120,7 +1210,7 @@ onMounted(async () => {
         <QuittungenPanel
           :lager-id="lagerId"
           :user-id="session.user.id"
-          :ist-kassier="istFinanzen"
+          :ist-kassier="hatFinanzenAemtli"
         />
       </section>
 
@@ -1224,9 +1314,10 @@ onMounted(async () => {
 <style scoped>
 main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
 .hint { color: var(--color-text-muted); font-size: 0.9rem; }
-.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0; border-bottom: 1px solid var(--color-border); padding-bottom: 0.75rem; }
-.tabs button { background: none; color: var(--color-text-muted); border: 1px solid var(--color-border); font-size: 0.85rem; padding: 0.4rem 0.75rem; }
-.tabs button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
+.geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
+.lager-header { margin-bottom: 0.5rem; }
+.lager-titel { margin: 0; font-size: 1.5rem; }
+.lager-meta { margin: 0.25rem 0 0; font-size: 0.88rem; color: var(--color-text-muted); text-transform: capitalize; }
 .tage { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0; }
 .tage button { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
 .tage button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }

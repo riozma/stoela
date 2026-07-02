@@ -176,7 +176,27 @@ onMounted(ladeLager)
     </section>
 
     <section>
-      <h2>Neues Lager erstellen</h2>
+      <h2>Deine Lager</h2>
+      <p class="hint">Klicke auf ein Lager, um Programm, Leiter, Gruppen und Ämtli zu verwalten.</p>
+      <p v-if="loading">Lade...</p>
+      <div v-else-if="lager.length" class="lager-karten">
+        <article
+          v-for="l in lager"
+          :key="l.id"
+          class="lager-karte"
+          @click="router.push(`/lager/${l.id}`)"
+        >
+          <strong>{{ l.name }}</strong>
+          <span class="meta">{{ l.jahr }} · {{ l.status.replace('_', ' ') }}</span>
+          <span v-if="l.ort" class="meta">{{ l.ort }}</span>
+          <span v-if="l.start_datum" class="meta">{{ l.start_datum }} – {{ l.end_datum ?? '?' }}</span>
+        </article>
+      </div>
+      <p v-else class="leer">Noch kein Lager – unten erstellen oder aus eCamp importieren.</p>
+    </section>
+
+    <section>
+      <h2>Neues Lager</h2>
       <p class="hint">
         Oder <router-link to="/lager/import">aus eCamp-PDF importieren</router-link> (Blöcke werden automatisch übernommen).
       </p>
@@ -206,34 +226,6 @@ onMounted(ladeLager)
         </button>
       </form>
       <p v-if="error" class="error">{{ error }}</p>
-    </section>
-
-    <section>
-      <h2>Bestehende Lager</h2>
-      <p v-if="loading">Lade...</p>
-      <table v-else-if="lager.length">
-        <thead>
-          <tr>
-            <th>Jahr</th>
-            <th>Name</th>
-            <th>Ort</th>
-            <th>Start</th>
-            <th>Ende</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="l in lager" :key="l.id" class="lager-zeile" @click="router.push(`/lager/${l.id}`)">
-            <td>{{ l.jahr }}</td>
-            <td>{{ l.name }}</td>
-            <td>{{ l.ort ?? '–' }}</td>
-            <td>{{ l.start_datum ?? '–' }}</td>
-            <td>{{ l.end_datum ?? '–' }}</td>
-            <td>{{ l.status }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else>Noch kein Lager erfasst.</p>
     </section>
   </main>
 </template>
@@ -289,12 +281,18 @@ th {
   font-weight: 700;
   font-size: 0.85rem;
 }
-.lager-zeile {
+.lager-karten { display: grid; gap: 0.65rem; margin-bottom: 2rem; }
+.lager-karte {
+  padding: 1rem 1.1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
-.lager-zeile:hover {
-  background: var(--color-surface-muted);
-}
+.lager-karte:hover { background: var(--color-surface-muted); }
+.lager-karte strong { display: block; font-size: 1.05rem; margin-bottom: 0.35rem; }
+.lager-karte .meta { display: block; font-size: 0.85rem; color: var(--color-text-muted); }
+.leer { color: var(--color-text-muted); margin-bottom: 2rem; }
 .error {
   color: var(--color-danger);
 }

@@ -81,12 +81,12 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
 </script>
 
 <template>
-  <section class="finanzen">
+    <section class="finanzen">
     <h2>Finanzen – TN-Anmeldungen</h2>
     <AemtliTodos :lager-id="lagerId" :aemtli-id="aemtliId" aemtli-name="Finanzen" />
     <p class="hint">
-      {{ bezahltCount }} / {{ tnListe.length }} als bezahlt markiert
-      <span v-if="istKassier"> · Du bist Kassier/in – Quittungen findest du im Reiter «Quittungen»</span>
+      {{ bezahltCount }} / {{ tnListe.length }} als bezahlt markiert.
+      <span v-if="istKassier"> Quittungen bearbeitest du unter «Quittungen» → Kassier-Übersicht.</span>
     </p>
     <p v-if="fehler" class="error">{{ fehler }}</p>
 

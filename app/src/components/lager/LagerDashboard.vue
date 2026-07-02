@@ -26,6 +26,9 @@ const props = defineProps<{
   userName: string
   istAnwesend: boolean
   bearbeiten: boolean
+  hatKuecheTab?: boolean
+  isLeitung?: boolean
+  leiterAnfragen?: number
 }>()
 
 const emit = defineEmits<{
@@ -93,6 +96,15 @@ const lagerLaufend = computed(() => {
 const aktionen = computed(() => {
   const list: { typ: string; titel: string; text: string; action: () => void }[] = []
 
+  if (props.isLeitung && (props.leiterAnfragen ?? 0) > 0) {
+    list.push({
+      typ: 'anfragen',
+      titel: `${props.leiterAnfragen} Leiteranfrage(n)`,
+      text: 'Freischalten oder ablehnen',
+      action: () => emit('tab', 'leiter'),
+    })
+  }
+
   if (aktuellerBlock.value) {
     list.push({
       typ: 'jetzt',
@@ -106,7 +118,7 @@ const aktionen = computed(() => {
     list.push({
       typ: 'hoeck',
       titel: 'Höck-Zeit (8–10 Uhr)',
-      text: 'Nächsten Tag besprechen',
+      text: 'Nächsten Tag im Programm besprechen',
       action: () => emit('hoeck'),
     })
   }
@@ -124,7 +136,7 @@ const aktionen = computed(() => {
     list.push({
       typ: 'ruhe',
       titel: 'Alles ruhig',
-      text: 'Keine dringenden Aktionen gerade.',
+      text: 'Programm anschauen oder deine Ämtli erledigen.',
       action: () => emit('tab', 'programm'),
     })
   }
@@ -136,7 +148,6 @@ const aktionen = computed(() => {
 <template>
   <section class="dashboard">
     <header class="lager-kopf">
-      <h1>{{ lager.name }}</h1>
       <p v-if="lager.ort" class="ort">📍 {{ lager.ort }}</p>
       <p v-if="formatZeitraum()" class="zeitraum">{{ formatZeitraum() }}</p>
     </header>
@@ -155,17 +166,19 @@ const aktionen = computed(() => {
     </div>
 
     <div v-if="bearbeiten" class="schnell-links">
+      <span class="links-label">Schnellzugriff</span>
       <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
-      <button class="secondary" @click="emit('tab', 'einkauf')">Einkaufsliste</button>
-      <button class="secondary" @click="emit('tab', 'einstellungen')">Lager bearbeiten</button>
+      <button v-if="hatKuecheTab" class="secondary" @click="emit('tab', 'aemtli:kueche')">Küche</button>
+      <button v-else class="secondary" @click="emit('tab', 'einkauf')">Einkaufsliste</button>
+      <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
+      <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .dashboard { margin-bottom: 1.5rem; }
-.lager-kopf { margin-bottom: 1.5rem; }
-.lager-kopf h1 { margin: 0 0 0.35rem; font-size: 1.6rem; }
+.lager-kopf { margin-bottom: 1.25rem; }
 .ort, .zeitraum { color: var(--color-text-muted); margin: 0.2rem 0; font-size: 0.95rem; }
 .aktionen { display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: 1.25rem; }
 .aktion-karte {
@@ -178,7 +191,9 @@ const aktionen = computed(() => {
 .aktion-jetzt { border-left: 4px solid var(--color-accent); }
 .aktion-hoeck { border-left: 4px solid #c98a3f; }
 .aktion-vorbereiten { border-left: 4px solid #6b7fa8; }
+.aktion-anfragen { border-left: 4px solid #c94f4f; }
 .aktion-karte strong { font-size: 0.95rem; }
 .aktion-karte span { font-size: 0.85rem; color: var(--color-text-muted); }
-.schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.links-label { width: 100%; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 0.15rem; }
 </style>
