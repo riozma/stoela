@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
-          maxOutputTokens: 16000,
+          maxOutputTokens: 32000,
         },
       }),
     },
@@ -134,12 +134,27 @@ Deno.serve(async (req) => {
   }
 
   const result = await response.json()
+  const finishReason = result.candidates?.[0]?.finishReason
   const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text
   if (!jsonText) {
     return new Response(JSON.stringify({ error: 'Kein strukturiertes Ergebnis erhalten', detail: result }), {
       status: 502,
       headers: CORS_HEADERS,
     })
+  }
+
+  try {
+    JSON.parse(jsonText)
+  } catch {
+    return new Response(
+      JSON.stringify({
+        error:
+          finishReason === 'MAX_TOKENS'
+            ? 'Antwort wurde wegen Länge abgeschnitten. Bitte kleineren PDF-Ausschnitt senden.'
+            : 'Antwort war kein gültiges JSON.',
+      }),
+      { status: 502, headers: CORS_HEADERS },
+    )
   }
 
   return new Response(jsonText, { headers: { ...CORS_HEADERS, 'content-type': 'application/json' } })

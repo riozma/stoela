@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
-import { extractPdfText } from '../lib/pdfText'
+import { extractPdfPages } from '../lib/pdfText'
 
 interface Programmabschnitt {
   zeit: string | null
@@ -29,17 +29,34 @@ interface Block {
   material: MaterialItem[]
   notizen: string | null
 }
+interface LagerMeta {
+  name: string
+  jahr: number
+  ort?: string
+  start_datum?: string
+  end_datum?: string
+}
 interface Extraktion {
-  lager: { name: string; jahr: number; ort?: string; start_datum?: string; end_datum?: string }
+  lager: LagerMeta
   bloecke: Block[]
 }
+
+// Grösse der Text-Häppchen, die pro Gemini-Aufruf verarbeitet werden. Bei zu
+// grossen PDFs (viele Blöcke mit viel Text) würde eine einzige Anfrage die
+// Antwortlänge sprengen und mit abgeschnittenem/kaputtem JSON zurückkommen.
+const SEITEN_PRO_HAPPEN = 6
 
 const router = useRouter()
 const { session } = useAuth()
 
-const status = ref<'idle' | 'lese_pdf' | 'analysiere' | 'bereit' | 'importiere' | 'fertig'>('idle')
+const status = ref<'idle' | 'verarbeite' | 'bereit' | 'importiere' | 'fertig'>('idle')
+const fortschritt = ref({ phase: '', aktuell: 0, total: 0 })
 const error = ref('')
 const ergebnis = ref<Extraktion | null>(null)
+
+const balkenBreite = computed(() =>
+  fortschritt.value.total ? Math.round((fortschritt.value.aktuell / fortschritt.value.total) * 100) : 0,
+)
 
 async function dateiGewaehlt(e: Event) {
   error.value = ''
@@ -48,17 +65,47 @@ async function dateiGewaehlt(e: Event) {
   if (!file) return
 
   try {
-    status.value = 'lese_pdf'
-    const text = await extractPdfText(file)
+    status.value = 'verarbeite'
+    fortschritt.value = { phase: 'Lese PDF...', aktuell: 0, total: 0 }
 
-    status.value = 'analysiere'
-    const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', {
-      body: { text },
+    const seiten = await extractPdfPages(file, (seite, total) => {
+      fortschritt.value = { phase: `Lese PDF (Seite ${seite}/${total})...`, aktuell: seite, total }
     })
-    if (fnError) throw fnError
-    if (data?.error) throw new Error(data.error)
 
-    ergebnis.value = data as Extraktion
+    const titelseite = seiten[0] ?? ''
+    const detailIdx = seiten.findIndex((s) => s.includes('Detailprogramm'))
+    const relevanteSeiten = detailIdx >= 0 ? seiten.slice(detailIdx) : seiten
+
+    const happen: string[] = []
+    for (let i = 0; i < relevanteSeiten.length; i += SEITEN_PRO_HAPPEN) {
+      happen.push(titelseite + '\n\n' + relevanteSeiten.slice(i, i + SEITEN_PRO_HAPPEN).join('\n\n'))
+    }
+    if (happen.length === 0) happen.push(titelseite)
+
+    let lager: LagerMeta | null = null
+    const bloecke: Block[] = []
+
+    for (let i = 0; i < happen.length; i++) {
+      fortschritt.value = {
+        phase: `Analysiere Programm (Teil ${i + 1} von ${happen.length})...`,
+        aktuell: i,
+        total: happen.length,
+      }
+      const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', {
+        body: { text: happen[i] },
+      })
+      if (fnError) throw fnError
+      if (data?.error) throw new Error(`Teil ${i + 1}/${happen.length}: ${data.error}`)
+
+      const teil = data as Extraktion
+      if (!lager && teil.lager?.jahr) lager = teil.lager
+      bloecke.push(...(teil.bloecke ?? []))
+    }
+
+    fortschritt.value = { phase: 'Analyse abgeschlossen.', aktuell: happen.length, total: happen.length }
+
+    if (!lager) throw new Error('Lager-Titelseite konnte nicht erkannt werden.')
+    ergebnis.value = { lager, bloecke }
     status.value = 'bereit'
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'PDF konnte nicht verarbeitet werden.'
@@ -136,10 +183,15 @@ async function importieren() {
       In eCamp: Admin → Drucken → Layout 2 → PDF exportieren. Diese Datei hier hochladen.
     </p>
 
-    <input type="file" accept="application/pdf" @change="dateiGewaehlt" :disabled="status === 'analysiere' || status === 'lese_pdf'" />
+    <input type="file" accept="application/pdf" @change="dateiGewaehlt" :disabled="status === 'verarbeite'" />
 
-    <p v-if="status === 'lese_pdf'">Lese PDF...</p>
-    <p v-if="status === 'analysiere'">Analysiere Inhalt (kann eine Weile dauern)...</p>
+    <div v-if="status === 'verarbeite'" class="fortschritt">
+      <p>{{ fortschritt.phase }}</p>
+      <div class="balken">
+        <div class="balken-fuellung" :style="{ width: balkenBreite + '%' }"></div>
+      </div>
+    </div>
+
     <p v-if="error" class="error">{{ error }}</p>
 
     <section v-if="ergebnis">
@@ -176,6 +228,26 @@ main {
 .hint {
   color: #666;
   font-size: 0.9rem;
+}
+.fortschritt {
+  margin: 1rem 0;
+}
+.fortschritt p {
+  font-size: 0.9rem;
+  color: #444;
+  margin-bottom: 0.4rem;
+}
+.balken {
+  width: 100%;
+  height: 8px;
+  background: #e5e5e5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.balken-fuellung {
+  height: 100%;
+  background: #333;
+  transition: width 0.2s ease;
 }
 .lager-info {
   list-style: none;
