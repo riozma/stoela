@@ -4,12 +4,15 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { supabase } from '../supabaseClient'
 
-defineProps<{
-  lagerName?: string
-  showAlleLager?: boolean
-  showNavToggle?: boolean
-  navOpen?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    lagerName?: string
+    showAlleLager?: boolean
+    showNavToggle?: boolean
+    navOpen?: boolean
+  }>(),
+  { showAlleLager: true },
+)
 
 defineEmits<{ toggleNav: [] }>()
 
@@ -62,10 +65,10 @@ async function logout() {
         <span class="burger-line" />
         <span class="burger-line" />
       </button>
-      <router-link v-if="showAlleLager !== false" to="/lager" class="alle-lager-btn">
+      <router-link v-if="showAlleLager" to="/lager" class="alle-lager-btn">
         ← Alle Lager
       </router-link>
-      <h1 v-else class="app-titel">Stöckli Lager</h1>
+      <h1 v-if="!showAlleLager" class="app-titel">Stöckli Lager</h1>
       <span v-if="lagerName" class="lager-name">{{ lagerName }}</span>
     </div>
     <div class="app-header-right">
@@ -119,19 +122,23 @@ async function logout() {
 .alle-lager-btn {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   font-weight: 700;
-  font-size: 0.85rem;
-  color: var(--color-text);
+  font-size: 0.88rem;
+  color: #fdfbf3;
   text-decoration: none;
   white-space: nowrap;
-  padding: 0.35rem 0.7rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  padding: 0.45rem 0.85rem;
+  background: var(--color-accent);
+  border: 2px solid var(--color-accent);
   border-radius: var(--radius-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 .alle-lager-btn:hover {
-  background: var(--color-surface-muted);
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
   text-decoration: none;
+  color: #fdfbf3;
 }
 .lager-name {
   font-size: 0.95rem;

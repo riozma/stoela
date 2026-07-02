@@ -19,6 +19,7 @@ const form = ref({
   geschlecht: '',
   ahv_nr: '',
   allergien: '',
+  essensgewohnheiten: '',
   notfallkontakt: '',
   eltern_email: '',
 })
@@ -48,6 +49,7 @@ async function absenden() {
     geschlecht: form.value.geschlecht || null,
     ahv_nr: form.value.ahv_nr || null,
     allergien: form.value.allergien || null,
+    essensgewohnheiten: form.value.essensgewohnheiten || null,
     notfallkontakt: form.value.notfallkontakt,
     eltern_email: form.value.eltern_email,
   })
@@ -96,7 +98,11 @@ async function absenden() {
         </label>
         <label>
           Allergien / Unverträglichkeiten
-          <input v-model="form.allergien" type="text" />
+          <input v-model="form.allergien" type="text" placeholder="z.B. Nüsse, Laktose" />
+        </label>
+        <label>
+          Essensgewohnheiten
+          <input v-model="form.essensgewohnheiten" type="text" placeholder="z.B. vegetarisch, kein Schweinefleisch" />
         </label>
         <label>
           Notfallkontakt (Name + Telefon)

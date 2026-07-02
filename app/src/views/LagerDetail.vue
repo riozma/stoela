@@ -614,9 +614,6 @@ async function gruppeLoeschen(gruppeId: string) {
 
 // --- Team / Berechtigungen ---
 const teamListe = ref<TeamMitglied[]>([])
-const freischaltEmail = ref('')
-const freischaltFehler = ref('')
-const freischaltNachricht = ref('')
 
 async function ladeTeam() {
   const { data } = await supabase
@@ -627,20 +624,6 @@ async function ladeTeam() {
     ...row,
     profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
   })) as TeamMitglied[]
-}
-
-async function teamFreischalten() {
-  freischaltFehler.value = ''
-  freischaltNachricht.value = ''
-  const { error: err } = await supabase.rpc('freischalten_teammitglied', {
-    p_lager_id: lagerId.value,
-    p_email: freischaltEmail.value.trim(),
-    p_rolle: 'leiter',
-  })
-  if (err) { freischaltFehler.value = err.message; return }
-  freischaltNachricht.value = `${freischaltEmail.value} hat jetzt Zugriff auf dieses Lager.`
-  freischaltEmail.value = ''
-  await ladeTeam()
 }
 
 async function teamEntfernen(teamId: string) {
@@ -1330,17 +1313,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             </tr>
           </tbody>
         </table>
-
-        <div v-if="isLeitung" class="freischalten-box">
-          <h3>Teammitglied freischalten</h3>
-          <p class="hint">Die Person muss sich zuerst einmal eingeloggt haben (Google oder Passwort).</p>
-          <div class="inline-form">
-            <input v-model="freischaltEmail" type="email" placeholder="E-Mail-Adresse" />
-            <button @click="teamFreischalten">Freischalten</button>
-          </div>
-          <p v-if="freischaltNachricht">{{ freischaltNachricht }}</p>
-          <p v-if="freischaltFehler" class="error">{{ freischaltFehler }}</p>
-        </div>
       </section>
 
       <!-- Einstellungen -->
@@ -1454,7 +1426,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .gruppe-karte ul { list-style: none; padding: 0; margin: 0 0 0.5rem; font-size: 0.88rem; }
 .gruppe-karte li { padding: 0.15rem 0; display: flex; align-items: center; gap: 0.4rem; }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
-.freischalten-box { margin-top: 1.5rem; padding: 1rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .link-box { display: block; background: var(--color-surface-muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; word-break: break-all; margin: 0.5rem 0 1.5rem; }
 .error { color: var(--color-danger); }
 .anfragen-box { margin-bottom: 1.25rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
