@@ -7,7 +7,13 @@ import { generateIcs, downloadIcs } from '../lib/ics'
 import { ladeWetter, type TagesWetter } from '../lib/weather'
 import LagerDashboard from '../components/lager/LagerDashboard.vue'
 import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
-import HoeckPanel from '../components/lager/HoeckPanel.vue'
+import LagerMap from '../components/lager/LagerMap.vue'
+import ProgrammHoeck from '../components/lager/ProgrammHoeck.vue'
+import AemtliKueche from '../components/lager/AemtliKueche.vue'
+import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
+import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
+import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
+import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
 
 interface Programmabschnitt {
   zeit: string | null
@@ -107,11 +113,12 @@ const route = useRoute()
 const { session } = useAuth()
 const lagerId = route.params.id as string
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'reminders' | 'einstellungen'
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'reminders' | 'einstellungen' | 'quittungen' | string
 const activeTab = ref<Tab>('dashboard')
-const hoeckOffen = ref(false)
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
 const istKueche = ref(false)
+const istFinanzen = ref(false)
+const meineAemtli = ref<Aemtli[]>([])
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
 const lagerSpeichern = ref(false)
 
@@ -303,6 +310,7 @@ async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
   if (!aemtliId) return
   await supabase.from('leiter_rollen').insert({ anmeldung_leiter_id: anmeldungLeiterId, aemtli_id: aemtliId })
   await ladeLeiterRollen()
+  await ladeMeineAemtli()
 }
 
 async function neueRolleErstellen(anmeldungLeiterId: string) {
@@ -590,8 +598,72 @@ function zuBlockSpringen(blockId: string) {
 
 async function pruefeKueche() {
   if (!session.value) return
-  const { data, error } = await supabase.rpc('is_kueche', { p_lager_id: lagerId })
-  istKueche.value = !error && !!data
+  const [{ data: kue }, { data: fin }] = await Promise.all([
+    supabase.rpc('is_kueche', { p_lager_id: lagerId }),
+    supabase.rpc('hat_aemtli', { p_lager_id: lagerId, p_name: 'Finanzen' }),
+  ])
+  istKueche.value = !!kue
+  istFinanzen.value = !!fin
+}
+
+async function ladeMeineAemtli() {
+  if (!session.value) return
+  const email = session.value.user.email ?? ''
+  const uid = session.value.user.id
+
+  const { data: meineLeiter } = await supabase
+    .from('anmeldungen_leiter')
+    .select('id')
+    .eq('lager_id', lagerId)
+    .eq('status', 'bestaetigt')
+    .ilike('email', email)
+
+  const leiterIds = meineLeiter?.map((l) => l.id) ?? []
+  const set = new Map<string, Aemtli>()
+
+  if (leiterIds.length) {
+    const { data: lr } = await supabase
+      .from('leiter_rollen')
+      .select('aemtli:aemtli_id ( id, name )')
+      .in('anmeldung_leiter_id', leiterIds)
+    for (const row of lr ?? []) {
+      const a = row.aemtli as unknown as Aemtli
+      if (a?.id) set.set(a.id, a)
+    }
+  }
+
+  const { data: az } = await supabase
+    .from('aemtli_zuweisungen')
+    .select('aemtli:aemtli_id ( id, name )')
+    .eq('lager_id', lagerId)
+    .eq('profile_id', uid)
+
+  for (const row of az ?? []) {
+    const a = row.aemtli as unknown as Aemtli
+    if (a?.id) set.set(a.id, a)
+  }
+
+  meineAemtli.value = [...set.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function aemtliKomponente(name: string) {
+  const slug = aemtliSlug(name)
+  if (slug === 'kueche') return 'kueche'
+  if (slug === 'finanzen') return 'finanzen'
+  return 'generic'
+}
+
+function zuHoeckImProgramm() {
+  const morgen = new Date()
+  morgen.setDate(morgen.getDate() + 1)
+  const tag = morgen.toISOString().slice(0, 10)
+  if (tage.value.includes(tag)) ausgewaehlterTag.value = tag
+  else if (tage.value.length) ausgewaehlterTag.value = tage.value[0]
+  activeTab.value = 'programm'
+}
+
+function tabWechseln(tab: Tab) {
+  activeTab.value = tab
 }
 
 function icsExport(modus: 'ganzes' | 'eigen') {
@@ -644,6 +716,7 @@ onMounted(async () => {
     const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
     profil.value = p
     await pruefeKueche()
+    await ladeMeineAemtli()
   }
 
   await Promise.all([ladeTeilnehmer(), ladeLeiter(), ladeAemtli(), ladeLeiterRollen(), ladeGruppen(), ladeTeam(), ladeReminders()])
@@ -666,6 +739,15 @@ onMounted(async () => {
         <button :class="{ aktiv: activeTab === 'leiter' }" @click="activeTab = 'leiter'">Leiter ({{ leiterBestaetigt.length }})</button>
         <button :class="{ aktiv: activeTab === 'gruppen' }" @click="activeTab = 'gruppen'">Gruppen</button>
         <button :class="{ aktiv: activeTab === 'einkauf' }" @click="activeTab = 'einkauf'">Einkauf</button>
+        <button
+          v-for="a in meineAemtli"
+          :key="a.id"
+          :class="{ aktiv: activeTab === tabIdForAemtli(a.name) }"
+          @click="activeTab = tabIdForAemtli(a.name)"
+        >
+          {{ a.name }}
+        </button>
+        <button :class="{ aktiv: activeTab === 'quittungen' }" @click="activeTab = 'quittungen'">Quittungen</button>
         <button :class="{ aktiv: activeTab === 'team' }" @click="activeTab = 'team'">Team</button>
         <button :class="{ aktiv: activeTab === 'reminders' }" @click="activeTab = 'reminders'">Reminder</button>
         <button :class="{ aktiv: activeTab === 'einstellungen' }" @click="activeTab = 'einstellungen'">Einstellungen</button>
@@ -678,9 +760,15 @@ onMounted(async () => {
           :user-name="userName"
           :ist-anwesend="istAnwesend"
           :bearbeiten="true"
-          @tab="activeTab = $event as Tab"
-          @hoeck="hoeckOffen = true"
+          @tab="tabWechseln($event as Tab)"
+          @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
+        />
+        <LagerMap
+          v-if="lager.ort_lat && lager.ort_lng"
+          :lat="lager.ort_lat"
+          :lng="lager.ort_lng"
+          :ort="lager.ort"
         />
       </section>
 
@@ -699,6 +787,15 @@ onMounted(async () => {
             {{ formatTag(tag) }}
           </button>
         </nav>
+
+        <ProgrammHoeck
+          v-if="ausgewaehlterTag && session"
+          :lager-id="lagerId"
+          :tag="ausgewaehlterTag"
+          :bloecke="bloecke"
+          :user-id="session.user.id"
+          :user-name="userName"
+        />
 
         <div v-if="blocksFuerTag.length" class="timetable">
           <template v-for="b in blocksFuerTag" :key="b.id">
@@ -880,6 +977,32 @@ onMounted(async () => {
         />
       </section>
 
+      <!-- Dynamische Ämtli-Tabs -->
+      <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
+        <AemtliKueche
+          v-if="aemtliKomponente(a.name) === 'kueche'"
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
+          @einkauf="activeTab = 'einkauf'"
+        />
+        <AemtliFinanzen
+          v-else-if="aemtliKomponente(a.name) === 'finanzen'"
+          :lager-id="lagerId"
+          :ist-kassier="istFinanzen"
+        />
+        <AemtliGeneric v-else :aemtli-name="a.name" />
+      </section>
+
+      <!-- Quittungen (alle Leiter) -->
+      <section v-if="activeTab === 'quittungen' && session">
+        <QuittungenPanel
+          :lager-id="lagerId"
+          :user-id="session.user.id"
+          :ist-kassier="istFinanzen"
+        />
+      </section>
+
       <!-- Team / Berechtigungen -->
       <section v-if="activeTab === 'team'">
         <p class="hint">Nur freigeschaltete Teammitglieder und die Ersteller/in sehen dieses Lager.</p>
@@ -973,8 +1096,6 @@ onMounted(async () => {
           <button class="secondary" @click="icsExport('eigen')">Nur Lagerzeitraum (.ics)</button>
         </div>
       </section>
-
-      <HoeckPanel v-if="hoeckOffen && session" :lager-id="lagerId" :bloecke="bloecke" :user-id="session.user.id" @close="hoeckOffen = false" />
     </template>
   </main>
 </template>
