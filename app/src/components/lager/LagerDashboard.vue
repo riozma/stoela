@@ -20,6 +20,12 @@ interface Lager {
   status: string
 }
 
+interface LagerAenderung {
+  zeit: string
+  beschreibung: string
+  kategorie: string | null
+}
+
 const props = defineProps<{
   lager: Lager
   bloecke: Block[]
@@ -29,6 +35,7 @@ const props = defineProps<{
   hatKuecheTab?: boolean
   isLeitung?: boolean
   leiterAnfragen?: number
+  letzteAenderungen?: LagerAenderung[]
 }>()
 
 const emit = defineEmits<{
@@ -143,6 +150,10 @@ const aktionen = computed(() => {
 
   return list
 })
+
+function formatAenderungZeit(iso: string) {
+  return new Intl.DateTimeFormat('de-CH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
+}
 </script>
 
 <template>
@@ -173,6 +184,16 @@ const aktionen = computed(() => {
       <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
       <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
+
+    <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
+      <span class="links-label">Letzte Änderungen</span>
+      <ul>
+        <li v-for="(a, i) in letzteAenderungen" :key="i">
+          <time>{{ formatAenderungZeit(a.zeit) }}</time>
+          <span>{{ a.beschreibung }}</span>
+        </li>
+      </ul>
+    </div>
   </section>
 </template>
 
@@ -194,6 +215,20 @@ const aktionen = computed(() => {
 .aktion-anfragen { border-left: 4px solid #c94f4f; }
 .aktion-karte strong { font-size: 0.95rem; }
 .aktion-karte span { font-size: 0.85rem; color: var(--color-text-muted); }
-.schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 1.25rem; }
 .links-label { width: 100%; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 0.15rem; }
+.letzte-aenderungen { margin-top: 0.5rem; }
+.letzte-aenderungen ul { list-style: none; margin: 0; padding: 0; }
+.letzte-aenderungen li {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--color-border);
+  font-size: 0.88rem;
+}
+.letzte-aenderungen li:last-child { border-bottom: none; }
+.letzte-aenderungen time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
 </style>

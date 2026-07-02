@@ -62,7 +62,9 @@ async function logout() {
         <span class="burger-line" />
         <span class="burger-line" />
       </button>
-      <router-link v-if="showAlleLager !== false" to="/lager" class="alle-lager-link">Alle Lager</router-link>
+      <router-link v-if="showAlleLager !== false" to="/lager" class="alle-lager-btn">
+        ← Alle Lager
+      </router-link>
       <h1 v-else class="app-titel">Stöckli Lager</h1>
       <span v-if="lagerName" class="lager-name">{{ lagerName }}</span>
     </div>
@@ -115,14 +117,23 @@ async function logout() {
   font-size: 1.15rem;
   font-weight: 700;
 }
-.alle-lager-link {
+.alle-lager-btn {
+  display: inline-flex;
+  align-items: center;
   font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--color-accent);
+  font-size: 0.85rem;
+  color: var(--color-text);
   text-decoration: none;
   white-space: nowrap;
+  padding: 0.35rem 0.7rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
-.alle-lager-link:hover { text-decoration: underline; }
+.alle-lager-btn:hover {
+  background: var(--color-surface-muted);
+  text-decoration: none;
+}
 .lager-name {
   font-size: 0.95rem;
   color: var(--color-text-muted);

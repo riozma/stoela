@@ -56,6 +56,10 @@ function navKlick() {
 
 <template>
   <nav class="lager-top-nav" :class="{ 'mobile-open': mobileOpen }" aria-label="Lager-Navigation">
+    <router-link to="/lager" class="nav-link alle-lager-nav" @click="navKlick">
+      ← Alle Lager
+    </router-link>
+
     <router-link :to="sectionPath('dashboard')" class="nav-link" :class="{ aktiv: isActive('dashboard') }" @click="navKlick">
       Dashboard
     </router-link>
@@ -215,6 +219,10 @@ function navKlick() {
 .nav-link.aktiv .badge { background: rgba(255, 255, 255, 0.25); }
 .badge.warn { background: #c98a3f; color: #fff; }
 .nav-link.aktiv .badge.warn { background: rgba(255, 255, 255, 0.35); color: #fff; }
+
+@media (min-width: 769px) {
+  .alle-lager-nav { display: none; }
+}
 
 @media (max-width: 768px) {
   .lager-top-nav {

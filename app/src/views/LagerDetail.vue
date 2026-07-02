@@ -19,6 +19,7 @@ import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
 import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import { aemtliName, leiterName, type MaterialMitZuordnung, type NamensZuordnung, type ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
+import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
 interface MaterialItem extends MaterialMitZuordnung {}
@@ -103,6 +104,7 @@ interface TeamMitglied {
   profiles: { email: string; vorname: string | null; nachname: string | null }
 }
 const navOffen = ref(false)
+const letzteAenderungen = ref<LagerAenderung[]>([])
 
 const route = useRoute()
 const router = useRouter()
@@ -341,8 +343,11 @@ async function leiterHinzufuegen() {
   })
   leiterSpeichern.value = false
   if (err) { leiterFehler.value = err.message; return }
+  const name = `${leiterForm.value.vorname.trim()} ${leiterForm.value.nachname.trim()}`
   leiterForm.value = { vorname: '', nachname: '' }
+  void logLagerAktivitaet(lagerId.value, `Leiter manuell erfasst: ${name}`, 'leiter')
   await leiterNachAenderung()
+  await ladeLetzteAenderungenListe()
 }
 
 async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
@@ -543,6 +548,8 @@ async function gruppeUmbenennen(gruppeId: string) {
   }
   const g = gruppenListe.value.find((x) => x.id === gruppeId)
   if (g) g.name = name
+  void logLagerAktivitaet(lagerId.value, `Gruppe umbenannt: «${name}»`, 'gruppen')
+  void ladeLetzteAenderungenListe()
 }
 
 async function mitgliedZuGruppeHinzufuegen(gruppeId: string, typ: 'tn' | 'leiter', anmeldungId: string) {
@@ -827,6 +834,9 @@ onMounted(async () => {
   void ladeHintergrundDaten()
 })
 
+async function ladeLetzteAenderungenListe() {
+  letzteAenderungen.value = await ladeLetzteAenderungen(lagerId.value, 10)
+}
 async function ladeHintergrundDaten() {
   if (session.value) {
     const { data: p } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
@@ -837,6 +847,7 @@ async function ladeHintergrundDaten() {
   await Promise.all([ladeTeilnehmer(), ladeAemtli(), ladeGruppen(), ladeTeam()])
   await ladeLeiter()
   await ladeLeiterRollen()
+  await ladeLetzteAenderungenListe()
 }
 
 async function ladeWetterFallsNoetig() {
@@ -853,6 +864,7 @@ watch(activeTab, async (tab) => {
     await ladeLeiterRollen()
   }
   if (tab === 'programm') await ladeWetterFallsNoetig()
+  if (tab === 'dashboard') await ladeLetzteAenderungenListe()
 })
 </script>
 
@@ -861,6 +873,7 @@ watch(activeTab, async (tab) => {
     <div class="lager-top-full">
       <AppHeader
         :lager-name="lager?.name"
+        :show-alle-lager="true"
         show-nav-toggle
         :nav-open="navOffen"
         @toggle-nav="navOffen = !navOffen"
@@ -896,6 +909,7 @@ watch(activeTab, async (tab) => {
           :hat-kueche-tab="hatKuecheTab"
           :is-leitung="isLeitung"
           :leiter-anfragen="leiterAnfragen.length"
+          :letzte-aenderungen="letzteAenderungen"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
