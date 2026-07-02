@@ -96,6 +96,11 @@ const PROMPT_PREFIX =
   'Ignoriere das Grobprogramm-Raster und Inhaltsverzeichnis inhaltlich. ' +
   'Scherz-Notizen als notizen unverändert übernehmen. Extrahiere jetzt vollständig:\n\n'
 
+const PROMPT_GROB =
+  'GROBMODUS: Extrahiere nur Grobprogramm-Blöcke mit titel, code, nummer, tag, start_zeit, end_zeit, ort, verantwortlich.\n' +
+  'programmabschnitt, material, geschichte, sicherheitsueberlegungen, notizen IMMER leer/null lassen.\n' +
+  'Feinprogramm wird später im Höck ergänzt.\n\n'
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
@@ -110,10 +115,12 @@ Deno.serve(async (req) => {
     })
   }
 
-  const { text } = await req.json()
+  const { text, modus } = await req.json()
   if (!text || typeof text !== 'string') {
     return new Response(JSON.stringify({ error: 'text fehlt' }), { status: 400, headers: CORS_HEADERS })
   }
+
+  const prefix = modus === 'grob' ? PROMPT_GROB : PROMPT_PREFIX
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
@@ -124,7 +131,7 @@ Deno.serve(async (req) => {
         'x-goog-api-key': GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: PROMPT_PREFIX + text }] }],
+        contents: [{ parts: [{ text: prefix + text }] }],
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,

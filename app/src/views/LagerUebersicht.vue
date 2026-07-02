@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
-import AppHeader from '../components/AppHeader.vue'
+import { ECAMP_URL } from '../lib/constants'
 
 interface Lager {
   id: string
@@ -228,6 +228,7 @@ onMounted(ladeLager)
       <div class="section-kopf">
         <h2>Deine Lager</h2>
         <div class="kopf-aktionen">
+          <a :href="ECAMP_URL" target="_blank" rel="noopener" class="secondary link-btn">eCamp öffnen ↗</a>
           <router-link to="/organisation" class="secondary link-btn">Wissensspeicher</router-link>
           <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
         </div>
@@ -253,7 +254,8 @@ onMounted(ladeLager)
     <section>
       <h2>Neues Lager</h2>
       <p class="hint">
-        Oder <router-link to="/lager/import">aus eCamp-PDF importieren</router-link> (Blöcke werden automatisch übernommen).
+        <a :href="ECAMP_URL" target="_blank" rel="noopener">eCamp öffnen ↗</a> ·
+        Oder <router-link to="/lager/import">Grobprogramm aus eCamp-PDF importieren</router-link>
       </p>
       <form @submit.prevent="erstellen">
         <label>

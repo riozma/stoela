@@ -19,6 +19,7 @@ const props = defineProps<{
   tnCount: number
   leiterCount: number
   mobileOpen?: boolean
+  moerderliAktiv?: boolean
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -63,6 +64,10 @@ function navKlick() {
 
     <router-link :to="sectionPath('dashboard')" class="nav-link" :class="{ aktiv: isActive('dashboard') }" @click="navKlick">
       Dashboard
+    </router-link>
+
+    <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link moerderli-nav" @click="navKlick">
+      Mörderli
     </router-link>
 
     <router-link :to="programmLink ?? sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }" @click="navKlick">

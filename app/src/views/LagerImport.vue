@@ -55,6 +55,7 @@ const GLEICHZEITIGE_ANFRAGEN = 2
 const router = useRouter()
 const { session } = useAuth()
 
+const importModus = ref<'grob' | 'voll'>('grob')
 const status = ref<'idle' | 'verarbeite' | 'bereit' | 'importiere' | 'fertig'>('idle')
 const fortschritt = ref({ phase: '', aktuell: 0, total: 0 })
 const error = ref('')
@@ -78,7 +79,9 @@ const statistik = computed(() => {
 })
 
 async function rufeGeminiAuf(text: string): Promise<Extraktion> {
-  const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', { body: { text } })
+  const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', {
+    body: { text, modus: importModus.value },
+  })
 
   if (fnError) {
     let message = fnError.message ?? 'Unbekannter Fehler bei der Analyse.'
@@ -242,11 +245,11 @@ async function importieren() {
       end_zeit: b.end_zeit,
       ort: b.ort,
       verantwortlich: b.verantwortlich,
-      geschichte: b.geschichte,
-      sicherheitsueberlegungen: b.sicherheitsueberlegungen,
-      programmabschnitt: b.programmabschnitt ?? [],
-      material: b.material ?? [],
-      notizen: b.notizen,
+      geschichte: importModus.value === 'grob' ? null : b.geschichte,
+      sicherheitsueberlegungen: importModus.value === 'grob' ? null : b.sicherheitsueberlegungen,
+      programmabschnitt: importModus.value === 'grob' ? [] : (b.programmabschnitt ?? []),
+      material: importModus.value === 'grob' ? [] : (b.material ?? []),
+      notizen: importModus.value === 'grob' ? null : b.notizen,
       verantwortlich_zuordnungen: [],
       quelle: 'ecamp_pdf',
     }))
@@ -267,11 +270,17 @@ async function importieren() {
 
 <template>
   <main>
-    <h1>Lager aus eCamp-PDF importieren</h1>
+    <h1>Grobprogramm aus eCamp-PDF importieren</h1>
     <p class="hint">
-      In eCamp: Admin → Drucken → Layout 2 → PDF exportieren. Gemini extrahiert Titel, Ort,
-      Verantwortliche, Sicherheitsüberlegungen, Programmabschnitte, Material und Notizen je Block.
+      In eCamp: Admin → Drucken → Layout 2 → PDF exportieren.
+      <strong>Grobmodus</strong> importiert Titel, Zeiten, Verantwortliche – Feinprogramm ergänzt ihr im Höck.
     </p>
+    <label class="modus-wahl">
+      <input v-model="importModus" type="radio" value="grob" /> Grob (empfohlen – nur Verantwortliche &amp; Zeiten)
+    </label>
+    <label class="modus-wahl">
+      <input v-model="importModus" type="radio" value="voll" /> Voll (inkl. Feinprogramm &amp; Material)
+    </label>
 
     <input type="file" accept="application/pdf" @change="dateiGewaehlt" :disabled="status === 'verarbeite'" />
 
@@ -356,6 +365,7 @@ async function importieren() {
 
 <style scoped>
 main { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+.modus-wahl { display: block; margin: 0.35rem 0; font-size: 0.9rem; }
 .hint { color: var(--color-text-muted); font-size: 0.9rem; }
 .zuordnung-hinweis { margin: 0.75rem 0 1rem; padding: 0.65rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
 .fortschritt { margin: 1rem 0; }

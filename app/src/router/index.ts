@@ -8,6 +8,7 @@ import AnmeldungTN from '../views/AnmeldungTN.vue'
 import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
 import Willkommen from '../views/Willkommen.vue'
 import OrganisationView from '../views/OrganisationView.vue'
+import MoerderliView from '../views/MoerderliView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -20,6 +21,7 @@ const router = createRouter({
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
     { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter, meta: { requiresAuth: true } },
+    { path: '/lager/:id/moerderli', name: 'moerderli', component: MoerderliView, meta: { requiresAuth: true } },
     {
       path: '/lager/:id',
       redirect: (to) => ({ path: `/lager/${to.params.id}/dashboard` }),

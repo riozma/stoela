@@ -20,6 +20,9 @@ const form = ref({
   ahv_nr: '',
   allergien: '',
   essensgewohnheiten: '',
+  medikamente: '',
+  gesundheit_bemerkungen: '',
+  eltern_aufenthaltsort: '',
   notfallkontakt: '',
   eltern_email: '',
 })
@@ -50,6 +53,9 @@ async function absenden() {
     ahv_nr: form.value.ahv_nr || null,
     allergien: form.value.allergien || null,
     essensgewohnheiten: form.value.essensgewohnheiten || null,
+    medikamente: form.value.medikamente || null,
+    gesundheit_bemerkungen: form.value.gesundheit_bemerkungen || null,
+    eltern_aufenthaltsort: form.value.eltern_aufenthaltsort || null,
     notfallkontakt: form.value.notfallkontakt,
     eltern_email: form.value.eltern_email,
   })
@@ -103,6 +109,18 @@ async function absenden() {
         <label>
           Essensgewohnheiten
           <input v-model="form.essensgewohnheiten" type="text" placeholder="z.B. vegetarisch, kein Schweinefleisch" />
+        </label>
+        <label>
+          Medikamente (welche, wann?)
+          <input v-model="form.medikamente" type="text" placeholder="Falls nötig – wann einnehmen?" />
+        </label>
+        <label>
+          Gesundheit / Bemerkungen
+          <input v-model="form.gesundheit_bemerkungen" type="text" placeholder="Nachtwandeln, Bettnässen, …" />
+        </label>
+        <label>
+          Aufenthaltsort Eltern während Lager
+          <input v-model="form.eltern_aufenthaltsort" type="text" />
         </label>
         <label>
           Notfallkontakt (Name + Telefon)

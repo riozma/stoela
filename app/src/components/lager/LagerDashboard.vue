@@ -26,6 +26,14 @@ interface LagerAenderung {
   kategorie: string | null
 }
 
+interface ProgrammStat {
+  name: string
+  bloecke_absolut: number
+  bloecke_total: number
+  anteil_prozent: number
+  anwesend_tage: number | null
+}
+
 const props = defineProps<{
   lager: Lager
   bloecke: Block[]
@@ -36,6 +44,7 @@ const props = defineProps<{
   isLeitung?: boolean
   leiterAnfragen?: number
   letzteAenderungen?: LagerAenderung[]
+  programmStatistik?: ProgrammStat[]
 }>()
 
 const emit = defineEmits<{
@@ -186,6 +195,21 @@ function formatAenderungZeit(iso: string) {
       <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
 
+    <div v-if="isLeitung && programmStatistik?.length" class="programm-stats">
+      <span class="links-label">Programm-Beteiligung (nur Lagerleitung)</span>
+      <table class="stats-tabelle">
+        <thead><tr><th>Leiter/in</th><th>Blöcke</th><th>Anteil</th><th>Anwesenheit</th></tr></thead>
+        <tbody>
+          <tr v-for="s in programmStatistik" :key="s.name">
+            <td>{{ s.name }}</td>
+            <td>{{ s.bloecke_absolut }}/{{ s.bloecke_total }}</td>
+            <td>{{ s.anteil_prozent }}%</td>
+            <td>{{ s.anwesend_tage ?? 'ganzes Lager' }}<template v-if="s.anwesend_tage"> Tage</template></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
       <span class="links-label">Letzte Änderungen</span>
       <ul>
@@ -218,6 +242,9 @@ function formatAenderungZeit(iso: string) {
 .aktion-karte span { font-size: 0.85rem; color: var(--color-text-muted); }
 .schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 1.25rem; }
 .links-label { width: 100%; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 0.15rem; }
+.stats-tabelle { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.25rem; }
+.stats-tabelle th, .stats-tabelle td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); }
+.programm-stats { margin-bottom: 1.25rem; }
 .letzte-aenderungen { margin-top: 0.5rem; }
 .letzte-aenderungen ul { list-style: none; margin: 0; padding: 0; }
 .letzte-aenderungen li {

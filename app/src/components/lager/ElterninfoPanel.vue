@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import { downloadElterninfoPdf } from '../../lib/elterninfoPdf'
 
 const props = defineProps<{
   lagerId: string
@@ -29,6 +30,7 @@ const felder = ref({
   reise_besammlung: '',
   reise_abfahrt: '',
   reise_rueckkehr: '',
+  telefon_zeiten: '',
   einzahlungsfrist: '',
   lagerbeitrag: 340,
   lagerbeitrag_geschwister: 280,
@@ -37,12 +39,13 @@ const felder = ref({
 async function laden() {
   const [{ data: org }, { data: lagerCfg }] = await Promise.all([
     supabase.from('org_elterninfo_vorlage').select('felder, packliste').maybeSingle(),
-    supabase.from('lager').select('elterninfo_config').eq('id', props.lagerId).single(),
+    supabase.from('lager').select('elterninfo_config, telefon_zeiten').eq('id', props.lagerId).single(),
   ])
   vorlage.value = (org?.felder as Record<string, unknown>) ?? {}
   packliste.value = (org?.packliste as string[]) ?? []
   const cfg = (lagerCfg?.elterninfo_config as Record<string, unknown>) ?? {}
   felder.value = { ...felder.value, ...cfg }
+  if (lagerCfg?.telefon_zeiten && !felder.value.telefon_zeiten) felder.value.telefon_zeiten = lagerCfg.telefon_zeiten
   if (vorlage.value.lagerbeitrag_tn) felder.value.lagerbeitrag = Number(vorlage.value.lagerbeitrag_tn)
   if (vorlage.value.lagerbeitrag_geschwister) felder.value.lagerbeitrag_geschwister = Number(vorlage.value.lagerbeitrag_geschwister)
 }
@@ -100,13 +103,14 @@ Das ${props.lagerName}-Team`
 })
 
 function downloadBrief() {
-  const blob = new Blob([brief.value], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Elterninfo-${props.jahr}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadElterninfoPdf({
+    lagerName: props.lagerName,
+    jahr: props.jahr,
+    ort: props.ort,
+    felder: felder.value as Record<string, string | number>,
+    vorlage: vorlage.value,
+    packliste: packliste.value,
+  })
 }
 </script>
 
@@ -115,9 +119,9 @@ function downloadBrief() {
     <header class="kopf">
       <div>
         <h3>Elterninfo generieren</h3>
-        <p class="hint">Basierend auf der Vereins-Vorlage (wie Kinder_Elterninfos PDF). Felder anpassen, Vorschau, Download. E-Mail-Versand via Resend folgt später.</p>
+        <p class="hint">Basierend auf der Vereins-Vorlage (wie Kinder_Elterninfos PDF). Felder anpassen, Vorschau, als PDF drucken.</p>
       </div>
-      <button type="button" @click="downloadBrief">Brief herunterladen</button>
+      <button type="button" @click="downloadBrief">PDF drucken</button>
     </header>
 
     <form class="felder-grid" @submit.prevent="speichern">

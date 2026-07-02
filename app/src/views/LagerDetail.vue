@@ -15,6 +15,14 @@ import { heuteIso, lagerLaeuft, tageZwischen } from '../lib/programmUtils'
 import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
+import AemtliKiosk from '../components/lager/AemtliKiosk.vue'
+import AemtliTelefon from '../components/lager/AemtliTelefon.vue'
+import AemtliGuteFee from '../components/lager/AemtliGuteFee.vue'
+import AemtliKuchenstand from '../components/lager/AemtliKuchenstand.vue'
+import AemtliSponsoring from '../components/lager/AemtliSponsoring.vue'
+import AemtliKrankenpflege from '../components/lager/AemtliKrankenpflege.vue'
+import AemtliGelaende from '../components/lager/AemtliGelaende.vue'
+import AemtliBastel from '../components/lager/AemtliBastel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
@@ -117,6 +125,8 @@ interface TeamMitglied {
   profiles: { email: string; vorname: string | null; nachname: string | null }
 }
 const navOffen = ref(false)
+const programmStatistik = ref<{ name: string; bloecke_absolut: number; bloecke_total: number; anteil_prozent: number; anwesend_tage: number | null }[]>([])
+const moerderliAktiv = ref(false)
 const letzteAenderungen = ref<LagerAenderung[]>([])
 const tnNavCount = ref(0)
 const bloeckeLaden = ref(false)
@@ -733,9 +743,27 @@ async function ladeMeineAemtli() {
 
 function aemtliKomponente(name: string) {
   const slug = aemtliSlug(name)
-  if (slug === 'kueche') return 'kueche'
-  if (slug === 'finanzen') return 'finanzen'
-  return 'generic'
+  const map: Record<string, string> = {
+    kueche: 'kueche', finanzen: 'finanzen', kiosk: 'kiosk', telefon: 'telefon',
+    'gute-fee': 'gute_fee', 'hl-team': 'hl', krankenpflege: 'krankenpflege',
+    'foto-diashow': 'foto', 'buro-bastelmat': 'bastel', disco: 'disco',
+    skiweekend: 'skiweekend', material: 'material', werbung: 'werbung',
+    motto: 'motto', hauswart: 'hauswart', gelaendespielwiese: 'gelaende',
+    kuchenstand: 'kuchenstand', sponsoring: 'sponsoring', verkleidung: 'verkleidung',
+    'social-media': 'werbung', publicity: 'werbung',
+  }
+  return map[slug] ?? 'generic'
+}
+
+async function ladeProgrammStatistik() {
+  if (!isLeitung.value) return
+  const { data } = await supabase.rpc('lager_programm_statistik', { p_lager_id: lagerId.value })
+  programmStatistik.value = (data as typeof programmStatistik.value) ?? []
+}
+
+async function ladeMoerderliStatus() {
+  const { data } = await supabase.from('gute_fee_spiel').select('oeffentlich').eq('lager_id', lagerId.value).maybeSingle()
+  moerderliAktiv.value = !!data?.oeffentlich
 }
 
 function zuHoeckImProgramm() {
@@ -851,6 +879,7 @@ async function ladeNavKontext() {
     )
   }
   await Promise.all(tasks)
+  await ladeMoerderliStatus()
 }
 
 async function ladeTabDaten(tab: Tab) {
@@ -880,7 +909,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'dashboard') {
-    await ladeLetzteAenderungenListe()
+    await Promise.all([ladeLetzteAenderungenListe(), ladeProgrammStatistik(), ladeMoerderliStatus()])
   }
 }
 
@@ -966,6 +995,7 @@ watch(
         :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
         :mobile-open="navOffen"
+        :moerderli-aktiv="moerderliAktiv"
         @close="navOffen = false"
       />
     </div>
@@ -987,6 +1017,7 @@ watch(
           :is-leitung="isLeitung"
           :leiter-anfragen="leiterAnfragen.length"
           :letzte-aenderungen="letzteAenderungen"
+          :programm-statistik="programmStatistik"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
@@ -1300,20 +1331,22 @@ watch(
       <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
         <AemtliKueche
           v-if="aemtliKomponente(a.name) === 'kueche' && session"
-          :lager-id="lagerId"
-          :aemtli-id="a.id"
-          :lager-name="lager.name"
-          :user-id="session.user.id"
-          :start-datum="lager.start_datum"
-          :end-datum="lager.end_datum"
+          :lager-id="lagerId" :aemtli-id="a.id" :lager-name="lager.name"
+          :user-id="session.user.id" :start-datum="lager.start_datum" :end-datum="lager.end_datum"
           :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
         <AemtliFinanzen
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
-          :lager-id="lagerId"
-          :aemtli-id="a.id"
-          :ist-kassier="hatFinanzenAemtli"
+          :lager-id="lagerId" :aemtli-id="a.id" :ist-kassier="hatFinanzenAemtli"
         />
+        <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliTelefon v-else-if="aemtliKomponente(a.name) === 'telefon'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliGuteFee v-else-if="aemtliKomponente(a.name) === 'gute_fee'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :is-gute-fee="true" />
+        <AemtliKrankenpflege v-else-if="aemtliKomponente(a.name) === 'krankenpflege'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliKuchenstand v-else-if="aemtliKomponente(a.name) === 'kuchenstand'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliSponsoring v-else-if="aemtliKomponente(a.name) === 'sponsoring'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliGelaende v-else-if="aemtliKomponente(a.name) === 'gelaende'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :lat="lager.ort_lat" :lng="lager.ort_lng" />
+        <AemtliBastel v-else-if="aemtliKomponente(a.name) === 'bastel'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
       </section>
 
