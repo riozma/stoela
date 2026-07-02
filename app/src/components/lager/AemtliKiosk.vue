@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import { featureAktiv } from '../../lib/lagerTimeline'
 import AemtliShell from './AemtliShell.vue'
 
-const props = defineProps<{ lagerId: string; aemtliId: string; aemtliName: string }>()
+const props = defineProps<{
+  lagerId: string
+  aemtliId: string
+  aemtliName: string
+  startDatum?: string | null
+  endDatum?: string | null
+}>()
+
+const kioskAktiv = computed(() => featureAktiv('kiosk', props.startDatum ?? null, props.endDatum ?? null))
 
 interface Artikel { id: string; name: string; preis: number; kategorie: string | null }
 interface TN { id: string; vorname: string; nachname: string; gruppe_nr: number | null }
@@ -93,11 +102,16 @@ async function modusSpeichern() {
 
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
+    <p v-if="!kioskAktiv" class="zeit-hinweis">
+      Buchführung und Käufe sind erst <strong>während dem Lager</strong> aktiv (nach dem Mittag).
+      Artikel kannst du schon vorbereiten; Geld am Anreisetag sammeln.
+    </p>
+
     <div class="kiosk-stats">
       <span>Umsatz: CHF {{ stats.umsatz.toFixed(2) }}</span>
       <span>{{ stats.anzahl }} Käufe</span>
       <label>Gruppe heute
-        <select v-model="gruppeModus" @change="modusSpeichern">
+        <select v-model="gruppeModus" @change="modusSpeichern" :disabled="!kioskAktiv">
           <option value="gerade">Gerade Gruppennummern</option>
           <option value="ungerade">Ungerade Gruppennummern</option>
           <option value="alle">Alle</option>
@@ -117,7 +131,7 @@ async function modusSpeichern() {
     </ul>
 
     <h3>Geld erfassen (Anreise)</h3>
-    <form class="inline-form" @submit.prevent="geldErfassen">
+    <form v-if="kioskAktiv" class="inline-form" @submit.prevent="geldErfassen">
       <select v-model="geldForm.tnId" required>
         <option value="">Kind wählen</option>
         <option v-for="t in tnListe" :key="t.id" :value="t.id">{{ t.vorname }} {{ t.nachname }}</option>
@@ -127,7 +141,7 @@ async function modusSpeichern() {
     </form>
 
     <h3>Kauf erfassen</h3>
-    <form class="inline-form" @submit.prevent="kaufErfassen">
+    <form v-if="kioskAktiv" class="inline-form" @submit.prevent="kaufErfassen">
       <select v-model="kaufForm.tnId" required>
         <option value="">Kind</option>
         <option v-for="t in tnListe" :key="t.id" :value="t.id">{{ t.vorname }} {{ t.nachname }} (Rest: CHF {{ guthabenFuer(t.id).rest.toFixed(2) }})</option>
@@ -164,4 +178,8 @@ h3 { margin: 1rem 0 0.4rem; font-size: 0.95rem; }
 .liste-kompakt { list-style: none; padding: 0; font-size: 0.88rem; }
 .liste { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
 .liste th, .liste td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); text-align: left; }
+.zeit-hinweis {
+  background: var(--color-surface-muted); padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.88rem;
+}
 </style>

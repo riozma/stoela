@@ -15,10 +15,6 @@ export const DEFAULT_TODOS: Record<string, string[]> = {
     'Quittungen wöchentlich abarbeiten',
     'Kassenstand dokumentieren',
   ],
-  Sport: [
-    'Material Sportprogramm inventarisieren',
-    'Sicherheitsbriefing Sport vorbereiten',
-  ],
   Sanität: [
     'Erste-Hilfe-Koffer prüfen',
     'Notfallnummern aushängen',
@@ -27,10 +23,6 @@ export const DEFAULT_TODOS: Record<string, string[]> = {
   Material: [
     'Programmmaterial LP 1.1 packen',
     'Feuerholz/Material Lagerfeuer organisieren',
-  ],
-  Programm: [
-    'Höck-Notizen täglich pflegen',
-    'Verantwortliche je Block kontrollieren',
   ],
   Lagerleitung: [
     'Leiteranfragen bearbeiten',

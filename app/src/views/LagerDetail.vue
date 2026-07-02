@@ -6,6 +6,7 @@ import { useAuth } from '../composables/useAuth'
 import { generateIcs, downloadIcs } from '../lib/ics'
 import { ladeWetter, type TagesWetter } from '../lib/weather'
 import LagerDashboard from '../components/lager/LagerDashboard.vue'
+import LagerTimelinePanel from '../components/lager/LagerTimelinePanel.vue'
 import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
 import LagerMap from '../components/lager/LagerMap.vue'
 import ProgrammGesamt from '../components/lager/ProgrammGesamt.vue'
@@ -23,6 +24,7 @@ import AemtliSponsoring from '../components/lager/AemtliSponsoring.vue'
 import AemtliKrankenpflege from '../components/lager/AemtliKrankenpflege.vue'
 import AemtliGelaende from '../components/lager/AemtliGelaende.vue'
 import AemtliBastel from '../components/lager/AemtliBastel.vue'
+import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
@@ -1007,6 +1009,13 @@ watch(
     <template v-else-if="lager">
 
       <section v-if="activeTab === 'dashboard'">
+        <LagerTimelinePanel
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
+          :is-leitung="isLeitung"
+          @fahrplan="tabWechseln('fahrplan')"
+        />
         <LagerDashboard
           :lager="lager"
           :bloecke="bloecke"
@@ -1094,6 +1103,8 @@ watch(
           :session-user-id="session.user.id"
           :user-name="userName"
           :alle-tage="alleProgrammTage"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
         />
 
         <ProgrammBlockEdit
@@ -1339,9 +1350,10 @@ watch(
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId" :aemtli-id="a.id" :ist-kassier="hatFinanzenAemtli"
         />
-        <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
         <AemtliTelefon v-else-if="aemtliKomponente(a.name) === 'telefon'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
-        <AemtliGuteFee v-else-if="aemtliKomponente(a.name) === 'gute_fee'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :is-gute-fee="true" />
+        <AemtliGuteFee v-else-if="aemtliKomponente(a.name) === 'gute_fee'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :is-gute-fee="true" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
+        <AemtliSkiweekend v-else-if="aemtliKomponente(a.name) === 'skiweekend'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliKrankenpflege v-else-if="aemtliKomponente(a.name) === 'krankenpflege'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliKuchenstand v-else-if="aemtliKomponente(a.name) === 'kuchenstand'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliSponsoring v-else-if="aemtliKomponente(a.name) === 'sponsoring'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />

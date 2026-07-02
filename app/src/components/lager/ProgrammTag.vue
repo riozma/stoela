@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import ProgrammHoeck from './ProgrammHoeck.vue'
+import KioskTagBanner from './KioskTagBanner.vue'
 import {
   bloeckeFuerTag,
   formatProgrammTag,
@@ -18,6 +19,8 @@ const props = defineProps<{
   sessionUserId: string
   userName: string
   alleTage: string[]
+  startDatum?: string | null
+  endDatum?: string | null
 }>()
 
 const router = useRouter()
@@ -66,6 +69,14 @@ function codeClass(code: BlockCode) {
         {{ formatProgrammTag(t) }}
       </button>
     </nav>
+
+    <KioskTagBanner
+      v-if="startDatum"
+      :lager-id="lagerId"
+      :tag="tag"
+      :start-datum="startDatum"
+      :end-datum="endDatum ?? null"
+    />
 
     <ProgrammHoeck
       :lager-id="lagerId"

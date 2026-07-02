@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import { featureAktiv } from '../../lib/lagerTimeline'
 import AemtliShell from './AemtliShell.vue'
 
-const props = defineProps<{ lagerId: string; aemtliId: string; aemtliName: string; isGuteFee?: boolean }>()
+const props = defineProps<{
+  lagerId: string
+  aemtliId: string
+  aemtliName: string
+  isGuteFee?: boolean
+  startDatum?: string | null
+  endDatum?: string | null
+}>()
+
+const moerderliAktiv = computed(() =>
+  featureAktiv('moerderli', props.startDatum ?? null, props.endDatum ?? null),
+)
 
 interface Spieler { id: string; anmeldung_leiter_id: string; status: string; leiter: { vorname: string; nachname: string } }
 interface Ereignis { id: string; bestaetigt: boolean; created_at: string; moerder: { vorname: string; nachname: string }; opfer: { vorname: string; nachname: string } }
@@ -70,7 +82,12 @@ async function wiederbeleben(leiterId: string) {
 
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
-    <div class="aktionen">
+    <p v-if="!moerderliAktiv" class="zeit-hinweis">
+      Mörderli-Spiel ist erst <strong>während dem Lager</strong> aktiv (nicht während Programmblöcken).
+      Orte und Gegenstände kannst du schon vorbereiten.
+    </p>
+
+    <div v-if="moerderliAktiv" class="aktionen">
       <button type="button" class="secondary" @click="spielerLaden">Spieler aus Leiter-Liste laden</button>
       <button type="button" @click="zuweisen">Mörderli zuweisen (random)</button>
       <button type="button" class="secondary" @click="oeffentlichSchalten">Board für alle freischalten</button>
@@ -91,22 +108,24 @@ async function wiederbeleben(leiterId: string) {
       </div>
     </div>
 
-    <h3>Spieler ({{ spieler.filter(s => s.status === 'lebend').length }} lebend)</h3>
-    <ul class="spieler-liste">
-      <li v-for="s in spieler" :key="s.id" :class="s.status">
-        {{ s.leiter?.vorname }} {{ s.leiter?.nachname }}
-        <span class="status">{{ s.status }}</span>
-        <button v-if="isGuteFee && s.status === 'tot'" class="secondary klein" @click="wiederbeleben(s.anmeldung_leiter_id)">Wiederbeleben</button>
-      </li>
-    </ul>
+    <template v-if="moerderliAktiv">
+      <h3>Spieler ({{ spieler.filter(s => s.status === 'lebend').length }} lebend)</h3>
+      <ul class="spieler-liste">
+        <li v-for="s in spieler" :key="s.id" :class="s.status">
+          {{ s.leiter?.vorname }} {{ s.leiter?.nachname }}
+          <span class="status">{{ s.status }}</span>
+          <button v-if="isGuteFee && s.status === 'tot'" class="secondary klein" @click="wiederbeleben(s.anmeldung_leiter_id)">Wiederbeleben</button>
+        </li>
+      </ul>
 
-    <h3>Ereignisse</h3>
-    <ul v-if="ereignisse.length" class="ereignisse">
-      <li v-for="e in ereignisse" :key="e.id">
-        {{ e.moerder?.vorname }} → {{ e.opfer?.vorname }}
-        <span :class="{ ok: e.bestaetigt }">{{ e.bestaetigt ? 'bestätigt' : 'offen' }}</span>
-      </li>
-    </ul>
+      <h3>Ereignisse</h3>
+      <ul v-if="ereignisse.length" class="ereignisse">
+        <li v-for="e in ereignisse" :key="e.id">
+          {{ e.moerder?.vorname }} → {{ e.opfer?.vorname }}
+          <span :class="{ ok: e.bestaetigt }">{{ e.bestaetigt ? 'bestätigt' : 'offen' }}</span>
+        </li>
+      </ul>
+    </template>
   </AemtliShell>
 </template>
 
@@ -124,4 +143,8 @@ form { display: flex; gap: 0.35rem; margin-bottom: 0.5rem; }
 .ok { color: var(--color-accent); }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
+.zeit-hinweis {
+  background: var(--color-surface-muted); padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.88rem;
+}
 </style>
