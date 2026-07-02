@@ -23,9 +23,35 @@ export function useAuth() {
     if (error) throw error
   }
 
+  async function signInWithPassword(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
+  }
+
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) throw error
+  }
+
+  async function setPassword(password: string) {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
   }
 
-  return { session, ready, sendMagicLink, signOut }
+  return {
+    session,
+    ready,
+    sendMagicLink,
+    signInWithPassword,
+    signInWithGoogle,
+    setPassword,
+    signOut,
+  }
 }

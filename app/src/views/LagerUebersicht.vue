@@ -13,7 +13,28 @@ interface Lager {
   status: string
 }
 
-const { session, signOut } = useAuth()
+const { session, signOut, setPassword } = useAuth()
+
+const kontoOffen = ref(false)
+const neuesPasswort = ref('')
+const kontoNachricht = ref('')
+const kontoError = ref('')
+const kontoSaving = ref(false)
+
+async function passwortSetzen() {
+  kontoError.value = ''
+  kontoNachricht.value = ''
+  kontoSaving.value = true
+  try {
+    await setPassword(neuesPasswort.value)
+    kontoNachricht.value = 'Passwort gesetzt. Du kannst dich künftig damit einloggen.'
+    neuesPasswort.value = ''
+  } catch (e) {
+    kontoError.value = e instanceof Error ? e.message : 'Passwort konnte nicht gesetzt werden.'
+  } finally {
+    kontoSaving.value = false
+  }
+}
 
 const lager = ref<Lager[]>([])
 const loading = ref(true)
@@ -74,9 +95,25 @@ onMounted(ladeLager)
       <h1>Stöckli Lager</h1>
       <div class="user">
         <span>{{ session?.user.email }}</span>
+        <button @click="kontoOffen = !kontoOffen">Konto</button>
         <button @click="signOut">Logout</button>
       </div>
     </header>
+
+    <section v-if="kontoOffen">
+      <h2>Konto</h2>
+      <form @submit.prevent="passwortSetzen">
+        <label>
+          Neues Passwort
+          <input v-model="neuesPasswort" type="password" required minlength="6" autocomplete="new-password" />
+        </label>
+        <button type="submit" :disabled="kontoSaving">
+          {{ kontoSaving ? 'Speichere...' : 'Passwort setzen' }}
+        </button>
+      </form>
+      <p v-if="kontoNachricht">{{ kontoNachricht }}</p>
+      <p v-if="kontoError" class="error">{{ kontoError }}</p>
+    </section>
 
     <section>
       <h2>Neues Lager erstellen</h2>
