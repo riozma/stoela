@@ -565,10 +565,8 @@ create policy "lager: delete für Lagerleitung" on lager
   for delete to authenticated
   using (public.is_lager_leitung(id));
 
--- Anmeldung: minimale Metadaten ohne Login (nur bei offener Anmeldung)
-create policy "lager: select anmeldung basis" on lager
-  for select to anon, authenticated
-  using (status = 'anmeldung_offen');
+-- Keine breite Lager-SELECT-Policy für Anmeldung: öffentliche Seiten nutzen RPCs
+-- (get_lager_anmeldung_info, get_lager_willkommen). Siehe Migration 20260702270000.
 
 -- profiles
 drop policy if exists "profiles: select für eingeloggte" on profiles;
