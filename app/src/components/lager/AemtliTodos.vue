@@ -18,6 +18,10 @@ const fehler = ref('')
 const offen = computed(() => todos.value.filter((t) => !t.done).length)
 const erledigt = computed(() => todos.value.filter((t) => t.done).length)
 
+function istPlatzhalter(liste: AemtliTodo[]) {
+  return liste.length === 1 && liste[0].text.startsWith('Aufgaben für ')
+}
+
 async function ensureZuweisung() {
   const { data: existing } = await supabase
     .from('aemtli_zuweisungen')
@@ -29,8 +33,12 @@ async function ensureZuweisung() {
   if (existing) {
     zuweisungId.value = existing.id
     const liste = (existing.checkliste as AemtliTodo[]) ?? []
-    todos.value = liste.length ? liste : initialTodosForAemtli(props.aemtliName)
-    if (!liste.length) await speichern()
+    if (!liste.length || istPlatzhalter(liste)) {
+      todos.value = initialTodosForAemtli(props.aemtliName)
+      await speichern()
+    } else {
+      todos.value = liste
+    }
     return
   }
 

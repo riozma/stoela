@@ -740,6 +740,12 @@ async function ladeMeineAemtli() {
     }
   }
 
+  // Lagerleitung sieht alle Vereins-Ämtli (Übersicht & Zuweisung)
+  if (isLeitung.value) {
+    const { data: alle } = await supabase.from('aemtli').select('id, name').order('name')
+    for (const a of alle ?? []) set.set(a.id, a)
+  }
+
   meineAemtli.value = [...set.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
