@@ -77,13 +77,54 @@ onMounted(() => {
 
 async function ladeLager() {
   loading.value = true
-  const { data, error: fetchError } = await supabase
-    .from('lager')
-    .select('id, jahr, name, ort, start_datum, end_datum, status')
-    .order('jahr', { ascending: false })
+  error.value = ''
 
-  if (fetchError) error.value = fetchError.message
-  else lager.value = data ?? []
+  if (!session.value?.user.id) {
+    lager.value = []
+    loading.value = false
+    return
+  }
+
+  const uid = session.value.user.id
+
+  const { data, error: fetchError } = await supabase.rpc('list_meine_lager')
+
+  if (!fetchError) {
+    lager.value = data ?? []
+  } else {
+    // Fallback falls RPC noch nicht migriert: nur eigene Team-Lager laden
+    const { data: teamRows, error: teamError } = await supabase
+      .from('lager_leiter')
+      .select('lager_id')
+      .eq('profile_id', uid)
+      .eq('status', 'bestaetigt')
+
+    if (teamError) {
+      error.value = teamError.message
+      loading.value = false
+      return
+    }
+
+    const ids = new Set(teamRows?.map((r) => r.lager_id) ?? [])
+    const { data: owned } = await supabase.from('lager').select('id').eq('created_by', uid)
+    for (const row of owned ?? []) ids.add(row.id)
+
+    if (!ids.size) {
+      lager.value = []
+      loading.value = false
+      return
+    }
+
+    const { data: fallback, error: fbError } = await supabase
+      .from('lager')
+      .select('id, jahr, name, ort, start_datum, end_datum, status')
+      .in('id', [...ids])
+      .order('jahr', { ascending: false })
+
+    if (fbError) error.value = fbError.message
+    else lager.value = fallback ?? []
+  }
+
   loading.value = false
 
   // Einziges kommendes Lager → direkt zum Dashboard
