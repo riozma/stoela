@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
@@ -40,11 +40,20 @@ interface Extraktion {
   lager: LagerMeta
   bloecke: Block[]
 }
+class GeminiFehler extends Error {
+  code?: string
+  constructor(message: string, code?: string) {
+    super(message)
+    this.code = code
+  }
+}
 
-// Grösse der Text-Häppchen, die pro Gemini-Aufruf verarbeitet werden. Bei zu
-// grossen PDFs (viele Blöcke mit viel Text) würde eine einzige Anfrage die
-// Antwortlänge sprengen und mit abgeschnittenem/kaputtem JSON zurückkommen.
-const SEITEN_PRO_HAPPEN = 6
+// Start-Grösse der Text-Häppchen, die pro Gemini-Aufruf verarbeitet werden.
+// Meldet ein Häppchen "zu lang" (Antwort wurde abgeschnitten), wird es
+// automatisch halbiert und erneut versucht -- so passt sich die Grösse an
+// unterschiedlich dichte PDF-Seiten an, ohne dass ein fixer Wert je nach
+// Lager mal zu gross, mal unnötig klein ist.
+const SEITEN_PRO_HAPPEN = 4
 
 const router = useRouter()
 const { session } = useAuth()
@@ -57,6 +66,63 @@ const ergebnis = ref<Extraktion | null>(null)
 const balkenBreite = computed(() =>
   fortschritt.value.total ? Math.round((fortschritt.value.aktuell / fortschritt.value.total) * 100) : 0,
 )
+
+async function rufeGeminiAuf(text: string): Promise<Extraktion> {
+  const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', { body: { text } })
+
+  if (fnError) {
+    let message = fnError.message ?? 'Unbekannter Fehler bei der Analyse.'
+    let code: string | undefined
+    try {
+      const body = await (fnError as any).context?.json()
+      if (body?.error) message = body.error
+      if (body?.code) code = body.code
+    } catch {
+      // Antwortkörper war kein JSON -- ursprüngliche Fehlermeldung behalten
+    }
+    throw new GeminiFehler(message, code)
+  }
+  if (data?.error) throw new GeminiFehler(data.error, data.code)
+
+  return data as Extraktion
+}
+
+async function analysiereHaeppchenweise(
+  seitenGruppen: string[][],
+  titelseite: string,
+  gesamtSeiten: number,
+  fortschrittRef: Ref<{ phase: string; aktuell: number; total: number }>,
+): Promise<{ lager: LagerMeta | null; bloecke: Block[] }> {
+  let lager: LagerMeta | null = null
+  const bloecke: Block[] = []
+  let verarbeiteteSeiten = 0
+
+  const queue = [...seitenGruppen]
+  while (queue.length) {
+    const gruppe = queue.shift()!
+    fortschrittRef.value = {
+      phase: `Analysiere Programm (${verarbeiteteSeiten} von ${gesamtSeiten} Seiten)...`,
+      aktuell: verarbeiteteSeiten,
+      total: gesamtSeiten,
+    }
+    try {
+      const teil = await rufeGeminiAuf(titelseite + '\n\n' + gruppe.join('\n\n'))
+      if (!lager && teil.lager?.jahr) lager = teil.lager
+      bloecke.push(...(teil.bloecke ?? []))
+      verarbeiteteSeiten += gruppe.length
+    } catch (e) {
+      if (e instanceof GeminiFehler && e.code === 'MAX_TOKENS' && gruppe.length > 1) {
+        const mitte = Math.ceil(gruppe.length / 2)
+        queue.unshift(gruppe.slice(mitte))
+        queue.unshift(gruppe.slice(0, mitte))
+        continue
+      }
+      throw e
+    }
+  }
+
+  return { lager, bloecke }
+}
 
 async function dateiGewaehlt(e: Event) {
   error.value = ''
@@ -76,33 +142,20 @@ async function dateiGewaehlt(e: Event) {
     const detailIdx = seiten.findIndex((s) => s.includes('Detailprogramm'))
     const relevanteSeiten = detailIdx >= 0 ? seiten.slice(detailIdx) : seiten
 
-    const happen: string[] = []
+    const gruppen: string[][] = []
     for (let i = 0; i < relevanteSeiten.length; i += SEITEN_PRO_HAPPEN) {
-      happen.push(titelseite + '\n\n' + relevanteSeiten.slice(i, i + SEITEN_PRO_HAPPEN).join('\n\n'))
+      gruppen.push(relevanteSeiten.slice(i, i + SEITEN_PRO_HAPPEN))
     }
-    if (happen.length === 0) happen.push(titelseite)
+    if (gruppen.length === 0) gruppen.push([])
 
-    let lager: LagerMeta | null = null
-    const bloecke: Block[] = []
+    const { lager, bloecke } = await analysiereHaeppchenweise(
+      gruppen,
+      titelseite,
+      relevanteSeiten.length,
+      fortschritt,
+    )
 
-    for (let i = 0; i < happen.length; i++) {
-      fortschritt.value = {
-        phase: `Analysiere Programm (Teil ${i + 1} von ${happen.length})...`,
-        aktuell: i,
-        total: happen.length,
-      }
-      const { data, error: fnError } = await supabase.functions.invoke('parse-lager-pdf', {
-        body: { text: happen[i] },
-      })
-      if (fnError) throw fnError
-      if (data?.error) throw new Error(`Teil ${i + 1}/${happen.length}: ${data.error}`)
-
-      const teil = data as Extraktion
-      if (!lager && teil.lager?.jahr) lager = teil.lager
-      bloecke.push(...(teil.bloecke ?? []))
-    }
-
-    fortschritt.value = { phase: 'Analyse abgeschlossen.', aktuell: happen.length, total: happen.length }
+    fortschritt.value = { phase: 'Analyse abgeschlossen.', aktuell: relevanteSeiten.length, total: relevanteSeiten.length }
 
     if (!lager) throw new Error('Lager-Titelseite konnte nicht erkannt werden.')
     ergebnis.value = { lager, bloecke }
@@ -222,11 +275,10 @@ async function importieren() {
 main {
   max-width: 640px;
   margin: 2rem auto;
-  font-family: system-ui, sans-serif;
   padding: 0 1rem;
 }
 .hint {
-  color: #666;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 .fortschritt {
@@ -234,46 +286,43 @@ main {
 }
 .fortschritt p {
   font-size: 0.9rem;
-  color: #444;
+  color: var(--color-text-muted);
   margin-bottom: 0.4rem;
 }
 .balken {
   width: 100%;
   height: 8px;
-  background: #e5e5e5;
-  border-radius: 4px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .balken-fuellung {
   height: 100%;
-  background: #333;
+  background: var(--color-accent);
   transition: width 0.2s ease;
 }
 .lager-info {
   list-style: none;
   padding: 0;
-  color: #444;
+  color: var(--color-text-muted);
 }
 .bloecke-liste {
   max-height: 320px;
   overflow-y: auto;
-  border: 1px solid #ddd;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 0.5rem 1rem;
   margin: 1rem 0;
 }
 .bloecke-liste li {
-  padding: 0.2rem 0;
+  padding: 0.3rem 0;
 }
 .datum {
-  color: #888;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
-button {
-  padding: 0.6rem 1rem;
-  font-size: 1rem;
-  cursor: pointer;
-}
 .error {
-  color: #b00020;
+  color: var(--color-danger);
 }
 </style>

@@ -121,15 +121,20 @@ async function withGoogle() {
 main {
   max-width: 400px;
   margin: 4rem auto;
-  font-family: system-ui, sans-serif;
   text-align: center;
+}
+h1 {
+  font-size: 1.7rem;
 }
 .google {
   width: 100%;
-  padding: 0.6rem;
-  font-size: 1rem;
-  cursor: pointer;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   margin-bottom: 1.5rem;
+}
+.google:hover:not(:disabled) {
+  background: var(--color-surface-muted);
 }
 .tabs {
   display: flex;
@@ -138,15 +143,14 @@ main {
   margin-bottom: 1rem;
 }
 .tabs button {
-  padding: 0.4rem 0.8rem;
-  cursor: pointer;
   background: none;
-  border: 1px solid #ccc;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
 }
 .tabs button.active {
-  background: #333;
-  color: #fff;
-  border-color: #333;
+  background: var(--color-accent);
+  color: #fdfbf3;
+  border-color: var(--color-accent);
 }
 form {
   display: flex;
@@ -154,21 +158,12 @@ form {
   gap: 0.75rem;
   margin-top: 1rem;
 }
-input {
-  padding: 0.6rem;
-  font-size: 1rem;
-}
-button {
-  padding: 0.6rem;
-  font-size: 1rem;
-  cursor: pointer;
-}
 .hint {
   font-size: 0.85rem;
-  color: #666;
+  color: var(--color-text-muted);
   margin-top: 1rem;
 }
 .error {
-  color: #b00020;
+  color: var(--color-danger);
 }
 </style>

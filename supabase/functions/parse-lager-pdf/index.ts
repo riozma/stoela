@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
-          maxOutputTokens: 32000,
+          maxOutputTokens: 65536,
         },
       }),
     },
@@ -146,12 +146,13 @@ Deno.serve(async (req) => {
   try {
     JSON.parse(jsonText)
   } catch {
+    const zuLang = finishReason === 'MAX_TOKENS'
     return new Response(
       JSON.stringify({
-        error:
-          finishReason === 'MAX_TOKENS'
-            ? 'Antwort wurde wegen Länge abgeschnitten. Bitte kleineren PDF-Ausschnitt senden.'
-            : 'Antwort war kein gültiges JSON.',
+        error: zuLang
+          ? 'Antwort wurde wegen Länge abgeschnitten. Bitte kleineren PDF-Ausschnitt senden.'
+          : 'Antwort war kein gültiges JSON.',
+        code: zuLang ? 'MAX_TOKENS' : 'INVALID_JSON',
       }),
       { status: 502, headers: CORS_HEADERS },
     )

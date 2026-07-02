@@ -142,8 +142,8 @@ onMounted(ladeLager)
       <h1>Stöckli Lager</h1>
       <div class="user">
         <span>{{ session?.user.email }}</span>
-        <button @click="kontoOffen = !kontoOffen">Konto</button>
-        <button @click="logout">Logout</button>
+        <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
+        <button class="secondary" @click="logout">Logout</button>
       </div>
     </header>
 
@@ -210,7 +210,7 @@ onMounted(ladeLager)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="l in lager" :key="l.id">
+          <tr v-for="l in lager" :key="l.id" class="lager-zeile" @click="router.push(`/lager/${l.id}`)">
             <td>{{ l.jahr }}</td>
             <td>{{ l.name }}</td>
             <td>{{ l.ort ?? '–' }}</td>
@@ -227,9 +227,8 @@ onMounted(ladeLager)
 
 <style scoped>
 main {
-  max-width: 720px;
+  max-width: 760px;
   margin: 2rem auto;
-  font-family: system-ui, sans-serif;
   padding: 0 1rem;
 }
 header {
@@ -256,31 +255,39 @@ label {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.85rem;
-}
-input {
-  padding: 0.5rem;
-  font-size: 1rem;
-}
-button {
-  padding: 0.5rem 1rem;
-  cursor: pointer;
+  color: var(--color-text-muted);
 }
 table {
   width: 100%;
   border-collapse: collapse;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 th,
 td {
   text-align: left;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid #ddd;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+th {
+  color: var(--color-text-muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.lager-zeile {
+  cursor: pointer;
+}
+.lager-zeile:hover {
+  background: var(--color-surface-muted);
 }
 .error {
-  color: #b00020;
+  color: var(--color-danger);
 }
 .hint {
   font-size: 0.85rem;
-  color: #666;
+  color: var(--color-text-muted);
   margin-top: -0.5rem;
   margin-bottom: 1rem;
 }
