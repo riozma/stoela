@@ -9,6 +9,12 @@
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 const GEMINI_MODEL = 'gemini-2.5-flash'
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 const RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -82,16 +88,22 @@ const PROMPT_PREFIX =
   'notizen einfach unverändert wieder. Extrahiere jetzt vollständig:\n\n'
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
   }
   if (!GEMINI_API_KEY) {
-    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY ist nicht gesetzt' }), { status: 500 })
+    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY ist nicht gesetzt' }), {
+      status: 500,
+      headers: CORS_HEADERS,
+    })
   }
 
   const { text } = await req.json()
   if (!text || typeof text !== 'string') {
-    return new Response(JSON.stringify({ error: 'text fehlt' }), { status: 400 })
+    return new Response(JSON.stringify({ error: 'text fehlt' }), { status: 400, headers: CORS_HEADERS })
   }
 
   const response = await fetch(
@@ -115,7 +127,10 @@ Deno.serve(async (req) => {
 
   if (!response.ok) {
     const detail = await response.text()
-    return new Response(JSON.stringify({ error: 'Gemini API Fehler', detail }), { status: 502 })
+    return new Response(JSON.stringify({ error: 'Gemini API Fehler', detail }), {
+      status: 502,
+      headers: CORS_HEADERS,
+    })
   }
 
   const result = await response.json()
@@ -123,8 +138,9 @@ Deno.serve(async (req) => {
   if (!jsonText) {
     return new Response(JSON.stringify({ error: 'Kein strukturiertes Ergebnis erhalten', detail: result }), {
       status: 502,
+      headers: CORS_HEADERS,
     })
   }
 
-  return new Response(jsonText, { headers: { 'content-type': 'application/json' } })
+  return new Response(jsonText, { headers: { ...CORS_HEADERS, 'content-type': 'application/json' } })
 })
