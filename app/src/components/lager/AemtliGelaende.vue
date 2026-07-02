@@ -1,16 +1,53 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import AemtliShell from './AemtliShell.vue'
 import LagerMap from './LagerMap.vue'
 
-const props = defineProps<{ lagerId: string; aemtliId: string; aemtliName: string; lat?: number | null; lng?: number | null }>()
+const props = defineProps<{
+  lagerId: string
+  aemtliId: string
+  aemtliName: string
+  lat?: number | null
+  lng?: number | null
+}>()
 
-const wiesen = ref<{ id: string; name: string; lat: number | null; lng: number | null; bauer_name: string | null; bauer_telefon: string | null; status: string; notiz: string | null }[]>([])
+interface Wiese {
+  id: string
+  name: string
+  lat: number | null
+  lng: number | null
+  bauer_name: string | null
+  bauer_telefon: string | null
+  status: string
+  notiz: string | null
+  created_at: string
+}
+
+const wiesen = ref<Wiese[]>([])
 const form = ref({ name: '', bauer_name: '', bauer_telefon: '', notiz: '' })
 
+const STATUS_LABELS: Record<string, string> = {
+  offen: 'Noch anfragen',
+  zusage: '✓ Zusage',
+  abgelehnt: '✗ Abgelehnt',
+  bedankt: '🍷 Bedankt',
+}
+
+const wiesenMitNr = computed(() =>
+  wiesen.value.map((w, i) => ({ ...w, nr: i + 1 })),
+)
+
+const hatBedankungsAusstehend = computed(() =>
+  wiesen.value.some((w) => w.status === 'zusage'),
+)
+
 async function laden() {
-  const { data } = await supabase.from('gelaendespielwiesen').select('*').eq('lager_id', props.lagerId)
+  const { data } = await supabase
+    .from('gelaendespielwiesen')
+    .select('*')
+    .eq('lager_id', props.lagerId)
+    .order('created_at')
   wiesen.value = data ?? []
 }
 
@@ -23,8 +60,7 @@ async function hinzufuegen() {
     bauer_name: form.value.bauer_name || null,
     bauer_telefon: form.value.bauer_telefon || null,
     notiz: form.value.notiz || null,
-    lat: props.lat ?? null,
-    lng: props.lng ?? null,
+    status: 'offen',
   })
   form.value = { name: '', bauer_name: '', bauer_telefon: '', notiz: '' }
   await laden()
@@ -34,41 +70,112 @@ async function statusSetzen(id: string, status: string) {
   await supabase.from('gelaendespielwiesen').update({ status }).eq('id', id)
   await laden()
 }
+
+async function loeschen(id: string) {
+  if (!confirm('Wiese wirklich löschen?')) return
+  await supabase.from('gelaendespielwiesen').delete().eq('id', id)
+  await laden()
+}
+
+async function notizSpeichern(id: string, notiz: string) {
+  await supabase.from('gelaendespielwiesen').update({ notiz: notiz || null }).eq('id', id)
+}
 </script>
 
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
     <LagerMap v-if="lat && lng" :lat="lat" :lng="lng" ort="Lager / Umgebung" />
+
+    <p v-if="hatBedankungsAusstehend" class="dankeschoen-hinweis">
+      🍷 Du hast Wiesen mit Zusage – nach dem Lager Dankeschön (Flasche Wein) persönlich vorbeibringen und Status auf «Bedankt» setzen!
+    </p>
+
+    <h3>Neue Wiese erfassen</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
-      <input v-model="form.name" placeholder="Wiese / Ort" required />
+      <input v-model="form.name" placeholder="Name / Ort der Wiese" required style="flex:2" />
       <input v-model="form.bauer_name" placeholder="Bauer/in" />
       <input v-model="form.bauer_telefon" placeholder="Telefon" />
-      <input v-model="form.notiz" placeholder="Notiz" />
+      <input v-model="form.notiz" placeholder="Notiz" style="flex:1" />
       <button type="submit">+ Wiese</button>
     </form>
-    <table class="liste">
-      <thead><tr><th>Wiese</th><th>Bauer/in</th><th>Kontakt</th><th>Status</th><th></th></tr></thead>
+
+    <table v-if="wiesenMitNr.length" class="liste">
+      <thead>
+        <tr>
+          <th>Nr.</th>
+          <th>Wiese</th>
+          <th>Bauer/in</th>
+          <th>Kontakt</th>
+          <th>Notiz</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
-        <tr v-for="w in wiesen" :key="w.id">
-          <td>{{ w.name }}</td>
+        <tr v-for="w in wiesenMitNr" :key="w.id" :class="'status-' + w.status">
+          <td class="nr">Wiese {{ w.nr }}</td>
+          <td><strong>{{ w.name }}</strong></td>
           <td>{{ w.bauer_name ?? '–' }}</td>
-          <td>{{ w.bauer_telefon ?? '–' }}</td>
-          <td>{{ w.status }}</td>
           <td>
-            <button class="secondary klein" @click="statusSetzen(w.id, 'zusage')">Zusage</button>
-            <button class="secondary klein" @click="statusSetzen(w.id, 'bedankt')">Bedankt</button>
+            <a v-if="w.bauer_telefon" :href="`tel:${w.bauer_telefon}`" class="tel-link">{{ w.bauer_telefon }}</a>
+            <span v-else>–</span>
+          </td>
+          <td>
+            <input
+              class="notiz-input"
+              :value="w.notiz ?? ''"
+              placeholder="–"
+              @blur="notizSpeichern(w.id, ($event.target as HTMLInputElement).value)"
+            />
+          </td>
+          <td>
+            <span class="status-pill" :class="'s-' + w.status">{{ STATUS_LABELS[w.status] }}</span>
+          </td>
+          <td class="aktionen-zelle">
+            <button v-if="w.status === 'offen'" class="secondary klein" @click="statusSetzen(w.id, 'zusage')">Zusage</button>
+            <button v-if="w.status === 'offen'" class="secondary klein" @click="statusSetzen(w.id, 'abgelehnt')">Abgelehnt</button>
+            <button v-if="w.status === 'zusage'" class="secondary klein" @click="statusSetzen(w.id, 'bedankt')">Bedankt ✓</button>
+            <button class="secondary klein loeschen-btn" @click="loeschen(w.id)" title="Löschen">✕</button>
           </td>
         </tr>
       </tbody>
     </table>
-    <p class="hint">Am Schluss Flasche Wein als Dankeschön vorbeibringen.</p>
+    <p v-else class="hint">Noch keine Wiesen erfasst. Bauern in der Lager-Umgebung persönlich anfragen.</p>
+
+    <p class="hint">Tipp: Nach dem Lager zu jeder Wiese mit Zusage eine Flasche Wein vorbeibringen (Dankeschön).</p>
   </AemtliShell>
 </template>
 
 <style scoped>
-.inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+h3 { margin: 0.75rem 0 0.4rem; font-size: 0.95rem; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 1rem; align-items: end; }
 .liste { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.liste th, .liste td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); }
-button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; margin-right: 0.25rem; }
-.hint { color: var(--color-text-muted); font-size: 0.88rem; }
+.liste th, .liste td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; }
+.liste th { font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; }
+.nr { font-weight: 700; color: var(--color-text-muted); white-space: nowrap; }
+.tel-link { color: var(--color-accent); text-decoration: none; }
+.tel-link:hover { text-decoration: underline; }
+.notiz-input { width: 100%; min-width: 8rem; border: 1px solid transparent; background: transparent; padding: 0.2rem 0.3rem; font-size: 0.83rem; border-radius: var(--radius-sm); }
+.notiz-input:focus { border-color: var(--color-border); background: var(--color-surface); outline: none; }
+.aktionen-zelle { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
+.loeschen-btn { color: var(--color-danger); }
+
+/* Status-Pills */
+.status-pill { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: var(--radius-pill); font-weight: 600; white-space: nowrap; }
+.s-offen { background: var(--color-surface-muted); color: var(--color-text-muted); }
+.s-zusage { background: #e8f5e9; color: #2e7d32; }
+.s-abgelehnt { background: #fdf6f4; color: var(--color-danger); }
+.s-bedankt { background: #fdf8f0; color: #c98a3f; }
+
+/* Row tinting */
+tr.status-zusage td { background: #f7fdf8; }
+tr.status-abgelehnt td { opacity: 0.6; }
+tr.status-bedankt td { background: #fdfaf5; }
+
+.dankeschoen-hinweis {
+  background: #fdf8f0; border: 1px solid #c98a3f; border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem; font-size: 0.88rem; margin-bottom: 0.75rem;
+}
+.hint { color: var(--color-text-muted); font-size: 0.88rem; margin-top: 0.5rem; }
 </style>
