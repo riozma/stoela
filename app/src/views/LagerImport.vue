@@ -190,6 +190,7 @@ async function importieren() {
       ort: lager.ort ?? null,
       start_datum: lager.start_datum ?? null,
       end_datum: lager.end_datum ?? null,
+      status: 'anmeldung_offen',
       created_by: session.value.user.id,
     })
     .select('id')

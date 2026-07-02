@@ -35,9 +35,12 @@ onMounted(async () => {
     return
   }
 
-  const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId })
+  const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId, p_typ: 'leiter' })
   if (error || !data) {
-    ladefehler.value = 'Die Anmeldung für dieses Lager ist aktuell nicht offen.'
+    const { data: peek } = await supabase.rpc('get_lager_anmeldung_peek', { p_lager_id: lagerId })
+    ladefehler.value = peek?.status
+      ? `Leiter-Bewerbung nicht möglich (Status: ${peek.status}).`
+      : 'Dieses Lager ist nicht verfügbar.'
     return
   }
   lagerInfo.value = data as typeof lagerInfo.value

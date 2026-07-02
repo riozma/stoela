@@ -85,6 +85,17 @@ async function ladeLager() {
   if (fetchError) error.value = fetchError.message
   else lager.value = data ?? []
   loading.value = false
+
+  // Einziges kommendes Lager → direkt zum Dashboard
+  const heute = new Date().toISOString().slice(0, 10)
+  const kommende = lager.value.filter((l) => {
+    if (l.status === 'archiviert' || l.status === 'abgeschlossen') return false
+    if (l.end_datum && l.end_datum < heute) return false
+    return true
+  })
+  if (kommende.length === 1) {
+    await router.replace(`/lager/${kommende[0].id}`)
+  }
 }
 
 async function erstellen() {
@@ -101,6 +112,7 @@ async function erstellen() {
       ort_place_id: form.value.ort_place_id,
       start_datum: form.value.start_datum || null,
       end_datum: form.value.end_datum || null,
+      status: 'anmeldung_offen',
       created_by: session.value?.user.id ?? null,
     })
     .select('id')

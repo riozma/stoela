@@ -24,9 +24,14 @@ const form = ref({
 })
 
 onMounted(async () => {
-  const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId })
+  const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId, p_typ: 'tn' })
   if (error || !data) {
-    ladefehler.value = 'Die Anmeldung für dieses Lager ist aktuell nicht offen.'
+    const { data: peek } = await supabase.rpc('get_lager_anmeldung_peek', { p_lager_id: lagerId })
+    if (peek?.status) {
+      ladefehler.value = `Anmeldung nicht offen (aktueller Status: ${peek.status}). Die Lagerleitung muss unter Einstellungen den Status auf «Anmeldung offen» setzen.`
+    } else {
+      ladefehler.value = 'Die Anmeldung für dieses Lager ist aktuell nicht verfügbar.'
+    }
     return
   }
   lagerName.value = (data as { name: string }).name
