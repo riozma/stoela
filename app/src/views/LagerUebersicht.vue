@@ -43,6 +43,7 @@ async function passwortSetzen() {
 const lager = ref<Lager[]>([])
 const loading = ref(true)
 const error = ref('')
+const vorLagerListe = ref<{ id: string; name: string; jahr: number }[]>([])
 
 const naechstesJahr = new Date().getFullYear() + 1
 const form = ref({
@@ -54,6 +55,7 @@ const form = ref({
   ort_place_id: null as string | null,
   start_datum: '',
   end_datum: '',
+  vor_lager_id: '' as string,
 })
 const saving = ref(false)
 
@@ -123,6 +125,9 @@ async function ladeLager() {
 
   loading.value = false
 
+  const { data: vorLager } = await supabase.from('lager').select('id, name, jahr').order('jahr', { ascending: false })
+  vorLagerListe.value = vorLager ?? []
+
   // Einziges kommendes Lager → direkt zum Dashboard
   const heute = new Date().toISOString().slice(0, 10)
   const kommende = lager.value.filter((l) => {
@@ -138,6 +143,9 @@ async function ladeLager() {
 async function erstellen() {
   error.value = ''
   saving.value = true
+
+  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').maybeSingle()
+
   const { data: neuesLager, error: insertError } = await supabase
     .from('lager')
     .insert({
@@ -149,8 +157,10 @@ async function erstellen() {
       ort_place_id: form.value.ort_place_id,
       start_datum: form.value.start_datum || null,
       end_datum: form.value.end_datum || null,
-      status: 'anmeldung_offen',
+      status: 'planung',
       created_by: session.value?.user.id ?? null,
+      organisation_id: org?.id ?? null,
+      vor_lager_id: form.value.vor_lager_id || null,
     })
     .select('id')
     .single()
@@ -171,6 +181,10 @@ async function erstellen() {
     })
   }
 
+  if (form.value.start_datum) {
+    await supabase.rpc('lager_todos_generieren', { p_lager_id: neuesLager.id })
+  }
+
   saving.value = false
   form.value.name = `Stöckli-Lager ${form.value.jahr + 1}`
   form.value.jahr += 1
@@ -180,7 +194,9 @@ async function erstellen() {
   form.value.ort_place_id = null
   form.value.start_datum = ''
   form.value.end_datum = ''
+  form.value.vor_lager_id = ''
   await ladeLager()
+  await router.push(`/lager/${neuesLager.id}/fahrplan`)
 }
 
 onMounted(ladeLager)
@@ -211,7 +227,10 @@ onMounted(ladeLager)
     <section>
       <div class="section-kopf">
         <h2>Deine Lager</h2>
-        <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
+        <div class="kopf-aktionen">
+          <router-link to="/organisation" class="secondary link-btn">Wissensspeicher</router-link>
+          <button class="secondary" @click="kontoOffen = !kontoOffen">Konto</button>
+        </div>
       </div>
       <p class="hint">Klicke auf ein Lager, um Programm, Leiter, Gruppen und Ämtli zu verwalten.</p>
       <p v-if="loading">Lade...</p>
@@ -257,6 +276,13 @@ onMounted(ladeLager)
           Ende
           <input v-model="form.end_datum" type="date" />
         </label>
+        <label>
+          Vorjahres-Lager
+          <select v-model="form.vor_lager_id">
+            <option value="">– optional –</option>
+            <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
+          </select>
+        </label>
         <button type="submit" :disabled="saving">
           {{ saving ? 'Speichere...' : 'Lager erstellen' }}
         </button>
@@ -292,6 +318,8 @@ main {
   margin-bottom: 0.25rem;
 }
 .section-kopf h2 { margin: 0; }
+.kopf-aktionen { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.link-btn { display: inline-flex; align-items: center; padding: 0.55rem 1.1rem; text-decoration: none; border-radius: var(--radius-pill); font-size: 1rem; }
 form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

@@ -16,12 +16,16 @@ import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
+import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
+import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
+import ElterninfoPanel from '../components/lager/ElterninfoPanel.vue'
 import LagerNav from '../components/lager/LagerNav.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
 import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
+import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
 import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
@@ -54,6 +58,9 @@ interface Lager {
   ort_lat: number | null
   ort_lng: number | null
   created_by: string | null
+  vor_lager_id: string | null
+  vorweekend_start: string | null
+  vorweekend_ende: string | null
 }
 interface TN {
   id: string
@@ -77,6 +84,9 @@ interface LeiterAnmeldung {
   anwesend_von: string | null
   anwesend_bis: string | null
   status: string
+  anmeldung_art?: string
+  bestaetigen_bis?: string | null
+  von_vorjahr?: boolean
 }
 interface Aemtli {
   id: string
@@ -123,7 +133,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | string
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -166,6 +176,8 @@ const hatKuecheTab = computed(() =>
 const zuordnungLade = ref(false)
 const zuordnungNachricht = ref('')
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
+const vorLagerIdForm = ref('')
+const andereLager = ref<{ id: string; name: string; jahr: number }[]>([])
 const lagerSpeichern = ref(false)
 
 const lager = ref<Lager | null>(null)
@@ -199,7 +211,10 @@ const istAnwesend = computed(() => {
 })
 
 const leiterAnfragen = computed(() => leiterListe.value.filter((l) => l.status === 'angefragt'))
-const leiterBestaetigt = computed(() => leiterListe.value.filter((l) => l.status === 'bestaetigt' || l.status === 'angemeldet'))
+const leiterProvisorisch = computed(() =>
+  leiterListe.value.filter((l) => l.status === 'angemeldet'),
+)
+const leiterBestaetigt = computed(() => leiterListe.value.filter((l) => l.status === 'bestaetigt'))
 
 // --- Programm ---
 const tage = computed(() => {
@@ -288,10 +303,17 @@ const neueRolleName = ref<Record<string, string>>({})
 async function ladeLeiter() {
   const { data } = await supabase
     .from('anmeldungen_leiter')
-    .select('id, profile_id, vorname, nachname, email, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status')
+    .select('id, profile_id, vorname, nachname, email, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
+}
+
+async function leiterBestaetigen(anmeldungId: string) {
+  leiterFehler.value = ''
+  const { error: err } = await supabase.rpc('leiter_bestaetigen', { p_anmeldung_id: anmeldungId })
+  if (err) { leiterFehler.value = err.message; return }
+  await leiterNachAenderung()
 }
 
 async function leiterAnfrageBearbeiten(anmeldungId: string, entscheidung: 'genehmigen' | 'ablehnen') {
@@ -642,6 +664,12 @@ async function teamEntfernen(teamId: string) {
 // --- Einstellungen / ICS ---
 const statusSpeichern = ref(false)
 
+async function vorLagerSpeichern() {
+  if (!lager.value) return
+  await supabase.from('lager').update({ vor_lager_id: vorLagerIdForm.value || null }).eq('id', lagerId.value)
+  lager.value.vor_lager_id = vorLagerIdForm.value || null
+}
+
 async function statusAendern(neuerStatus: string) {
   statusSpeichern.value = true
   await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId.value)
@@ -842,6 +870,15 @@ async function ladeTabDaten(tab: Tab) {
     await ladeGruppen()
     return
   }
+  if (tab === 'einstellungen') {
+    const { data } = await supabase
+      .from('lager')
+      .select('id, name, jahr')
+      .neq('id', lagerId.value)
+      .order('jahr', { ascending: false })
+    andereLager.value = data ?? []
+    return
+  }
   if (tab === 'dashboard') {
     await ladeLetzteAenderungenListe()
   }
@@ -857,7 +894,7 @@ async function ladeLagerSeite() {
 
   const { data: lagerData, error: lagerError } = await supabase
     .from('lager')
-    .select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by')
+    .select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende')
     .eq('id', lagerId.value)
     .single()
 
@@ -875,6 +912,7 @@ async function ladeLagerSeite() {
     end_datum: lagerData.end_datum ?? '',
     jahr: lagerData.jahr,
   }
+  vorLagerIdForm.value = lagerData.vor_lager_id ?? ''
   loading.value = false
 
   await Promise.all([ladeBloeckeBasis(), ladeNavKontext()])
@@ -926,7 +964,7 @@ watch(
         :hat-kueche-tab="hatKuecheTab"
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnCountNav"
-        :leiter-count="leiterBestaetigt.length"
+        :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
         :mobile-open="navOffen"
         @close="navOffen = false"
       />
@@ -957,6 +995,37 @@ watch(
           v-if="lager.ort || (lager.ort_lat && lager.ort_lng)"
           :lat="lager.ort_lat"
           :lng="lager.ort_lng"
+          :ort="lager.ort"
+        />
+      </section>
+
+      <!-- Fahrplan -->
+      <section v-if="activeTab === 'fahrplan'">
+        <LagerFahrplan
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :is-leitung="isLeitung"
+          :vor-lager-id="lager.vor_lager_id"
+        />
+      </section>
+
+      <!-- Vorweekend -->
+      <section v-if="activeTab === 'vorweekend'">
+        <VorweekendPanel
+          :lager-id="lagerId"
+          :vorweekend-start="lager.vorweekend_start"
+          :vorweekend-ende="lager.vorweekend_ende"
+        />
+      </section>
+
+      <!-- Elterninfo -->
+      <section v-if="activeTab === 'elterninfo'">
+        <ElterninfoPanel
+          :lager-id="lagerId"
+          :lager-name="lager.name"
+          :jahr="lager.jahr"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
           :ort="lager.ort"
         />
       </section>
@@ -1060,6 +1129,22 @@ watch(
           Nur die Lagerleitung kann die Ämtli <strong>Küche</strong> und <strong>Finanzen</strong> zuweisen.
         </p>
 
+        <div v-if="leiterProvisorisch.length" class="anfragen-box">
+          <h3>Provisorisch angemeldet ({{ leiterProvisorisch.length }})</h3>
+          <p class="hint">Spätestens 3 Monate vor Lager bestätigen – An-/Abreisedaten festlegen.</p>
+          <div v-for="a in leiterProvisorisch" :key="a.id" class="anfrage-karte">
+            <strong>{{ a.vorname }} {{ a.nachname }}</strong>
+            <span v-if="a.von_vorjahr" class="badge prov">Vorjahr</span>
+            <span class="hint">
+              {{ a.email ?? '–' }}
+              <template v-if="a.bestaetigen_bis"> · bestätigen bis {{ formatFaelligkeit(a.bestaetigen_bis) }}</template>
+            </span>
+            <div v-if="isLeitung || a.profile_id === session?.user.id" class="inline-form">
+              <button @click="leiterBestaetigen(a.id)">Als fix bestätigen</button>
+            </div>
+          </div>
+        </div>
+
         <div v-if="leiterAnfragen.length && isLeitung" class="anfragen-box">
           <h3>Offene Anfragen ({{ leiterAnfragen.length }})</h3>
           <div v-for="a in leiterAnfragen" :key="a.id" class="anfrage-karte">
@@ -1084,10 +1169,10 @@ watch(
         </div>
 
         <table v-if="leiterBestaetigt.length" class="liste">
-          <thead><tr><th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Ämtli</th></tr></thead>
+          <thead><tr><th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Status</th><th>Ämtli</th></tr></thead>
           <tbody>
             <tr v-for="l in leiterBestaetigt" :key="l.id">
-              <td>{{ l.vorname }} {{ l.nachname }}</td>
+              <td>{{ l.vorname }} {{ l.nachname }} <span v-if="l.von_vorjahr" class="badge prov">VJ</span></td>
               <td>
                 <span v-if="l.profile_id" class="hint">✓</span>
                 <span v-else class="login-offen">ohne Login</span>
@@ -1095,6 +1180,7 @@ watch(
               <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
               <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
               <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
+              <td>{{ l.anmeldung_art === 'provisorisch' ? 'provisorisch' : 'fix' }}</td>
               <td class="aemtli-zelle">
                 <div class="rollen-zeile">
                   <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
@@ -1272,6 +1358,16 @@ watch(
           <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Speichern' }}</button>
         </form>
 
+        <h3>Vorjahres-Lager</h3>
+        <p class="hint">Für Leiter-Übernahme und Fahrplan – wird beim «Leiter vom Vorjahr» verwendet.</p>
+        <div class="inline-form">
+          <select v-model="vorLagerIdForm">
+            <option value="">– keins –</option>
+            <option v-for="a in andereLager" :key="a.id" :value="a.id">{{ a.name }} ({{ a.jahr }})</option>
+          </select>
+          <button type="button" class="secondary" @click="vorLagerSpeichern">Speichern</button>
+        </div>
+
         <h3>Lager-Status</h3>
         <select :value="lager.status" @change="statusAendern(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
           <option value="planung">Planung</option>
@@ -1376,6 +1472,7 @@ button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .anfragen-box { margin-bottom: 1.25rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
 .anfrage-karte { padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
 .anfrage-karte:last-child { border-bottom: none; }
+.badge.prov { display: inline-block; margin-left: 0.35rem; padding: 0.05rem 0.4rem; border-radius: var(--radius-pill); font-size: 0.7rem; background: #c98a3f; color: #fff; }
 .lager-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
 .lager-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
 </style>

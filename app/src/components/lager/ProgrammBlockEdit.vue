@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../../supabaseClient'
 import { CODE_LABELS, formatProgrammTag, type BlockCode } from '../../lib/programmUtils'
+import { ABREISE_FELDER, ANREISE_FELDER, BLOCK_TYP_LABELS } from '../../lib/workflowUtils'
 import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../../lib/nameMatching'
 
 interface AbschnittZeile {
@@ -33,6 +34,7 @@ const fehler = ref('')
 const loeschenLade = ref(false)
 
 const form = ref({
+  blockTyp: 'programm' as 'programm' | 'anreise' | 'abreise' | 'vorweekend',
   code: 'LP' as BlockCode,
   nummer: '',
   titel: '',
@@ -45,6 +47,8 @@ const form = ref({
   sicherheitsueberlegungen: '',
   notizen: '',
 })
+
+const sonderfelder = ref<Record<string, string>>({})
 
 const abschnitte = ref<AbschnittZeile[]>([])
 const material = ref<MaterialZeile[]>([])
@@ -88,6 +92,12 @@ async function ladenBlock() {
   fehler.value = ''
   if (istNeu.value) {
     form.value.tag = tagAusRoute()
+    const qTyp = route.query.typ
+    if (qTyp === 'anreise' || qTyp === 'abreise') {
+      form.value.blockTyp = qTyp
+      form.value.titel = qTyp === 'anreise' ? 'Anreise' : 'Abreise'
+      form.value.code = 'ES'
+    }
     abschnitte.value = [{ zeit: '', programm: '', verantwortlich: '' }]
     material.value = [{ name: '', wer: '' }]
     laden.value = false
@@ -105,6 +115,7 @@ async function ladenBlock() {
     return
   }
   form.value = {
+    blockTyp: (data.block_typ as typeof form.value.blockTyp) ?? 'programm',
     code: data.code as BlockCode,
     nummer: data.nummer ?? '',
     titel: data.titel ?? '',
@@ -117,6 +128,7 @@ async function ladenBlock() {
     sicherheitsueberlegungen: data.sicherheitsueberlegungen ?? '',
     notizen: data.notizen ?? '',
   }
+  sonderfelder.value = { ...((data.sonderfelder as Record<string, string>) ?? {}) }
   abschnitte.value = abschnitteAusJson((data.programmabschnitt as ProgrammabschnittMitZuordnung[]) ?? [])
   if (!abschnitte.value.length) abschnitte.value = [{ zeit: '', programm: '', verantwortlich: '' }]
   material.value = materialAusJson((data.material as MaterialMitZuordnung[]) ?? [])
@@ -143,6 +155,7 @@ async function speichernBlock() {
   speichern.value = true
   const payload = {
     lager_id: props.lagerId,
+    block_typ: form.value.blockTyp,
     code: form.value.code,
     nummer: form.value.nummer || null,
     titel: form.value.titel.trim(),
@@ -154,6 +167,7 @@ async function speichernBlock() {
     geschichte: form.value.geschichte || null,
     sicherheitsueberlegungen: form.value.sicherheitsueberlegungen || null,
     notizen: form.value.notizen || null,
+    sonderfelder: sonderfelder.value,
     programmabschnitt: abschnitte.value
       .filter((a) => a.programm.trim())
       .map((a) => ({ zeit: a.zeit || null, programm: a.programm, verantwortlich: a.verantwortlich || null })),
@@ -208,6 +222,11 @@ function zurueck() {
       <p v-if="fehler" class="error">{{ fehler }}</p>
 
       <form class="edit-form" @submit.prevent="speichernBlock">
+        <label>Block-Art
+          <select v-model="form.blockTyp">
+            <option v-for="(label, key) in BLOCK_TYP_LABELS" :key="key" :value="key">{{ label }}</option>
+          </select>
+        </label>
         <label>Typ
           <select v-model="form.code">
             <option v-for="(label, code) in CODE_LABELS" :key="code" :value="code">{{ code }} – {{ label }}</option>
@@ -220,6 +239,22 @@ function zurueck() {
         <label>Ende <input v-model="form.endZeit" type="time" required /></label>
         <label>Ort <input v-model="form.ort" /></label>
         <label class="full">Verantwortlich <input v-model="form.verantwortlich" /></label>
+
+        <template v-if="form.blockTyp === 'anreise'">
+          <div v-for="f in ANREISE_FELDER" :key="f.key" class="full">
+            <label>{{ f.label }}
+              <input v-model="sonderfelder[f.key]" />
+            </label>
+          </div>
+        </template>
+        <template v-if="form.blockTyp === 'abreise'">
+          <div v-for="f in ABREISE_FELDER" :key="f.key" class="full">
+            <label>{{ f.label }}
+              <input v-model="sonderfelder[f.key]" />
+            </label>
+          </div>
+        </template>
+
         <label class="full">Geschichte <textarea v-model="form.geschichte" rows="3" /></label>
         <label class="full">Sicherheitsüberlegungen <textarea v-model="form.sicherheitsueberlegungen" rows="3" /></label>
         <label class="full">Notizen <textarea v-model="form.notizen" rows="2" /></label>

@@ -7,6 +7,7 @@ import LagerDetail from '../views/LagerDetail.vue'
 import AnmeldungTN from '../views/AnmeldungTN.vue'
 import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
 import Willkommen from '../views/Willkommen.vue'
+import OrganisationView from '../views/OrganisationView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -14,6 +15,7 @@ const router = createRouter({
     { path: '/', redirect: '/lager' },
     { path: '/login', name: 'login', component: LoginView },
     { path: '/lager', name: 'lager', component: LagerUebersicht, meta: { requiresAuth: true } },
+    { path: '/organisation', name: 'organisation', component: OrganisationView, meta: { requiresAuth: true } },
     { path: '/lager/import', name: 'lager-import', component: LagerImport, meta: { requiresAuth: true } },
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },

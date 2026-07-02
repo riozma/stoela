@@ -88,10 +88,10 @@ function zuTag(tag: string) {
   router.push(`/lager/${props.lagerId}/programm/tag/${tag}`)
 }
 
-function neuBlock(tag?: string) {
+function neuBlock(tag?: string, typ?: string) {
   router.push({
     path: `/lager/${props.lagerId}/programm/neu`,
-    query: tag ? { tag } : {},
+    query: { ...(tag ? { tag } : {}), ...(typ ? { typ } : {}) },
   })
 }
 
@@ -109,6 +109,8 @@ function codeClass(code: BlockCode) {
       </div>
       <div class="gesamt-aktionen">
         <button type="button" @click="neuBlock()">+ Neues Programm</button>
+        <button type="button" class="secondary" @click="neuBlock(undefined, 'anreise')">+ Anreise</button>
+        <button type="button" class="secondary" @click="neuBlock(undefined, 'abreise')">+ Abreise</button>
         <router-link :to="`/lager/${lagerId}/programm/tag/${heuteIso()}`" class="secondary link-btn">
           Heute
         </router-link>

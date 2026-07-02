@@ -3,11 +3,20 @@ import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
+import { bestaetigenBis } from '../lib/workflowUtils'
 
 const route = useRoute()
 const router = useRouter()
 const { session } = useAuth()
 const lagerId = route.params.id as string
+
+const email = computed(() => session.value?.user.email ?? '')
+
+const bestaetigungHinweis = computed(() => {
+  if (!lagerInfo.value?.start_datum) return ''
+  const bis = bestaetigenBis(lagerInfo.value.start_datum)
+  return bis ? `Bitte spätestens bis ${bis} bestätigen (3 Monate vor Lager).` : ''
+})
 
 const lagerInfo = ref<{ name: string; start_datum: string | null; end_datum: string | null } | null>(null)
 const ladefehler = ref('')
@@ -25,9 +34,8 @@ const form = ref({
   telefon: '',
   anwesend_von: '',
   anwesend_bis: '',
+  provisorisch: true,
 })
-
-const email = computed(() => session.value?.user.email ?? '')
 
 onMounted(async () => {
   if (!session.value) {
@@ -78,9 +86,11 @@ async function absenden() {
     ahv_nr: form.value.ahv_nr || null,
     email: email.value,
     telefon: form.value.telefon || null,
-    anwesend_von: form.value.anwesend_von || null,
-    anwesend_bis: form.value.anwesend_bis || null,
-    status: 'angefragt',
+    anwesend_von: form.value.provisorisch ? null : (form.value.anwesend_von || null),
+    anwesend_bis: form.value.provisorisch ? null : (form.value.anwesend_bis || null),
+    status: form.value.provisorisch ? 'angemeldet' : 'angefragt',
+    anmeldung_art: form.value.provisorisch ? 'provisorisch' : 'fix',
+    bestaetigen_bis: lagerInfo.value?.start_datum ? bestaetigenBis(lagerInfo.value.start_datum) : null,
   })
   speichern.value = false
   if (error) {
@@ -100,8 +110,13 @@ async function absenden() {
 
     <p v-if="ladefehler" class="error">{{ ladefehler }}</p>
 
-    <template v-else-if="bestehendeAnfrage === 'angefragt' || (gesendet && bestehendeAnfrage !== 'bestaetigt')">
-      <p>Deine Anfrage ist eingegangen. Die Lagerleitung muss dich noch freischalten – danach siehst du das Lager in deiner Übersicht.</p>
+    <template v-else-if="bestehendeAnfrage === 'angefragt' || bestehendeAnfrage === 'angemeldet' || (gesendet && bestehendeAnfrage !== 'bestaetigt')">
+      <p>Deine Anmeldung ist eingegangen.
+        <template v-if="form.provisorisch || bestehendeAnfrage === 'angemeldet'">
+          Du bist provisorisch angemeldet. {{ bestaetigungHinweis }}
+        </template>
+        <template v-else>Die Lagerleitung muss dich noch freischalten.</template>
+      </p>
     </template>
 
     <template v-else-if="bestehendeAnfrage === 'abgelehnt'">
@@ -127,9 +142,16 @@ async function absenden() {
         </label>
         <label>AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
         <label>Telefon <input v-model="form.telefon" type="tel" /></label>
-        <label>Anwesend von <input v-model="form.anwesend_von" type="date" /></label>
-        <label>Anwesend bis <input v-model="form.anwesend_bis" type="date" /></label>
-        <button type="submit" :disabled="speichern">{{ speichern ? 'Sende...' : 'Anfrage senden' }}</button>
+        <label class="checkbox-label">
+          <input v-model="form.provisorisch" type="checkbox" />
+          Provisorisch anmelden (An-/Abreise noch unklar – spätestens 3 Monate vor Lager bestätigen)
+        </label>
+        <template v-if="!form.provisorisch">
+          <label>Anwesend von <input v-model="form.anwesend_von" type="date" /></label>
+          <label>Anwesend bis <input v-model="form.anwesend_bis" type="date" /></label>
+        </template>
+        <p v-if="form.provisorisch && bestaetigungHinweis" class="hint">{{ bestaetigungHinweis }}</p>
+        <button type="submit" :disabled="speichern">{{ speichern ? 'Sende...' : 'Anmeldung senden' }}</button>
       </form>
       <p v-if="fehler" class="error">{{ fehler }}</p>
     </template>
@@ -142,4 +164,5 @@ main { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
 form { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 1.5rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .error { color: var(--color-danger); }
+.checkbox-label { flex-direction: row !important; align-items: center; gap: 0.5rem; font-size: 0.88rem !important; color: var(--color-text) !important; }
 </style>
