@@ -37,14 +37,23 @@ Solange keine Domain verifiziert ist:
 
 ## GitHub Pages deployen
 
-Die App wird per GitHub Actions auf den Branch `gh-pages` gepusht (kein langsames Pages-Queue-API mehr).
+Die App wird per GitHub Actions auf den Branch **`gh-pages`** gepusht (~30 Sekunden, zuverlässig).
 
-**Einmalig prüfen** (Settings → Pages → Build and deployment):
+### ⚠️ Einmalig nötig – sonst siehst du die alte Version!
 
-- **Source:** Deploy from a branch
-- **Branch:** `gh-pages` / `/ (root)`
+GitHub liefert aktuell noch den **alten Build** aus, obwoil der neue Code auf `gh-pages` liegt.
 
-Solange dort noch «GitHub Actions» steht, wird die alte Version ausgeliefert – auch wenn `gh-pages` bereits aktuell ist.
+**So stellst du um (30 Sekunden):**
+
+1. Öffne https://github.com/riozma/stoela/settings/pages
+2. Unter **Build and deployment → Source** wähle: **Deploy from a branch**
+3. Branch: **`gh-pages`**, Ordner: **`/ (root)`**
+4. **Save**
+5. Nach ~1 Minute: `app.stoecklilager.com` hart neu laden (Strg+Shift+R)
+
+Danach siehst du Kiosk-Buchführung, Jahres-Fahrplan, alle Ämtli-Funktionen usw.
+
+> Die automatische Umstellung per API schlägt fehl (403 – braucht Repo-Admin-Rechte).
 
 ## GitHub Pages Secrets aktualisieren
 
