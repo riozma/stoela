@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
@@ -15,6 +16,12 @@ interface Lager {
 }
 
 const { session, signOut, setPassword } = useAuth()
+const router = useRouter()
+
+async function logout() {
+  await signOut()
+  await router.push('/login')
+}
 
 const kontoOffen = ref(false)
 const neuesPasswort = ref('')
@@ -136,7 +143,7 @@ onMounted(ladeLager)
       <div class="user">
         <span>{{ session?.user.email }}</span>
         <button @click="kontoOffen = !kontoOffen">Konto</button>
-        <button @click="signOut">Logout</button>
+        <button @click="logout">Logout</button>
       </div>
     </header>
 
