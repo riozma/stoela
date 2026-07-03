@@ -66,6 +66,10 @@ function navKlick() {
       Dashboard
     </router-link>
 
+    <router-link :to="sectionPath('chatbot')" class="nav-link" :class="{ aktiv: isActive('chatbot') }" @click="navKlick">
+      Chatbot
+    </router-link>
+
     <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link moerderli-nav" @click="navKlick">
       Mörderli
     </router-link>

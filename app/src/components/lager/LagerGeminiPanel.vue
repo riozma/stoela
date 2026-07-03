@@ -5,7 +5,18 @@ import { extractPdfPages } from '../../lib/pdfText'
 import { useAuth } from '../../composables/useAuth'
 
 type VorschlagStatus = 'offen' | 'angenommen' | 'abgelehnt'
-type ActionType = 'update_lager' | 'insert_programmblock' | 'insert_tn' | 'insert_leiter'
+type ActionType =
+  | 'update_lager'
+  | 'insert_programmblock'
+  | 'update_programmblock'
+  | 'delete_programmblock'
+  | 'insert_tn'
+  | 'update_tn'
+  | 'insert_leiter'
+  | 'update_leiter'
+  | 'assign_leiter_aemtli'
+  | 'create_lager_todo'
+  | 'update_lager_todo'
 
 interface GeminiVorschlag {
   id: string
@@ -54,8 +65,15 @@ function prettyAction(action: ActionType) {
   const map: Record<ActionType, string> = {
     update_lager: 'Lagerdaten aktualisieren',
     insert_programmblock: 'Programmblock erstellen',
+    update_programmblock: 'Programmblock aktualisieren',
+    delete_programmblock: 'Programmblock löschen',
     insert_tn: 'TN-Anmeldung erfassen',
+    update_tn: 'TN-Anmeldung aktualisieren',
     insert_leiter: 'Leiter-Anmeldung erfassen',
+    update_leiter: 'Leiter-Anmeldung aktualisieren',
+    assign_leiter_aemtli: 'Leiter-Ämtli zuweisen',
+    create_lager_todo: 'Todo erstellen',
+    update_lager_todo: 'Todo aktualisieren',
   }
   return map[action]
 }

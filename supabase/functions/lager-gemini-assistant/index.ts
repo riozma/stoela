@@ -7,7 +7,19 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const ACTION_TYPES = ['update_lager', 'insert_programmblock', 'insert_tn', 'insert_leiter'] as const
+const ACTION_TYPES = [
+  'update_lager',
+  'insert_programmblock',
+  'update_programmblock',
+  'delete_programmblock',
+  'insert_tn',
+  'update_tn',
+  'insert_leiter',
+  'update_leiter',
+  'assign_leiter_aemtli',
+  'create_lager_todo',
+  'update_lager_todo',
+] as const
 
 const RESPONSE_SCHEMA = {
   type: 'OBJECT',
@@ -85,12 +97,26 @@ Unterstützte action_type (genau diese):
 2) insert_programmblock
    payload Felder: code (LP|LS|LA|ES), nummer, titel, tag (YYYY-MM-DD), start_zeit (ISO), end_zeit (ISO),
    ort, verantwortlich, geschichte, sicherheitsueberlegungen, programmabschnitt (Array), material (Array), notizen
-3) insert_tn
+3) update_programmblock
+   payload Felder: id, sowie dieselben Felder wie insert_programmblock (nur was geändert werden soll)
+4) delete_programmblock
+   payload Felder: id
+5) insert_tn
    payload Felder: vorname, nachname, geburtsdatum (YYYY-MM-DD), geschlecht (m|w|d), ahv_nr,
    notfallkontakt, eltern_email, rolle (TN|HL), status
-4) insert_leiter
+6) update_tn
+   payload Felder: id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, notfallkontakt, eltern_email, rolle, status
+7) insert_leiter
    payload Felder: profile_id (optional UUID), vorname, nachname, email, telefon, geburtsdatum (YYYY-MM-DD),
    geschlecht (m|w|d), ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art (provisorisch|fix), bestaetigen_bis
+8) update_leiter
+   payload Felder: id plus optionale Felder von insert_leiter
+9) assign_leiter_aemtli
+   payload Felder: anmeldung_leiter_id, aemtli_id ODER aemtli_name
+10) create_lager_todo
+   payload Felder: titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung
+11) update_lager_todo
+   payload Felder: id plus optionale Felder von create_lager_todo
 
 Regeln:
 - Erzeuge nur präzise, umsetzbare Vorschläge.

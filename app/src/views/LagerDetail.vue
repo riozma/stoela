@@ -29,6 +29,7 @@ import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
+import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
@@ -157,7 +158,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | string
+type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -1098,6 +1099,18 @@ watch(
           v-if="lager.ort || (lager.ort_lat && lager.ort_lng)"
           :lat="lager.ort_lat"
           :lng="lager.ort_lng"
+          :ort="lager.ort"
+        />
+      </section>
+
+      <!-- Allgemeiner Lager-Chatbot -->
+      <section v-if="activeTab === 'chatbot'">
+        <LagerChatbotPanel
+          :lager-id="lagerId"
+          :lager-name="lager.name"
+          :lager-status="lager.status"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
           :ort="lager.ort"
         />
       </section>
