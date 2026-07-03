@@ -68,7 +68,11 @@ onMounted(async () => {
 
   if (anfrage) {
     bestehendeAnfrage.value = anfrage.status
-    if (anfrage.status === 'bestaetigt') gesendet.value = true
+    if (anfrage.status === 'bestaetigt') {
+      gesendet.value = true
+      await router.replace(`/lager/${lagerId}/dashboard`)
+      return
+    }
   }
 })
 
@@ -76,22 +80,26 @@ async function absenden() {
   if (!session.value) return
   fehler.value = ''
   speichern.value = true
-  const { error } = await supabase.from('anmeldungen_leiter').insert({
-    lager_id: lagerId,
-    profile_id: session.value.user.id,
-    vorname: form.value.vorname,
-    nachname: form.value.nachname,
-    geburtsdatum: form.value.geburtsdatum || null,
-    geschlecht: form.value.geschlecht || null,
-    ahv_nr: form.value.ahv_nr || null,
-    email: email.value,
-    telefon: form.value.telefon || null,
-    anwesend_von: form.value.provisorisch ? null : (form.value.anwesend_von || null),
-    anwesend_bis: form.value.provisorisch ? null : (form.value.anwesend_bis || null),
-    status: form.value.provisorisch ? 'angemeldet' : 'angefragt',
-    anmeldung_art: form.value.provisorisch ? 'provisorisch' : 'fix',
-    bestaetigen_bis: lagerInfo.value?.start_datum ? bestaetigenBis(lagerInfo.value.start_datum) : null,
-  })
+  const { data: inserted, error } = await supabase
+    .from('anmeldungen_leiter')
+    .insert({
+      lager_id: lagerId,
+      profile_id: session.value.user.id,
+      vorname: form.value.vorname,
+      nachname: form.value.nachname,
+      geburtsdatum: form.value.geburtsdatum || null,
+      geschlecht: form.value.geschlecht || null,
+      ahv_nr: form.value.ahv_nr || null,
+      email: email.value,
+      telefon: form.value.telefon || null,
+      anwesend_von: form.value.provisorisch ? null : (form.value.anwesend_von || null),
+      anwesend_bis: form.value.provisorisch ? null : (form.value.anwesend_bis || null),
+      status: form.value.provisorisch ? 'angemeldet' : 'angefragt',
+      anmeldung_art: form.value.provisorisch ? 'provisorisch' : 'fix',
+      bestaetigen_bis: lagerInfo.value?.start_datum ? bestaetigenBis(lagerInfo.value.start_datum) : null,
+    })
+    .select('status')
+    .single()
   speichern.value = false
   if (error) {
     if (error.message.includes('Vereinsmitglied')) {
@@ -102,7 +110,10 @@ async function absenden() {
     return
   }
   gesendet.value = true
-  bestehendeAnfrage.value = 'angefragt'
+  bestehendeAnfrage.value = inserted?.status ?? 'angefragt'
+  if (bestehendeAnfrage.value === 'bestaetigt') {
+    await router.replace(`/lager/${lagerId}/dashboard`)
+  }
 }
 </script>
 

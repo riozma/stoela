@@ -203,6 +203,8 @@ const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr:
 const vorLagerIdForm = ref('')
 const andereLager = ref<{ id: string; name: string; jahr: number }[]>([])
 const lagerSpeichern = ref(false)
+const lagerLoeschen = ref(false)
+const lagerLoeschenFehler = ref('')
 
 const lager = ref<Lager | null>(null)
 const bloecke = ref<Block[]>([])
@@ -760,6 +762,25 @@ async function lagerSpeichernFn() {
   if (!err && lager.value) {
     Object.assign(lager.value, lagerForm.value)
   }
+}
+
+async function lagerLoeschenFn() {
+  if (!isLeitung.value || !lager.value) return
+  const sicher = window.confirm(
+    `Lager "${lager.value.name}" wirklich löschen?\n\nDieser Schritt kann nicht rückgängig gemacht werden.`,
+  )
+  if (!sicher) return
+
+  lagerLoeschen.value = true
+  lagerLoeschenFehler.value = ''
+  const { error: err } = await supabase.from('lager').delete().eq('id', lagerId.value)
+  lagerLoeschen.value = false
+
+  if (err) {
+    lagerLoeschenFehler.value = err.message
+    return
+  }
+  await router.replace('/organisation')
 }
 
 function zuBlockSpringen(blockId: string) {
@@ -1534,6 +1555,20 @@ watch(
           <button class="secondary" @click="icsExport('ganzes')">Ganzes Programm (.ics)</button>
           <button class="secondary" @click="icsExport('eigen')">Nur Lagerzeitraum (.ics)</button>
         </div>
+
+        <div v-if="isLeitung" class="danger-zone">
+          <h3>Lager löschen</h3>
+          <p class="hint">Nur Lagerleitung kann ein Lager endgültig löschen.</p>
+          <button
+            type="button"
+            class="danger"
+            :disabled="lagerLoeschen"
+            @click="lagerLoeschenFn"
+          >
+            {{ lagerLoeschen ? 'Lösche...' : 'Lager löschen' }}
+          </button>
+          <p v-if="lagerLoeschenFehler" class="error">{{ lagerLoeschenFehler }}</p>
+        </div>
       </section>
     </template>
     </main>
@@ -1617,6 +1652,18 @@ watch(
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .link-box { display: block; background: var(--color-surface-muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; word-break: break-all; margin: 0.5rem 0 1.5rem; }
 .error { color: var(--color-danger); }
+.danger-zone {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-danger) 45%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-danger) 7%, var(--color-surface));
+}
+.danger {
+  background: var(--color-danger);
+  color: #fff;
+  border-color: transparent;
+}
 .anfragen-box { margin-bottom: 1.25rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
 .anfrage-karte { padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
 .anfrage-karte:last-child { border-bottom: none; }
