@@ -28,6 +28,7 @@ import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
 import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
+import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
@@ -156,7 +157,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | string
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -1450,6 +1451,22 @@ watch(
       <!-- Statistik -->
       <section v-if="activeTab === 'statistik' && isLeitung">
         <StatistikPanel :lager-id="lagerId" />
+      </section>
+
+      <!-- Gemini (nur Lagerleitung) -->
+      <section v-if="activeTab === 'gemini'">
+        <LagerGeminiPanel
+          v-if="isLeitung"
+          :lager-id="lagerId"
+          :organisation-id="lager.organisation_id"
+          :lager-name="lager.name"
+          :lager-jahr="lager.jahr"
+          :lager-status="lager.status"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
+          :ort="lager.ort"
+        />
+        <p v-else class="error">Nur Lagerleitung hat Zugriff auf Gemini.</p>
       </section>
 
       <!-- Team / Berechtigungen -->
