@@ -3,9 +3,23 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import { extractPdfPages } from '../../lib/pdfText'
 import { useAuth } from '../../composables/useAuth'
+import * as XLSX from 'xlsx'
 
 type VorschlagStatus = 'offen' | 'angenommen' | 'abgelehnt'
-type ActionType = 'update_lager' | 'insert_programmblock' | 'insert_tn' | 'insert_leiter'
+type ActionType =
+  | 'update_lager'
+  | 'insert_programmblock'
+  | 'update_programmblock'
+  | 'delete_programmblock'
+  | 'insert_tn'
+  | 'update_tn'
+  | 'insert_leiter'
+  | 'update_leiter'
+  | 'assign_leiter_aemtli'
+  | 'create_lager_todo'
+  | 'update_lager_todo'
+  | 'create_gruppe'
+  | 'assign_gruppenmitglied'
 
 interface GeminiVorschlag {
   id: string
@@ -42,22 +56,53 @@ const { session } = useAuth()
 const payloadEdit = ref<Record<string, string>>({})
 const imEditModus = ref<Record<string, boolean>>({})
 const aktionLade = ref<Record<string, boolean>>({})
+const dragAktiv = ref(false)
+const zuletztAngenommenId = ref<string | null>(null)
 
 const offene = computed(() => vorschlaege.value.filter((v) => v.status === 'offen'))
-
-function onDateien(event: Event) {
-  const target = event.target as HTMLInputElement
-  dateien.value = Array.from(target.files ?? [])
-}
 
 function prettyAction(action: ActionType) {
   const map: Record<ActionType, string> = {
     update_lager: 'Lagerdaten aktualisieren',
     insert_programmblock: 'Programmblock erstellen',
+    update_programmblock: 'Programmblock aktualisieren',
+    delete_programmblock: 'Programmblock löschen',
     insert_tn: 'TN-Anmeldung erfassen',
+    update_tn: 'TN-Anmeldung aktualisieren',
     insert_leiter: 'Leiter-Anmeldung erfassen',
+    update_leiter: 'Leiter-Anmeldung aktualisieren',
+    assign_leiter_aemtli: 'Leiter-Ämtli zuweisen',
+    create_lager_todo: 'Todo erstellen',
+    update_lager_todo: 'Todo aktualisieren',
+    create_gruppe: 'Gruppe erstellen',
+    assign_gruppenmitglied: 'Gruppenmitglied zuweisen/übertragen',
   }
   return map[action]
+}
+
+function dateienSetzen(files: File[]) {
+  dateien.value = files
+}
+
+function onDateien(event: Event) {
+  const target = event.target as HTMLInputElement
+  dateienSetzen(Array.from(target.files ?? []))
+}
+
+function onDragOver(event: DragEvent) {
+  event.preventDefault()
+  dragAktiv.value = true
+}
+
+function onDragLeave(event: DragEvent) {
+  event.preventDefault()
+  dragAktiv.value = false
+}
+
+function onDrop(event: DragEvent) {
+  event.preventDefault()
+  dragAktiv.value = false
+  dateienSetzen(Array.from(event.dataTransfer?.files ?? []))
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -75,12 +120,34 @@ async function dokumenteVorbereiten() {
   const docs: Array<{ name: string; mimeType: string; text?: string; base64?: string }> = []
   for (const f of dateien.value) {
     const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    const isCsv = f.type === 'text/csv' || f.name.toLowerCase().endsWith('.csv')
+    const isExcel = /\.(xlsx|xls)$/i.test(f.name)
     if (isPdf) {
       const seiten = await extractPdfPages(f)
       docs.push({
         name: f.name,
         mimeType: 'application/pdf',
         text: seiten.join('\n\n').slice(0, 70000),
+      })
+      continue
+    }
+    if (isCsv) {
+      const text = await f.text()
+      docs.push({ name: f.name, mimeType: 'text/csv', text: text.slice(0, 70000) })
+      continue
+    }
+    if (isExcel) {
+      const buffer = await f.arrayBuffer()
+      const workbook = XLSX.read(buffer, { type: 'array' })
+      const sheets = workbook.SheetNames.slice(0, 3).map((sheetName) => {
+        const sheet = workbook.Sheets[sheetName]
+        const csv = XLSX.utils.sheet_to_csv(sheet)
+        return `--- Sheet: ${sheetName} ---\n${csv}`
+      })
+      docs.push({
+        name: f.name,
+        mimeType: f.type || 'application/vnd.ms-excel',
+        text: sheets.join('\n\n').slice(0, 70000),
       })
       continue
     }
@@ -210,6 +277,12 @@ async function annehmen(v: GeminiVorschlag) {
     fehler.value = error.message
     return
   }
+  const idx = vorschlaege.value.findIndex((x) => x.id === v.id)
+  if (idx >= 0) vorschlaege.value[idx].status = 'angenommen'
+  zuletztAngenommenId.value = v.id
+  setTimeout(() => {
+    if (zuletztAngenommenId.value === v.id) zuletztAngenommenId.value = null
+  }, 2200)
   info.value = 'Vorschlag angenommen und angewendet.'
   await laden()
 }
@@ -236,10 +309,10 @@ onMounted(laden)
 
 <template>
   <section>
-    <h2>Gemini Assistent (Lalei)</h2>
+    <h2>Gemini Assistant (Lalei)</h2>
     <p class="hint">
-      Gib Text, PDFs oder Bilder ein. Gemini erstellt nur Vorschläge – jede Änderung muss unten
-      einzeln angenommen, abgelehnt oder bearbeitet werden.
+      Der Assistant erstellt Vorschläge und kann nach Bestätigung Aktionen ausführen
+      (z.B. Programm, TN/Leiter, Gruppen, Todos). Nichts passiert ohne Bestätigung pro Karte.
     </p>
 
     <div class="karte">
@@ -251,10 +324,18 @@ onMounted(laden)
           placeholder="z.B. 'Übernimm aus PDF das Grobprogramm und erstelle 5 Programmblöcke'"
         />
       </label>
-      <label>
-        Dateien (PDF/Bilder/Text)
-        <input type="file" multiple accept=".pdf,image/*,.txt,.md" @change="onDateien" />
-      </label>
+      <label>Dateien (PDF/Bilder/Text/Excel)</label>
+      <div
+        class="dropzone"
+        :class="{ aktiv: dragAktiv }"
+        @dragover="onDragOver"
+        @dragenter.prevent="dragAktiv = true"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
+      >
+        <p>Dateien hierhin ziehen oder auswählen</p>
+        <input type="file" multiple accept=".pdf,image/*,.txt,.md,.csv,.xlsx,.xls" @change="onDateien" />
+      </div>
       <p v-if="dateien.length" class="hint">Anhänge: {{ dateien.map((f) => f.name).join(', ') }}</p>
       <button :disabled="analysiere || !eingabe.trim()" @click="analysieren">
         {{ analysiere ? 'Analysiere…' : 'Mit Gemini analysieren' }}
@@ -266,11 +347,19 @@ onMounted(laden)
       <button class="secondary klein" :disabled="ladeListe" @click="laden">{{ ladeListe ? 'Lade…' : 'Aktualisieren' }}</button>
     </div>
 
-    <article v-for="v in vorschlaege" :key="v.id" class="vorschlag-karte" :class="v.status">
+    <article
+      v-for="v in vorschlaege"
+      :key="v.id"
+      class="vorschlag-karte"
+      :class="[v.status, { 'frisch-angenommen': zuletztAngenommenId === v.id }]"
+    >
       <header class="vorschlag-kopf">
         <div>
           <strong>{{ v.titel }}</strong>
-          <p class="meta">{{ prettyAction(v.action_type) }} · {{ v.status }} · {{ new Date(v.created_at).toLocaleString('de-CH') }}</p>
+          <p class="meta">
+            {{ prettyAction(v.action_type) }} · {{ v.status }} · {{ new Date(v.created_at).toLocaleString('de-CH') }}
+            <span v-if="v.status === 'angenommen'" class="ok-chip">✓ bestätigt</span>
+          </p>
         </div>
         <div class="aktionen">
           <button v-if="v.status === 'offen'" :disabled="aktionLade[v.id]" @click="annehmen(v)">
@@ -313,6 +402,17 @@ onMounted(laden)
 }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem; color: var(--color-text-muted); margin-bottom: 0.65rem; }
 textarea.payload { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.dropzone {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.8rem;
+  background: var(--color-surface);
+}
+.dropzone.aktiv {
+  border-color: var(--color-accent);
+  background: var(--color-surface-muted);
+}
+.dropzone p { margin: 0 0 0.4rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .kopf { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; margin-top: 0.9rem; }
 .vorschlag-karte {
   border: 1px solid var(--color-border);
@@ -323,11 +423,28 @@ textarea.payload { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo
 }
 .vorschlag-karte.angenommen { border-color: #2e7d32; }
 .vorschlag-karte.abgelehnt { border-color: #9e9e9e; opacity: 0.85; }
+.vorschlag-karte.frisch-angenommen { animation: akzeptiert 1s ease-out 1; }
 .vorschlag-kopf { display: flex; justify-content: space-between; gap: 0.6rem; align-items: flex-start; }
 .meta { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--color-text-muted); }
+.ok-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  background: rgba(46, 125, 50, 0.14);
+  color: #2e7d32;
+  border-radius: var(--radius-pill);
+  padding: 0.08rem 0.42rem;
+  font-size: 0.72rem;
+}
 .aktionen { display: flex; gap: 0.45rem; flex-wrap: wrap; }
 .beschreibung { margin: 0.55rem 0; font-size: 0.88rem; }
 .ok { color: #2e7d32; margin-top: 0.8rem; }
 .error { color: var(--color-danger); margin-top: 0.8rem; }
 button.klein { font-size: 0.8rem; padding: 0.3rem 0.55rem; }
+
+@keyframes akzeptiert {
+  0% { box-shadow: 0 0 0 rgba(46, 125, 50, 0); }
+  20% { box-shadow: 0 0 0 4px rgba(46, 125, 50, 0.18); }
+  100% { box-shadow: 0 0 0 rgba(46, 125, 50, 0); }
+}
 </style>

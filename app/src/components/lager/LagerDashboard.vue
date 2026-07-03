@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import LagerMap from './LagerMap.vue'
 
 interface Block {
   id: string
@@ -15,6 +16,8 @@ interface Block {
 interface Lager {
   name: string
   ort: string | null
+  ort_lat?: number | null
+  ort_lng?: number | null
   start_datum: string | null
   end_datum: string | null
   status: string
@@ -170,6 +173,12 @@ function formatAenderungZeit(iso: string) {
     <header class="lager-kopf">
       <p v-if="lager.ort" class="ort">📍 {{ lager.ort }}</p>
       <p v-if="formatZeitraum()" class="zeitraum">{{ formatZeitraum() }}</p>
+      <LagerMap
+        v-if="lager.ort || (lager.ort_lat && lager.ort_lng)"
+        :lat="lager.ort_lat ?? null"
+        :lng="lager.ort_lng ?? null"
+        :ort="lager.ort"
+      />
     </header>
 
     <div class="aktionen">

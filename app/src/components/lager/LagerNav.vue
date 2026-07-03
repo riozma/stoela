@@ -66,6 +66,10 @@ function navKlick() {
       Dashboard
     </router-link>
 
+    <router-link :to="sectionPath('chatbot')" class="nav-link" :class="{ aktiv: isActive('chatbot') }" @click="navKlick">
+      Chatbot
+    </router-link>
+
     <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link moerderli-nav" @click="navKlick">
       Mörderli
     </router-link>
@@ -143,7 +147,7 @@ function navKlick() {
       <span class="nav-dropdown-label">Leitung</span>
       <div class="nav-dropdown-menu">
         <router-link :to="sectionPath('gemini')" class="nav-link" :class="{ aktiv: isActive('gemini') }" @click="navKlick">
-          Gemini
+          Assistant
         </router-link>
         <router-link :to="sectionPath('statistik')" class="nav-link" :class="{ aktiv: isActive('statistik') }" @click="navKlick">
           Statistik
