@@ -82,6 +82,17 @@ async function wiederbeleben(leiterId: string) {
 
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
+    <p class="regeln">
+      So läuft das Mörderli-Spiel ab: 1) Trag unten ein paar <strong>Orte</strong> und <strong>Gegenstände</strong>
+      ein, die im Lagerhaus/-gelände vorkommen. 2) Sobald die bestätigten Leiter feststehen, klick
+      „Spieler aus Leiter-Liste laden". 3) Klick „Mörderli zuweisen (random)" – jede/r Leiter/in bekommt zufällig
+      eine Zielperson plus einen Ort und Gegenstand aus deinen Listen zugewiesen (per Zufalls-Funktion in der
+      Datenbank, nicht manuell). 4) Klick „Board für alle freischalten", damit alle ihre Aufgabe unter
+      „→ Mörderli-Board" sehen können. Danach läuft alles automatisch: wer meldet, ermordet zu haben, muss vom
+      Opfer selbst im Board bestätigt werden – bestätigte Opfer scheiden aus, ihr Ziel geht an den Mörder über.
+      Hier siehst du den Verlauf aller Ereignisse und kannst bei Bedarf jemanden „Wiederbeleben".
+    </p>
+
     <p v-if="!moerderliAktiv" class="zeit-hinweis">
       Mörderli-Spiel ist erst <strong>während dem Lager</strong> aktiv (nicht während Programmblöcken).
       Orte und Gegenstände kannst du schon vorbereiten.
@@ -143,6 +154,10 @@ form { display: flex; gap: 0.35rem; margin-bottom: 0.5rem; }
 .ok { color: var(--color-accent); }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
+.regeln {
+  background: var(--color-surface-muted); border-radius: var(--radius-md);
+  padding: 0.75rem 1rem; font-size: 0.88rem; line-height: 1.5; color: var(--color-text-muted); margin-bottom: 1rem;
+}
 .zeit-hinweis {
   background: var(--color-surface-muted); padding: 0.6rem 0.85rem;
   border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.88rem;

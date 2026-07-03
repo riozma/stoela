@@ -25,6 +25,9 @@ import AemtliKrankenpflege from '../components/lager/AemtliKrankenpflege.vue'
 import AemtliGelaende from '../components/lager/AemtliGelaende.vue'
 import AemtliBastel from '../components/lager/AemtliBastel.vue'
 import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
+import AemtliMotto from '../components/lager/AemtliMotto.vue'
+import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
+import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
@@ -153,7 +156,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | string
+type Tab = 'dashboard' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -1429,6 +1432,8 @@ watch(
         <AemtliSponsoring v-else-if="aemtliKomponente(a.name) === 'sponsoring'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliGelaende v-else-if="aemtliKomponente(a.name) === 'gelaende'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :lat="lager.ort_lat" :lng="lager.ort_lng" />
         <AemtliBastel v-else-if="aemtliKomponente(a.name) === 'bastel'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliMotto v-else-if="aemtliKomponente(a.name) === 'motto'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
+        <AemtliMaterial v-else-if="aemtliKomponente(a.name) === 'material'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
       </section>
 
@@ -1440,6 +1445,11 @@ watch(
           :user-id="session.user.id"
           :ist-kassier="hatFinanzenAemtli"
         />
+      </section>
+
+      <!-- Statistik -->
+      <section v-if="activeTab === 'statistik' && isLeitung">
+        <StatistikPanel :lager-id="lagerId" />
       </section>
 
       <!-- Team / Berechtigungen -->
