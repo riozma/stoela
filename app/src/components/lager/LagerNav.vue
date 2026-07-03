@@ -147,7 +147,7 @@ function navKlick() {
       <span class="nav-dropdown-label">Leitung</span>
       <div class="nav-dropdown-menu">
         <router-link :to="sectionPath('gemini')" class="nav-link" :class="{ aktiv: isActive('gemini') }" @click="navKlick">
-          Gemini
+          Assistant
         </router-link>
         <router-link :to="sectionPath('statistik')" class="nav-link" :class="{ aktiv: isActive('statistik') }" @click="navKlick">
           Statistik

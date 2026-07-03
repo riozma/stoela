@@ -8,7 +8,6 @@ import { ladeWetter, type TagesWetter } from '../lib/weather'
 import LagerDashboard from '../components/lager/LagerDashboard.vue'
 import LagerTimelinePanel from '../components/lager/LagerTimelinePanel.vue'
 import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
-import LagerMap from '../components/lager/LagerMap.vue'
 import ProgrammGesamt from '../components/lager/ProgrammGesamt.vue'
 import ProgrammTag from '../components/lager/ProgrammTag.vue'
 import ProgrammBlockEdit from '../components/lager/ProgrammBlockEdit.vue'
@@ -1094,12 +1093,6 @@ watch(
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
-        />
-        <LagerMap
-          v-if="lager.ort || (lager.ort_lat && lager.ort_lng)"
-          :lat="lager.ort_lat"
-          :lng="lager.ort_lng"
-          :ort="lager.ort"
         />
       </section>
 

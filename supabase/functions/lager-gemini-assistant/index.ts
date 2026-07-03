@@ -19,6 +19,8 @@ const ACTION_TYPES = [
   'assign_leiter_aemtli',
   'create_lager_todo',
   'update_lager_todo',
+  'create_gruppe',
+  'assign_gruppenmitglied',
 ] as const
 
 const RESPONSE_SCHEMA = {
@@ -117,6 +119,10 @@ Unterstützte action_type (genau diese):
    payload Felder: titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung
 11) update_lager_todo
    payload Felder: id plus optionale Felder von create_lager_todo
+12) create_gruppe
+   payload Felder: name
+13) assign_gruppenmitglied
+   payload Felder: lagergruppe_id, typ (tn|leiter), anmeldung_id
 
 Regeln:
 - Erzeuge nur präzise, umsetzbare Vorschläge.

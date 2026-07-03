@@ -135,7 +135,7 @@ onMounted(kontextLaden)
         {{ ladeKontext ? 'Kontext lädt…' : 'Kontext aktualisieren' }}
       </button>
     </div>
-    <p class="hint">Alle sehen diesen Chat. Antworten basieren auf kompaktem Supabase-Lagerkontext.</p>
+    <p class="hint">Alle sehen diesen Chat. Er gibt nur Textantworten aus dem Lagerkontext und führt keine Aktionen aus.</p>
 
     <div class="chat">
       <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">

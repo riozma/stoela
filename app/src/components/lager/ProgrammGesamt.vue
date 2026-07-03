@@ -28,6 +28,7 @@ const props = defineProps<{
 const router = useRouter()
 const rasterModus = ref<'woche' | 'zweiwochen'>('woche')
 const seitenIndex = ref(0)
+const SLOT_HEIGHT_REM = 1.15
 
 const tageProSeite = computed(() => (rasterModus.value === 'woche' ? 7 : 14))
 
@@ -73,11 +74,10 @@ function blockHoehe(b: ProgrammBlockBasis): number {
   return Math.max(1, span)
 }
 
-function blockTopOffset(b: ProgrammBlockBasis, slotMin: number): number {
+function blockTopOffsetRem(b: ProgrammBlockBasis, slotMin: number): number {
   const start = zeitZuMinuten(b.start_zeit)
   const diff = start - slotMin
-  if (diff <= 0) return 0
-  return (diff / RASTER_SLOT_MIN) * 100
+  return diff <= 0 ? 0 : (diff / RASTER_SLOT_MIN) * SLOT_HEIGHT_REM
 }
 
 function zuBlock(id: string) {
@@ -162,7 +162,10 @@ function codeClass(code: BlockCode) {
               type="button"
               class="raster-block"
               :class="codeClass(b.code)"
-              :style="{ height: `${blockHoehe(b) * 2.4 - 0.15}rem`, marginTop: blockTopOffset(b, slotMin) > 0 ? `${blockTopOffset(b, slotMin)}%` : undefined }"
+              :style="{
+                height: `${Math.max(SLOT_HEIGHT_REM, blockHoehe(b) * SLOT_HEIGHT_REM - 0.04)}rem`,
+                top: `${blockTopOffsetRem(b, slotMin) + 0.02}rem`,
+              }"
               @click.stop="zuBlock(b.id)"
             >
               <span class="rb-zeit">{{ formatProgrammZeit(b.start_zeit) }}</span>
@@ -194,18 +197,42 @@ function codeClass(code: BlockCode) {
 .raster-tag-kopf.heute { background: var(--color-accent); color: #fdfbf3; }
 .raster-tag-kopf:hover { filter: brightness(0.97); }
 .raster-zeit {
-  padding: 0.25rem 0.35rem; font-size: 0.72rem; color: var(--color-text-muted); text-align: right;
-  border-bottom: 1px solid var(--color-border); border-right: 1px solid var(--color-border);
+  height: 1.15rem;
+  padding: 0 0.28rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  font-size: 0.66rem;
+  color: var(--color-text-muted);
+  text-align: right;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
   font-variant-numeric: tabular-nums;
 }
 .raster-zelle {
-  position: relative; min-height: 2.4rem; border-bottom: 1px solid var(--color-border); border-right: 1px solid var(--color-border);
+  position: relative;
+  height: 1.15rem;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
   background: var(--color-surface);
+  overflow: visible;
 }
 .raster-block {
-  display: flex; flex-direction: column; align-items: flex-start; width: calc(100% - 4px); margin: 2px;
-  padding: 0.2rem 0.35rem; border: none; border-radius: 4px; text-align: left; font-size: 0.72rem; line-height: 1.25;
-  cursor: pointer; color: #fdfbf3;
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.08rem 0.28rem;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 0.66rem;
+  line-height: 1.15;
+  cursor: pointer;
+  color: #fdfbf3;
 }
 .raster-block.code-LP { background: #6b7fa8; }
 .raster-block.code-LS { background: var(--color-accent); }

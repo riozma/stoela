@@ -300,6 +300,7 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
   text-align: left;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
+  color: var(--color-text);
   border-radius: var(--radius-md);
   padding: 0.75rem 0.85rem;
 }
@@ -312,6 +313,7 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
   text-align: left;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
+  color: var(--color-text);
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.6rem;
 }
