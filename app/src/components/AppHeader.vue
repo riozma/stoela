@@ -65,8 +65,8 @@ async function logout() {
         <span class="burger-line" />
         <span class="burger-line" />
       </button>
-      <router-link v-if="showAlleLager" to="/lager" class="alle-lager-btn">
-        ← Alle Lager
+      <router-link v-if="showAlleLager" to="/" class="alle-lager-btn">
+        ← Start
       </router-link>
       <h1 v-if="!showAlleLager" class="app-titel">Stöckli Lager</h1>
       <span v-if="lagerName" class="lager-name">{{ lagerName }}</span>

@@ -61,6 +61,7 @@ interface Lager {
   id: string
   name: string
   jahr: number
+  organisation_id: string | null
   ort: string | null
   start_datum: string | null
   end_datum: string | null
@@ -101,6 +102,13 @@ interface LeiterAnmeldung {
 interface Aemtli {
   id: string
   name: string
+}
+interface OrgPersonPool {
+  id: string
+  profile_id: string | null
+  vorname: string
+  nachname: string
+  email: string | null
 }
 interface LeiterRolleZuweisung {
   zuweisungId: string
@@ -304,13 +312,14 @@ async function tnRolleAendern(tn: TN, rolle: 'TN' | 'HL') {
 
 // --- Leiter ---
 const leiterListe = ref<LeiterAnmeldung[]>([])
-const leiterForm = ref({ vorname: '', nachname: '' })
 const leiterSpeichern = ref(false)
 const leiterFehler = ref('')
 const verknuepfManuell = ref<Record<string, string>>({})
 const aemtliListe = ref<Aemtli[]>([])
 const leiterRollenMap = ref<Record<string, LeiterRolleZuweisung[]>>({})
 const neueRolleName = ref<Record<string, string>>({})
+const orgPersonenPool = ref<OrgPersonPool[]>([])
+const orgPersonAuswahl = ref('')
 
 async function ladeLeiter() {
   const { data } = await supabase
@@ -354,6 +363,21 @@ async function ladeAemtli() {
   aemtliListe.value = data ?? []
 }
 
+async function ladeOrgPersonenPool() {
+  const orgId = lager.value?.organisation_id
+  if (!orgId) {
+    orgPersonenPool.value = []
+    return
+  }
+  const { data } = await supabase
+    .from('org_personen')
+    .select('id, profile_id, vorname, nachname, email')
+    .eq('organisation_id', orgId)
+    .eq('aktiv', true)
+    .order('nachname')
+  orgPersonenPool.value = (data ?? []) as OrgPersonPool[]
+}
+
 async function ladeLeiterRollen() {
   const leiterIds = leiterListe.value.map((l) => l.id)
   if (!leiterIds.length) {
@@ -384,19 +408,48 @@ async function rolleEntfernen(zuweisungId: string) {
 }
 
 async function leiterHinzufuegen() {
+  if (!orgPersonAuswahl.value) return
   leiterFehler.value = ''
   leiterSpeichern.value = true
-  const { error: err } = await supabase.from('anmeldungen_leiter').insert({
+  const person = orgPersonenPool.value.find((p) => p.id === orgPersonAuswahl.value)
+  if (!person) {
+    leiterSpeichern.value = false
+    leiterFehler.value = 'Bitte Person aus dem Verein auswählen.'
+    return
+  }
+  if (leiterListe.value.some((l) =>
+    (person.profile_id && l.profile_id === person.profile_id)
+    || (l.vorname.toLowerCase() === person.vorname.toLowerCase() && l.nachname.toLowerCase() === person.nachname.toLowerCase()),
+  )) {
+    leiterSpeichern.value = false
+    leiterFehler.value = 'Diese Person ist bereits in der Lagerleiter-Liste.'
+    return
+  }
+
+  const status = person.profile_id ? 'bestaetigt' : 'angemeldet'
+  const { data: neu, error: err } = await supabase.from('anmeldungen_leiter').insert({
     lager_id: lagerId.value,
-    vorname: leiterForm.value.vorname.trim(),
-    nachname: leiterForm.value.nachname.trim(),
-    status: 'bestaetigt',
-  })
+    profile_id: person.profile_id,
+    vorname: person.vorname,
+    nachname: person.nachname,
+    email: person.email,
+    status,
+    anmeldung_art: person.profile_id ? 'fix' : 'provisorisch',
+    bestaetigen_bis: lager.value?.start_datum ? bestaetigenBis(lager.value.start_datum) : null,
+  }).select('id').single()
   leiterSpeichern.value = false
   if (err) { leiterFehler.value = err.message; return }
-  const name = `${leiterForm.value.vorname.trim()} ${leiterForm.value.nachname.trim()}`
-  leiterForm.value = { vorname: '', nachname: '' }
-  void logLagerAktivitaet(lagerId.value, `Leiter manuell erfasst: ${name}`, 'leiter')
+  if (person.profile_id) {
+    await supabase.from('lager_leiter').upsert({
+      lager_id: lagerId.value,
+      profile_id: person.profile_id,
+      rolle: 'leiter',
+      status: 'bestaetigt',
+    }, { onConflict: 'lager_id,profile_id' })
+  }
+  const name = `${person.vorname} ${person.nachname}`
+  orgPersonAuswahl.value = ''
+  void logLagerAktivitaet(lagerId.value, `Leiter aus Verein hinzugefügt: ${name}`, 'leiter')
   await leiterNachAenderung()
   await ladeLetzteAenderungenListe()
 }
@@ -896,7 +949,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'leiter') {
-    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli()])
+    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli(), ladeOrgPersonenPool()])
     return
   }
   if (tab === 'teilnehmer') {
@@ -931,7 +984,7 @@ async function ladeLagerSeite() {
 
   const { data: lagerData, error: lagerError } = await supabase
     .from('lager')
-    .select('id, name, jahr, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende')
+    .select('id, name, jahr, organisation_id, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende')
     .eq('id', lagerId.value)
     .single()
 
@@ -1263,11 +1316,22 @@ watch(
           </tbody>
         </table>
         <p v-else class="hint">Noch keine Leiter.</p>
-        <h3>Manuell erfassen</h3>
-        <p class="hint">Nur Name nötig. Später kann eine Bewerbung mit dem manuellen Eintrag verknüpft werden.</p>
+        <h3>Leiter hinzufügen (aus Verein)</h3>
+        <p class="hint">
+          Neue Leiter zuerst im <router-link :to="`/organisation?org=${lager.organisation_id ?? ''}`">Verein erfassen</router-link>,
+          danach hier auswählen.
+        </p>
         <form @submit.prevent="leiterHinzufuegen" class="inline-form">
-          <input v-model="leiterForm.vorname" placeholder="Vorname" required />
-          <input v-model="leiterForm.nachname" placeholder="Nachname" required />
+          <select v-model="orgPersonAuswahl" required>
+            <option value="">Person aus Verein wählen</option>
+            <option
+              v-for="p in orgPersonenPool.filter((p) => !leiterListe.some((l) => l.vorname === p.vorname && l.nachname === p.nachname))"
+              :key="p.id"
+              :value="p.id"
+            >
+              {{ p.vorname }} {{ p.nachname }}{{ p.profile_id ? '' : ' (ohne Login)' }}
+            </option>
+          </select>
           <button type="submit" :disabled="leiterSpeichern">{{ leiterSpeichern ? 'Speichere...' : 'Hinzufügen' }}</button>
         </form>
         <p v-if="leiterFehler" class="error">{{ leiterFehler }}</p>

@@ -14,14 +14,29 @@ const beschreibung = ref('')
 const hinweise = ref('')
 const naechstesTodo = ref<{ titel: string; faellig_am: string | null } | null>(null)
 
+async function ladeOrgId() {
+  const { data } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  return data?.organisation_id ?? null
+}
+
 async function laden() {
-  const [{ data: org }, { data: meta }, { data: todos }] = await Promise.all([
-    supabase.from('organisation').select('id').eq('slug', 'stoeckli').maybeSingle(),
-    supabase.from('org_aemtli_meta').select('beschreibung, hinweise_md').eq('aemtli_id', props.aemtliId).maybeSingle(),
-    supabase.from('lager_todos').select('titel, faellig_am, erledigt')
+  const orgId = await ladeOrgId()
+  const { data: todos } = await supabase.from('lager_todos').select('titel, faellig_am, erledigt')
       .eq('lager_id', props.lagerId).eq('aemtli_name', props.aemtliName).eq('erledigt', false)
-      .order('faellig_am', { ascending: true, nullsFirst: false }).limit(1),
-  ])
+      .order('faellig_am', { ascending: true, nullsFirst: false }).limit(1)
+  
+  const meta = orgId
+    ? (await supabase
+      .from('org_aemtli_meta')
+      .select('beschreibung, hinweise_md')
+      .eq('organisation_id', orgId)
+      .eq('aemtli_id', props.aemtliId)
+      .maybeSingle()).data
+    : null
   if (meta) {
     beschreibung.value = meta.beschreibung ?? ''
     hinweise.value = meta.hinweise_md ?? ''

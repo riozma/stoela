@@ -20,20 +20,29 @@ Herzlichen Dank!
 [Lagerleitung]
 Stöcklilager`
 
+async function ladeOrgId() {
+  const { data } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  return data?.organisation_id ?? null
+}
+
 async function laden() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').single()
-  if (!org) return
-  const { data } = await supabase.from('org_sponsoring').select('*').eq('organisation_id', org.id).order('jahr', { ascending: false })
+  const orgId = await ladeOrgId()
+  if (!orgId) return
+  const { data } = await supabase.from('org_sponsoring').select('*').eq('organisation_id', orgId).order('jahr', { ascending: false })
   eintraege.value = data ?? []
 }
 
 onMounted(laden)
 
 async function hinzufuegen() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').single()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   await supabase.from('org_sponsoring').insert({
-    organisation_id: org.id,
+    organisation_id: orgId,
     jahr: form.value.jahr,
     sponsor: form.value.sponsor,
     betrag: form.value.betrag,

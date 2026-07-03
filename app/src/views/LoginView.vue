@@ -17,7 +17,7 @@ async function submitPassword() {
   loading.value = true
   try {
     await signInWithPassword(email.value, password.value)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/lager'
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.push(redirect)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Login fehlgeschlagen.'

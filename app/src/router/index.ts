@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import LoginView from '../views/LoginView.vue'
-import LagerUebersicht from '../views/LagerUebersicht.vue'
+import StartseiteView from '../views/StartseiteView.vue'
 import LagerImport from '../views/LagerImport.vue'
 import LagerDetail from '../views/LagerDetail.vue'
 import AnmeldungTN from '../views/AnmeldungTN.vue'
@@ -13,9 +13,9 @@ import MoerderliView from '../views/MoerderliView.vue'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/lager' },
+    { path: '/', name: 'start', component: StartseiteView, meta: { requiresAuth: true } },
     { path: '/login', name: 'login', component: LoginView },
-    { path: '/lager', name: 'lager', component: LagerUebersicht, meta: { requiresAuth: true } },
+    { path: '/lager', redirect: '/organisation' },
     { path: '/organisation', name: 'organisation', component: OrganisationView, meta: { requiresAuth: true } },
     { path: '/lager/import', name: 'lager-import', component: LagerImport, meta: { requiresAuth: true } },
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
@@ -72,7 +72,7 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !loggedIn) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
-  if (to.name === 'login' && loggedIn) return '/lager'
+  if (to.name === 'login' && loggedIn) return '/'
   return true
 })
 

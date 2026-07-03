@@ -41,14 +41,23 @@ const skiForm = ref({ jahr: new Date().getFullYear() + 1, ort: '', start: '', en
 const progForm = ref({ tag: '', start: '09:00', ende: '17:00', titel: '', ort: '' })
 const anmForm = ref({ vorname: '', nachname: '', von: '', bis: '', notiz: '' })
 
+async function ladeOrgId() {
+  const { data } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  return data?.organisation_id ?? null
+}
+
 async function laden() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').single()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   const jahr = new Date().getFullYear() + 1
-  let { data: s } = await supabase.from('org_skiweekend').select('*').eq('organisation_id', org.id).eq('jahr', jahr).maybeSingle()
+  let { data: s } = await supabase.from('org_skiweekend').select('*').eq('organisation_id', orgId).eq('jahr', jahr).maybeSingle()
   if (!s) {
     const { data: neu } = await supabase.from('org_skiweekend').insert({
-      organisation_id: org.id, jahr, ort: null, notiz: 'Mit Kassier Budget klären',
+      organisation_id: orgId, jahr, ort: null, notiz: 'Mit Kassier Budget klären',
     }).select('*').single()
     s = neu
   }

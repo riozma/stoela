@@ -27,13 +27,22 @@ const sichtbareFelder = computed(() => {
   return [...keys]
 })
 
+async function ladeOrgId() {
+  const { data } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  return data?.organisation_id ?? null
+}
+
 async function laden() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').maybeSingle()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   const { data: meta } = await supabase
     .from('org_aemtli_meta')
     .select('seiten_typ, beschreibung, hinweise_md, extra_felder')
-    .eq('organisation_id', org.id)
+    .eq('organisation_id', orgId)
     .eq('aemtli_id', props.aemtliId)
     .maybeSingle()
   if (!meta) return
@@ -52,8 +61,8 @@ async function laden() {
 onMounted(laden)
 
 async function speichernExtra() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').maybeSingle()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   const payload: Record<string, unknown> = { felder: feldKeys.value }
   for (const key of sichtbareFelder.value) {
     payload[key] = feldWerte.value[key] ?? ''
@@ -61,7 +70,7 @@ async function speichernExtra() {
   await supabase
     .from('org_aemtli_meta')
     .update({ extra_felder: payload })
-    .eq('organisation_id', org.id)
+    .eq('organisation_id', orgId)
     .eq('aemtli_id', props.aemtliId)
 }
 

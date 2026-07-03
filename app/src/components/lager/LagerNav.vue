@@ -58,8 +58,8 @@ function navKlick() {
 
 <template>
   <nav class="lager-top-nav" :class="{ 'mobile-open': mobileOpen }" aria-label="Lager-Navigation">
-    <router-link to="/lager" class="nav-link alle-lager-nav" @click="navKlick">
-      ← Alle Lager
+    <router-link to="/" class="nav-link alle-lager-nav" @click="navKlick">
+      ← Start
     </router-link>
 
     <router-link :to="sectionPath('dashboard')" class="nav-link" :class="{ aktiv: isActive('dashboard') }" @click="navKlick">

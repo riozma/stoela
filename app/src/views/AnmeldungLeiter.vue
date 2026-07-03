@@ -94,7 +94,11 @@ async function absenden() {
   })
   speichern.value = false
   if (error) {
-    fehler.value = error.message
+    if (error.message.includes('Vereinsmitglied')) {
+      fehler.value = 'Du musst zuerst Vereinsmitglied sein. Stelle auf der Startseite eine Beitrittsanfrage.'
+    } else {
+      fehler.value = error.message
+    }
     return
   }
   gesendet.value = true

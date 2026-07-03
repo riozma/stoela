@@ -20,13 +20,22 @@ const form = ref({ name: '', bestand: 0, min_bestand: 1, einheit: 'Stk', notiz: 
 
 const niedrig = computed(() => items.value.filter((i) => i.bestand < i.min_bestand))
 
+async function ladeOrgId() {
+  const { data } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  return data?.organisation_id ?? null
+}
+
 async function laden() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').single()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   const { data } = await supabase
     .from('org_bastel_inventar')
     .select('id, name, bestand, min_bestand, einheit, notiz, updated_at')
-    .eq('organisation_id', org.id)
+    .eq('organisation_id', orgId)
     .order('name')
   items.value = data ?? []
 }
@@ -34,10 +43,10 @@ async function laden() {
 onMounted(laden)
 
 async function hinzufuegen() {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').single()
-  if (!org) return
+  const orgId = await ladeOrgId()
+  if (!orgId) return
   await supabase.from('org_bastel_inventar').insert({
-    organisation_id: org.id,
+    organisation_id: orgId,
     name: form.value.name,
     bestand: form.value.bestand,
     min_bestand: form.value.min_bestand,
