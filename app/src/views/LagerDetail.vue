@@ -11,7 +11,8 @@ import LagerEinkauf from '../components/lager/LagerEinkauf.vue'
 import ProgrammGesamt from '../components/lager/ProgrammGesamt.vue'
 import ProgrammTag from '../components/lager/ProgrammTag.vue'
 import ProgrammBlockEdit from '../components/lager/ProgrammBlockEdit.vue'
-import { heuteIso, lagerLaeuft, tageZwischen } from '../lib/programmUtils'
+import ProgrammImportPanel from '../components/lager/ProgrammImportPanel.vue'
+import { heuteIso, tageZwischen } from '../lib/programmUtils'
 import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
@@ -180,10 +181,6 @@ const alleProgrammTage = computed(() => {
 })
 
 const programmLink = computed(() => {
-  const heute = heuteIso()
-  if (lager.value && lagerLaeuft(lager.value.start_datum, lager.value.end_datum) && alleProgrammTage.value.includes(heute)) {
-    return `/lager/${lagerId.value}/programm/tag/${heute}`
-  }
   return `/lager/${lagerId.value}/programm`
 })
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
@@ -262,6 +259,37 @@ async function programmBlockGespeichert() {
   await ladeBloeckeVoll()
 }
 
+async function programmImportiert() {
+  bloeckeVollGeladen.value = false
+  await ladeBloeckeVoll()
+  await ladeLetzteAenderungenListe()
+}
+
+async function geminiVorschlagAngewendet(actionType: string) {
+  if (
+    actionType === 'insert_programmblock'
+    || actionType === 'update_programmblock'
+    || actionType === 'delete_programmblock'
+  ) {
+    bloeckeVollGeladen.value = false
+    await ladeBloeckeVoll()
+  }
+  if (actionType === 'insert_tn' || actionType === 'update_tn') {
+    await Promise.all([ladeTeilnehmer(), ladeGruppen()])
+  }
+  if (
+    actionType === 'insert_leiter'
+    || actionType === 'update_leiter'
+    || actionType === 'assign_leiter_aemtli'
+  ) {
+    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeTeam(), ladeGruppen()])
+  }
+  if (actionType === 'create_gruppe' || actionType === 'assign_gruppenmitglied') {
+    await ladeGruppen()
+  }
+  await ladeLetzteAenderungenListe()
+}
+
 function berechneAlter(geburtsdatum: string | null): number | null {
   if (!geburtsdatum) return null
   const geburt = new Date(geburtsdatum)
@@ -316,6 +344,14 @@ async function tnRolleAendern(tn: TN, rolle: 'TN' | 'HL') {
   tn.rolle = rolle
 }
 
+async function tnLoeschen(tnId: string) {
+  if (!isLeitung.value) return
+  const sicher = window.confirm('Teilnehmer/in wirklich löschen?')
+  if (!sicher) return
+  await supabase.from('anmeldungen_tn').delete().eq('id', tnId).eq('lager_id', lagerId.value)
+  await Promise.all([ladeTeilnehmer(), ladeGruppen()])
+}
+
 // --- Leiter ---
 const leiterListe = ref<LeiterAnmeldung[]>([])
 const leiterSpeichern = ref(false)
@@ -341,6 +377,30 @@ async function leiterBestaetigen(anmeldungId: string) {
   const { error: err } = await supabase.rpc('leiter_bestaetigen', { p_anmeldung_id: anmeldungId })
   if (err) { leiterFehler.value = err.message; return }
   await leiterNachAenderung()
+}
+
+async function leiterLoeschen(leiter: LeiterAnmeldung) {
+  if (!isLeitung.value) return
+  const sicher = window.confirm(`Leiter "${leiter.vorname} ${leiter.nachname}" wirklich löschen?`)
+  if (!sicher) return
+  leiterFehler.value = ''
+  const { error: delErr } = await supabase
+    .from('anmeldungen_leiter')
+    .delete()
+    .eq('id', leiter.id)
+    .eq('lager_id', lagerId.value)
+  if (delErr) {
+    leiterFehler.value = delErr.message
+    return
+  }
+  if (leiter.profile_id) {
+    await supabase
+      .from('lager_leiter')
+      .delete()
+      .eq('lager_id', lagerId.value)
+      .eq('profile_id', leiter.profile_id)
+  }
+  await Promise.all([leiterNachAenderung(), ladeTeam(), ladeGruppen()])
 }
 
 async function leiterAnfrageBearbeiten(anmeldungId: string, entscheidung: 'genehmigen' | 'ablehnen') {
@@ -611,7 +671,9 @@ async function gruppenAutomatischBilden() {
   gruppenErstellen.value = true
 
   const tnMitAlter = tnListe.value.map((tn) => ({ ...tn, alter: berechneAlter(tn.geburtsdatum) }))
-  const leiterMitAlter = leiterListe.value.map((l) => ({ ...l, alter: berechneAlter(l.geburtsdatum) }))
+  const leiterMitAlter = leiterListe.value
+    .filter((l) => ['bestaetigt', 'angemeldet'].includes(l.status))
+    .map((l) => ({ ...l, alter: berechneAlter(l.geburtsdatum) }))
   const tnVerteilung = schlangenVerteilung(interleaveNachGeschlecht(tnMitAlter), anzahl)
   const leiterVerteilung = schlangenVerteilung(interleaveNachGeschlecht(leiterMitAlter), anzahl)
 
@@ -974,15 +1036,15 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'leiter') {
-    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli(), ladeOrgPersonenPool()])
+    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli(), ladeOrgPersonenPool(), ladeGruppen()])
     return
   }
   if (tab === 'teilnehmer') {
-    await ladeTeilnehmer()
+    await Promise.all([ladeTeilnehmer(), ladeGruppen()])
     return
   }
   if (tab === 'gruppen') {
-    await ladeGruppen()
+    await Promise.all([ladeTeilnehmer(), ladeLeiter(), ladeGruppen()])
     return
   }
   if (tab === 'einstellungen') {
@@ -1047,16 +1109,6 @@ async function ladeWetterFallsNoetig() {
 
 watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
-watch(
-  () => route.name,
-  (name) => {
-    if (name !== 'programm' || !lager.value) return
-    const heute = heuteIso()
-    if (lagerLaeuft(lager.value.start_datum, lager.value.end_datum) && alleProgrammTage.value.includes(heute)) {
-      router.replace(`/lager/${lagerId.value}/programm/tag/${heute}`)
-    }
-  },
-)
 </script>
 
 <template>
@@ -1170,12 +1222,11 @@ watch(
           </span>
         </div>
 
-        <div v-if="programmRoute.view !== 'block' && programmRoute.view !== 'neu' && bloecke.length" class="programm-toolbar">
-          <button class="secondary klein" :disabled="zuordnungLade" @click="programmZuordnungenAktualisieren()">
-            {{ zuordnungLade ? 'Gleiche ab...' : 'Namen mit Leitern/Ämtli abgleichen' }}
-          </button>
-          <span v-if="zuordnungNachricht" class="hint">{{ zuordnungNachricht }}</span>
-        </div>
+        <ProgrammImportPanel
+          v-if="programmRoute.view === 'gesamt' && isLeitung && !bloecke.length"
+          :lager-id="lagerId"
+          @imported="programmImportiert"
+        />
 
         <ProgrammGesamt
           v-if="programmRoute.view === 'gesamt'"
@@ -1199,6 +1250,7 @@ watch(
 
         <ProgrammBlockEdit
           v-else-if="programmRoute.view === 'block'"
+          :key="`block-${programmRoute.blockId}`"
           :lager-id="lagerId"
           :block-id="programmRoute.blockId"
           @saved="programmBlockGespeichert"
@@ -1206,6 +1258,7 @@ watch(
 
         <ProgrammBlockEdit
           v-else-if="programmRoute.view === 'neu'"
+          key="block-neu"
           :lager-id="lagerId"
           @saved="programmBlockGespeichert"
         />
@@ -1222,7 +1275,12 @@ watch(
           Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
         </p>
         <table v-if="tnListe.length" class="liste">
-          <thead><tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Rolle</th><th>Status</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Name</th><th>Alter</th><th>Gruppe</th><th>Rolle</th><th>Status</th>
+              <th v-if="isLeitung"></th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="tn in tnListe" :key="tn.id">
               <td>{{ tn.vorname }} {{ tn.nachname }}</td>
@@ -1234,6 +1292,9 @@ watch(
                 </select>
               </td>
               <td>{{ tn.status }}</td>
+              <td v-if="isLeitung">
+                <button type="button" class="secondary klein" @click="tnLoeschen(tn.id)">Entfernen</button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1301,7 +1362,12 @@ watch(
         </div>
 
         <table v-if="leiterBestaetigt.length" class="liste">
-          <thead><tr><th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Status</th><th>Ämtli</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Status</th><th>Ämtli</th>
+              <th v-if="isLeitung"></th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="l in leiterBestaetigt" :key="l.id">
               <td>{{ l.vorname }} {{ l.nachname }} <span v-if="l.von_vorjahr" class="badge prov">VJ</span></td>
@@ -1342,6 +1408,9 @@ watch(
                     @keyup.enter="neueRolleErstellen(l.id)"
                   />
                 </div>
+              </td>
+              <td v-if="isLeitung">
+                <button type="button" class="secondary klein" @click="leiterLoeschen(l)">Entfernen</button>
               </td>
             </tr>
           </tbody>
@@ -1492,6 +1561,7 @@ watch(
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
           :ort="lager.ort"
+          @applied="geminiVorschlagAngewendet"
         />
         <p v-else class="error">Nur Lagerleitung hat Zugriff auf Gemini.</p>
       </section>

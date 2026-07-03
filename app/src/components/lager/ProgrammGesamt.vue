@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   RASTER_SLOT_MIN,
-  RASTER_START_MIN,
   formatProgrammTag,
   formatProgrammZeit,
   heuteIso,
@@ -29,6 +28,8 @@ const router = useRouter()
 const rasterModus = ref<'woche' | 'zweiwochen'>('woche')
 const seitenIndex = ref(0)
 const SLOT_HEIGHT_REM = 1.15
+const MIN_SLOT_HEIGHT_REM = 0.7
+const slotHeightRem = ref(SLOT_HEIGHT_REM)
 
 const tageProSeite = computed(() => (rasterModus.value === 'woche' ? 7 : 14))
 
@@ -45,6 +46,17 @@ const maxSeite = computed(() =>
 )
 
 const slots = computed(() => rasterSlots())
+const heuteImRaster = computed(() => alleTage.value.includes(heuteIso()))
+
+function aktualisiereSlotHoehe() {
+  if (typeof window === 'undefined') return
+  const slotAnzahl = slots.value.length || 1
+  // Header + Toolbar + Navigation lassen wir frei, damit das Raster auf Laptop vertikal passt.
+  const verfuegbarPx = Math.max(320, window.innerHeight - 360)
+  const pxProSlot = verfuegbarPx / slotAnzahl
+  const rem = Math.min(SLOT_HEIGHT_REM, Math.max(MIN_SLOT_HEIGHT_REM, pxProSlot / 16))
+  slotHeightRem.value = Math.round(rem * 100) / 100
+}
 
 watch(
   () => [props.startDatum, props.endDatum, alleTage.value.length] as const,
@@ -77,7 +89,7 @@ function blockHoehe(b: ProgrammBlockBasis): number {
 function blockTopOffsetRem(b: ProgrammBlockBasis, slotMin: number): number {
   const start = zeitZuMinuten(b.start_zeit)
   const diff = start - slotMin
-  return diff <= 0 ? 0 : (diff / RASTER_SLOT_MIN) * SLOT_HEIGHT_REM
+  return diff <= 0 ? 0 : (diff / RASTER_SLOT_MIN) * slotHeightRem.value
 }
 
 function zuBlock(id: string) {
@@ -98,10 +110,23 @@ function neuBlock(tag?: string, typ?: string) {
 function codeClass(code: BlockCode) {
   return `code-${code}`
 }
+
+watch(() => slots.value.length, () => {
+  aktualisiereSlotHoehe()
+})
+
+onMounted(() => {
+  aktualisiereSlotHoehe()
+  window.addEventListener('resize', aktualisiereSlotHoehe)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', aktualisiereSlotHoehe)
+})
 </script>
 
 <template>
-  <div class="programm-gesamt">
+  <div class="programm-gesamt" :style="{ '--slot-h': `${slotHeightRem}rem` }">
     <div class="gesamt-kopf">
       <div>
         <h3>Gesamtprogramm</h3>
@@ -109,9 +134,7 @@ function codeClass(code: BlockCode) {
       </div>
       <div class="gesamt-aktionen">
         <button type="button" @click="neuBlock()">+ Neues Programm</button>
-        <button type="button" class="secondary" @click="neuBlock(undefined, 'anreise')">+ Anreise</button>
-        <button type="button" class="secondary" @click="neuBlock(undefined, 'abreise')">+ Abreise</button>
-        <router-link :to="`/lager/${lagerId}/programm/tag/${heuteIso()}`" class="secondary link-btn">
+        <router-link v-if="heuteImRaster" :to="`/lager/${lagerId}/programm/tag/${heuteIso()}`" class="secondary link-btn">
           Heute
         </router-link>
       </div>
@@ -163,7 +186,7 @@ function codeClass(code: BlockCode) {
               class="raster-block"
               :class="codeClass(b.code)"
               :style="{
-                height: `${Math.max(SLOT_HEIGHT_REM, blockHoehe(b) * SLOT_HEIGHT_REM - 0.04)}rem`,
+                height: `${Math.max(slotHeightRem, blockHoehe(b) * slotHeightRem - 0.04)}rem`,
                 top: `${blockTopOffsetRem(b, slotMin) + 0.02}rem`,
               }"
               @click.stop="zuBlock(b.id)"
@@ -197,7 +220,7 @@ function codeClass(code: BlockCode) {
 .raster-tag-kopf.heute { background: var(--color-accent); color: #fdfbf3; }
 .raster-tag-kopf:hover { filter: brightness(0.97); }
 .raster-zeit {
-  height: 1.15rem;
+  height: var(--slot-h);
   padding: 0 0.28rem;
   display: flex;
   align-items: flex-start;
@@ -211,7 +234,7 @@ function codeClass(code: BlockCode) {
 }
 .raster-zelle {
   position: relative;
-  height: 1.15rem;
+  height: var(--slot-h);
   border-bottom: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
   background: var(--color-surface);

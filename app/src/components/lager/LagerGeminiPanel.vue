@@ -43,6 +43,7 @@ const props = defineProps<{
   endDatum: string | null
   ort: string | null
 }>()
+const emit = defineEmits<{ applied: [actionType: ActionType] }>()
 
 const eingabe = ref('')
 const dateien = ref<File[]>([])
@@ -60,6 +61,7 @@ const dragAktiv = ref(false)
 const zuletztAngenommenId = ref<string | null>(null)
 
 const offene = computed(() => vorschlaege.value.filter((v) => v.status === 'offen'))
+const kannAnalysieren = computed(() => !!eingabe.value.trim() || dateien.value.length > 0)
 
 function prettyAction(action: ActionType) {
   const map: Record<ActionType, string> = {
@@ -186,14 +188,15 @@ async function laden() {
 }
 
 async function analysieren() {
-  if (!eingabe.value.trim()) return
+  if (!kannAnalysieren.value) return
   analysiere.value = true
   fehler.value = ''
   info.value = ''
 
   const docs = await dokumenteVorbereiten()
+  const prompt = eingabe.value.trim() || 'Analysiere die Anhänge und erstelle präzise, kleine umsetzbare Vorschläge.'
   const body = {
-    prompt: eingabe.value.trim(),
+    prompt,
     lager: {
       id: props.lagerId,
       name: props.lagerName,
@@ -237,7 +240,7 @@ async function analysieren() {
       lager_id: props.lagerId,
       organisation_id: props.organisationId,
       erstellt_von: userId,
-      quelle_prompt: eingabe.value.trim(),
+      quelle_prompt: prompt,
       quelle_dokumente: quelleDokumente,
       titel: p.title,
       beschreibung: p.description,
@@ -256,6 +259,32 @@ async function analysieren() {
   await laden()
 }
 
+function istLeerWert(v: unknown) {
+  return v == null || (typeof v === 'string' && v.trim() === '')
+}
+
+function fehlendePflichtfelder(action: ActionType, payload: Record<string, unknown>): string[] {
+  const fehlt = (key: string) => istLeerWert(payload[key])
+  if (action === 'insert_tn') {
+    return ['vorname', 'nachname', 'geburtsdatum', 'notfallkontakt', 'eltern_email'].filter(fehlt)
+  }
+  if (action === 'insert_leiter') {
+    return ['vorname', 'nachname'].filter(fehlt)
+  }
+  if (action === 'update_programmblock' || action === 'delete_programmblock' || action === 'update_tn' || action === 'update_leiter' || action === 'update_lager_todo') {
+    return ['id'].filter(fehlt)
+  }
+  if (action === 'assign_leiter_aemtli') {
+    const missing = ['anmeldung_leiter_id'].filter(fehlt)
+    if (fehlt('aemtli_id') && fehlt('aemtli_name')) missing.push('aemtli_id|aemtli_name')
+    return missing
+  }
+  if (action === 'assign_gruppenmitglied') {
+    return ['lagergruppe_id', 'typ', 'anmeldung_id'].filter(fehlt)
+  }
+  return []
+}
+
 async function annehmen(v: GeminiVorschlag) {
   fehler.value = ''
   info.value = ''
@@ -268,13 +297,24 @@ async function annehmen(v: GeminiVorschlag) {
     fehler.value = 'Payload-JSON ist ungültig.'
     return
   }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    aktionLade.value[v.id] = false
+    fehler.value = 'Payload muss ein JSON-Objekt sein.'
+    return
+  }
+  const missing = fehlendePflichtfelder(v.action_type, payload)
+  if (missing.length) {
+    aktionLade.value[v.id] = false
+    fehler.value = `Unvollständiger Vorschlag (${v.action_type}): ${missing.join(', ')} fehlt. Bitte Payload bearbeiten oder ablehnen.`
+    return
+  }
   const { error } = await supabase.rpc('lager_ai_vorschlag_annehmen', {
     p_vorschlag_id: v.id,
     p_payload_override: payload,
   })
   aktionLade.value[v.id] = false
   if (error) {
-    fehler.value = error.message
+    fehler.value = `${error.message} (Tipp: Payload prüfen/ergänzen, dann erneut annehmen.)`
     return
   }
   const idx = vorschlaege.value.findIndex((x) => x.id === v.id)
@@ -284,6 +324,7 @@ async function annehmen(v: GeminiVorschlag) {
     if (zuletztAngenommenId.value === v.id) zuletztAngenommenId.value = null
   }, 2200)
   info.value = 'Vorschlag angenommen und angewendet.'
+  emit('applied', v.action_type)
   await laden()
 }
 
@@ -337,7 +378,7 @@ onMounted(laden)
         <input type="file" multiple accept=".pdf,image/*,.txt,.md,.csv,.xlsx,.xls" @change="onDateien" />
       </div>
       <p v-if="dateien.length" class="hint">Anhänge: {{ dateien.map((f) => f.name).join(', ') }}</p>
-      <button :disabled="analysiere || !eingabe.trim()" @click="analysieren">
+      <button :disabled="analysiere || !kannAnalysieren" @click="analysieren">
         {{ analysiere ? 'Analysiere…' : 'Mit Gemini analysieren' }}
       </button>
     </div>

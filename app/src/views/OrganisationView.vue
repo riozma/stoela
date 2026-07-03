@@ -74,6 +74,8 @@ const vorLagerListe = ref<{ id: string; name: string; jahr: number }[]>([])
 
 const personForm = ref({ vorname: '', nachname: '', email: '', telefon: '', rolle_hinweis: '' })
 const personSpeichern = ref(false)
+const personEdit = ref<Record<string, { vorname: string; nachname: string; email: string; telefon: string; rolle_hinweis: string }>>({})
+const personAktionLade = ref<Record<string, boolean>>({})
 
 const lagerForm = ref({
   jahr: new Date().getFullYear() + 1,
@@ -159,6 +161,16 @@ async function ladeVereinDaten() {
 
   mitglieder.value = (m ?? []) as VereinsMitglied[]
   orgPersonen.value = (p ?? []) as VereinsPerson[]
+  personEdit.value = {}
+  for (const person of orgPersonen.value) {
+    personEdit.value[person.id] = {
+      vorname: person.vorname,
+      nachname: person.nachname,
+      email: person.email ?? '',
+      telefon: person.telefon ?? '',
+      rolle_hinweis: person.rolle_hinweis ?? '',
+    }
+  }
   orgVorlagen.value = (v ?? []) as OrgTodoVorlage[]
   lager.value = (l ?? []) as VereinsLager[]
   vorLagerListe.value = (vor ?? []) as { id: string; name: string; jahr: number }[]
@@ -192,6 +204,60 @@ async function personHinzufuegen() {
   }
   personForm.value = { vorname: '', nachname: '', email: '', telefon: '', rolle_hinweis: '' }
   info.value = 'Person hinzugefügt.'
+  await ladeVereinDaten()
+}
+
+async function personAktualisieren(personId: string) {
+  if (!orgAuswahl.value || !istVereinsleitung.value) return
+  const edit = personEdit.value[personId]
+  if (!edit) return
+  const vorname = edit.vorname.trim()
+  const nachname = edit.nachname.trim()
+  if (!vorname || !nachname) {
+    fehler.value = 'Vorname und Nachname sind Pflicht.'
+    return
+  }
+  info.value = ''
+  fehler.value = ''
+  personAktionLade.value[personId] = true
+  const { error } = await supabase
+    .from('org_personen')
+    .update({
+      vorname,
+      nachname,
+      email: edit.email.trim() || null,
+      telefon: edit.telefon.trim() || null,
+      rolle_hinweis: edit.rolle_hinweis.trim() || null,
+    })
+    .eq('id', personId)
+    .eq('organisation_id', orgAuswahl.value)
+  personAktionLade.value[personId] = false
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = 'Person aktualisiert.'
+  await ladeVereinDaten()
+}
+
+async function personLoeschen(personId: string) {
+  if (!orgAuswahl.value || !istVereinsleitung.value) return
+  const sicher = window.confirm('Person wirklich aus dem Personen-Pool löschen?')
+  if (!sicher) return
+  info.value = ''
+  fehler.value = ''
+  personAktionLade.value[personId] = true
+  const { error } = await supabase
+    .from('org_personen')
+    .update({ aktiv: false })
+    .eq('id', personId)
+    .eq('organisation_id', orgAuswahl.value)
+  personAktionLade.value[personId] = false
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = 'Person gelöscht.'
   await ladeVereinDaten()
 }
 
@@ -400,13 +466,50 @@ onMounted(async () => {
             Für Leiter ohne Login. Diese Personen können später mit echten Accounts verknüpft werden.
           </p>
           <table v-if="orgPersonen.length" class="liste">
-            <thead><tr><th>Name</th><th>Kontakt</th><th>Hinweis</th><th>Login</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Kontakt</th>
+                <th>Hinweis</th>
+                <th>Login</th>
+                <th v-if="istVereinsleitung">Aktionen</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="p in orgPersonen" :key="p.id">
-                <td>{{ p.vorname }} {{ p.nachname }}</td>
-                <td>{{ p.email ?? '–' }}<br><span class="klein">{{ p.telefon }}</span></td>
-                <td>{{ p.rolle_hinweis ?? '–' }}</td>
+                <td v-if="istVereinsleitung && personEdit[p.id]" class="cell-edit">
+                  <input v-model="personEdit[p.id].vorname" placeholder="Vorname" />
+                  <input v-model="personEdit[p.id].nachname" placeholder="Nachname" />
+                </td>
+                <td v-else>{{ p.vorname }} {{ p.nachname }}</td>
+                <td v-if="istVereinsleitung && personEdit[p.id]" class="cell-edit">
+                  <input v-model="personEdit[p.id].email" type="email" placeholder="E-Mail" />
+                  <input v-model="personEdit[p.id].telefon" placeholder="Telefon" />
+                </td>
+                <td v-else>{{ p.email ?? '–' }}<br><span class="klein">{{ p.telefon }}</span></td>
+                <td v-if="istVereinsleitung && personEdit[p.id]">
+                  <input v-model="personEdit[p.id].rolle_hinweis" placeholder="Rolle/Hinweis" />
+                </td>
+                <td v-else>{{ p.rolle_hinweis ?? '–' }}</td>
                 <td>{{ p.profile_id ? 'verknüpft' : 'manuell' }}</td>
+                <td v-if="istVereinsleitung && personEdit[p.id]">
+                  <div class="inline-aktionen">
+                    <button
+                      class="secondary klein-btn"
+                      :disabled="personAktionLade[p.id]"
+                      @click="personAktualisieren(p.id)"
+                    >
+                      {{ personAktionLade[p.id] ? '...' : 'Speichern' }}
+                    </button>
+                    <button
+                      class="secondary klein-btn"
+                      :disabled="personAktionLade[p.id]"
+                      @click="personLoeschen(p.id)"
+                    >
+                      Löschen
+                    </button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -480,7 +583,15 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem; color: var(--color-text-muted); }
 .liste { width: 100%; border-collapse: collapse; margin-top: 0.6rem; font-size: 0.88rem; }
 .liste th, .liste td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--color-border); }
+.cell-edit { min-width: 170px; }
+.cell-edit input {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.3rem;
+}
+.cell-edit input:last-child { margin-bottom: 0; }
 .klein { font-size: 0.78rem; color: var(--color-text-muted); }
+.klein-btn { font-size: 0.78rem; padding: 0.2rem 0.5rem; }
 .anfragen-box { margin-top: 0.8rem; }
 .anfrage-karte {
   border: 1px solid var(--color-border);
