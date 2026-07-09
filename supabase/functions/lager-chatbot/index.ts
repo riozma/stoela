@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
-const GEMINI_MODEL = 'gemini-3.5-flash'
+const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite']
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
@@ -309,6 +309,50 @@ ${input.question}
 `
 }
 
+async function callGemini(prompt: string): Promise<string> {
+  let lastDetail = 'Keine Antwort erhalten'
+
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY!,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 1024,
+              temperature: 0.2,
+            },
+          }),
+        },
+      )
+
+      if (response.ok) {
+        const result = await response.json()
+        const answer = result?.candidates?.[0]?.content?.parts?.[0]?.text?.toString()?.trim()
+        if (answer) return answer
+        lastDetail = JSON.stringify(result)
+      } else {
+        lastDetail = await response.text()
+        const retryable = response.status === 429 || response.status === 503
+        if (retryable && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 800))
+          continue
+        }
+        if (response.status === 404) break
+        if (!retryable) break
+      }
+    }
+  }
+
+  throw new Error(`Gemini API Fehler: ${lastDetail.slice(0, 500)}`)
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
@@ -350,42 +394,16 @@ Deno.serve(async (req) => {
   const { context, topics } = await buildDynamicContext(supabase, lagerId, question)
   const prompt = buildPrompt({ question, context, topics, history })
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 1024,
-          temperature: 0.2,
-        },
-      }),
-    },
-  )
-
-  if (!response.ok) {
-    const detail = await response.text()
-    return new Response(JSON.stringify({ error: 'Gemini API Fehler', detail }), {
+  try {
+    const answer = await callGemini(prompt)
+    return new Response(JSON.stringify({ answer, topics, contextPreview: compact(context, 1200) }), {
+      headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Gemini API Fehler'
+    return new Response(JSON.stringify({ error: message }), {
       status: 502,
       headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
     })
   }
-
-  const result = await response.json()
-  const answer = result?.candidates?.[0]?.content?.parts?.[0]?.text?.toString()?.trim()
-  if (!answer) {
-    return new Response(JSON.stringify({ error: 'Keine Antwort erhalten', detail: result }), {
-      status: 502,
-      headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-    })
-  }
-
-  return new Response(JSON.stringify({ answer, topics, contextPreview: compact(context, 1200) }), {
-    headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-  })
 })
