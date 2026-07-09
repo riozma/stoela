@@ -19,6 +19,7 @@ const props = defineProps<{
   startDatum: string | null
   endDatum: string | null
   isLeitung: boolean
+  zeigeFahrplanLink?: boolean
 }>()
 
 const emit = defineEmits<{ fahrplan: [] }>()
@@ -105,7 +106,7 @@ function zuTodo(t: LagerTodo) {
           <div class="balken"><div class="fill" :style="{ width: fortschritt + '%' }" /></div>
           <span>{{ fortschritt }}% erledigt</span>
         </div>
-        <button type="button" class="secondary" @click="emit('fahrplan')">Ganzer Fahrplan →</button>
+        <button v-if="zeigeFahrplanLink !== false" type="button" class="secondary" @click="emit('fahrplan')">Ganzer Fahrplan →</button>
       </div>
     </header>
 

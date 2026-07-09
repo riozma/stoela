@@ -42,6 +42,8 @@ import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
 import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
+import { isNavSectionAllowed } from '../lib/lagerNavConfig'
+import LagerBearbeitung from '../components/lager/LagerBearbeitung.vue'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
 interface MaterialItem extends MaterialMitZuordnung {}
@@ -165,6 +167,12 @@ const activeTab = computed<Tab>(() => {
   if (typeof route.name === 'string' && route.name.startsWith('programm')) return 'programm'
   return (route.params.section as string) || 'dashboard'
 })
+
+const tabErlaubt = computed(() => isNavSectionAllowed(activeTab.value))
+
+const finanzenAemtliId = computed(() =>
+  aemtliListe.value.find((a) => aemtliSlug(a.name) === 'finanzen')?.id ?? '',
+)
 
 const programmRoute = computed(() => {
   if (route.name === 'programm-tag') return { view: 'tag' as const, date: route.params.programmTag as string }
@@ -1126,14 +1134,11 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :lager-id="lagerId"
         :active-tab="activeTab"
         :programm-link="programmLink"
-        :meine-aemtli="meineAemtli"
         :is-leitung="isLeitung"
-        :hat-kueche-tab="hatKuecheTab"
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
         :mobile-open="navOffen"
-        :moerderli-aktiv="moerderliAktiv"
         @close="navOffen = false"
       />
     </div>
@@ -1144,12 +1149,17 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
     <template v-else-if="lager">
 
+      <LagerBearbeitung v-if="!tabErlaubt" :lager-id="lagerId" :bereich="activeTab" />
+
+      <template v-else>
+
       <section v-if="activeTab === 'dashboard'">
         <LagerTimelinePanel
           :lager-id="lagerId"
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
           :is-leitung="isLeitung"
+          :zeige-fahrplan-link="false"
           @fahrplan="tabWechseln('fahrplan')"
         />
         <LagerDashboard
@@ -1534,6 +1544,15 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
       </section>
 
+      <!-- Finanzen (Rollout: immer erreichbar) -->
+      <section v-if="activeTab === 'aemtli:finanzen' && finanzenAemtliId">
+        <AemtliFinanzen
+          :lager-id="lagerId"
+          :aemtli-id="finanzenAemtliId"
+          :ist-kassier="hatFinanzenAemtli || isLeitung"
+        />
+      </section>
+
       <!-- Quittungen (alle Leiter) -->
       <section v-if="activeTab === 'quittungen' && session">
         <QuittungenPanel
@@ -1640,6 +1659,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <p v-if="lagerLoeschenFehler" class="error">{{ lagerLoeschenFehler }}</p>
         </div>
       </section>
+
+      </template>
     </template>
     </main>
   </div>

@@ -22,7 +22,22 @@ interface VereinsMitglied {
   rolle: 'mitglied' | 'leitung' | 'admin'
   status: 'angefragt' | 'mitglied' | 'abgelehnt'
   angefragt_am: string
-  profiles: { vorname: string | null; nachname: string | null; email: string | null }[] | null
+  profiles:
+    | { vorname: string | null; nachname: string | null; email: string | null }
+    | { vorname: string | null; nachname: string | null; email: string | null }[]
+    | null
+}
+
+interface VereinsLeiterZeile {
+  key: string
+  typ: 'login' | 'manuell'
+  vorname: string
+  nachname: string
+  email: string | null
+  rolle: string
+  profile_id: string | null
+  org_person_id: string | null
+  verknuepft: boolean
 }
 
 interface VereinsPerson {
@@ -76,6 +91,8 @@ const personForm = ref({ vorname: '', nachname: '', email: '', telefon: '', roll
 const personSpeichern = ref(false)
 const personEdit = ref<Record<string, { vorname: string; nachname: string; email: string; telefon: string; rolle_hinweis: string }>>({})
 const personAktionLade = ref<Record<string, boolean>>({})
+const verknuepfOrgPerson = ref<Record<string, string>>({})
+const anfrageAktionLade = ref<Record<string, boolean>>({})
 
 const lagerForm = ref({
   jahr: new Date().getFullYear() + 1,
@@ -110,8 +127,70 @@ const vergangeneLager = computed(() => {
 })
 
 function profilVon(m: VereinsMitglied) {
-  return Array.isArray(m.profiles) ? (m.profiles[0] ?? null) : null
+  if (!m.profiles) return null
+  if (Array.isArray(m.profiles)) return m.profiles[0] ?? null
+  return m.profiles
 }
+
+function profilName(m: VereinsMitglied): string {
+  const p = profilVon(m)
+  const name = `${p?.vorname ?? ''} ${p?.nachname ?? ''}`.trim()
+  return name || p?.email || 'Unbekannt'
+}
+
+function profilEmail(m: VereinsMitglied): string {
+  return profilVon(m)?.email ?? '–'
+}
+
+const vereinsLeiterListe = computed((): VereinsLeiterZeile[] => {
+  const zeilen: VereinsLeiterZeile[] = []
+  const verknuepfteProfile = new Set<string>()
+
+  for (const person of orgPersonen.value) {
+    if (person.profile_id) verknuepfteProfile.add(person.profile_id)
+  }
+
+  for (const m of mitgliederAktiv.value) {
+    const p = profilVon(m)
+    zeilen.push({
+      key: `login-${m.profile_id}`,
+      typ: 'login',
+      vorname: p?.vorname ?? '',
+      nachname: p?.nachname ?? '',
+      email: p?.email ?? null,
+      rolle: m.rolle,
+      profile_id: m.profile_id,
+      org_person_id: null,
+      verknuepft: true,
+    })
+  }
+
+  for (const person of orgPersonen.value) {
+    if (person.profile_id && verknuepfteProfile.has(person.profile_id)) {
+      const schonAlsLogin = zeilen.some((z) => z.profile_id === person.profile_id)
+      if (schonAlsLogin) continue
+    }
+    zeilen.push({
+      key: `person-${person.id}`,
+      typ: person.profile_id ? 'login' : 'manuell',
+      vorname: person.vorname,
+      nachname: person.nachname,
+      email: person.email,
+      rolle: person.rolle_hinweis ?? 'Leiter',
+      profile_id: person.profile_id,
+      org_person_id: person.id,
+      verknuepft: !!person.profile_id,
+    })
+  }
+
+  return zeilen.sort((a, b) =>
+    `${a.nachname} ${a.vorname}`.localeCompare(`${b.nachname} ${b.vorname}`, 'de'),
+  )
+})
+
+const manuelleLeiterOhneLogin = computed(() =>
+  orgPersonen.value.filter((p) => !p.profile_id),
+)
 
 async function ladeVereine() {
   const { data, error } = await supabase.rpc('list_meine_vereine')
@@ -261,22 +340,50 @@ async function personLoeschen(personId: string) {
   await ladeVereinDaten()
 }
 
-async function beitrittEntscheiden(profileId: string, entscheidung: 'genehmigen' | 'ablehnen') {
+async function beitrittEntscheiden(
+  profileId: string,
+  entscheidung: 'genehmigen' | 'ablehnen',
+  orgPersonId: string | null = null,
+) {
   if (!orgAuswahl.value || !istVereinsleitung.value) return
   info.value = ''
   fehler.value = ''
+  anfrageAktionLade.value[profileId] = true
   const { error } = await supabase.rpc('verein_beitrittsanfrage_entscheiden', {
     p_organisation_id: orgAuswahl.value,
     p_profile_id: profileId,
     p_entscheidung: entscheidung,
-    p_org_person_id: null,
+    p_org_person_id: orgPersonId,
   })
+  anfrageAktionLade.value[profileId] = false
   if (error) {
     fehler.value = error.message
     return
   }
-  info.value = entscheidung === 'genehmigen' ? 'Beitritt genehmigt.' : 'Beitritt abgelehnt.'
+  verknuepfOrgPerson.value[profileId] = ''
+  if (entscheidung === 'genehmigen') {
+    info.value = orgPersonId ? 'Beitritt genehmigt und mit manuellem Leiter verknüpft.' : 'Neuer Leiter aufgenommen.'
+  } else {
+    info.value = 'Beitritt abgelehnt.'
+  }
   await ladeVereinDaten()
+}
+
+async function beitrittAnnehmen(profileId: string) {
+  await beitrittEntscheiden(profileId, 'genehmigen', null)
+}
+
+async function beitrittVerknuepfen(profileId: string) {
+  const orgPersonId = verknuepfOrgPerson.value[profileId]
+  if (!orgPersonId) {
+    fehler.value = 'Bitte einen manuell erfassten Leiter zum Verknüpfen wählen.'
+    return
+  }
+  await beitrittEntscheiden(profileId, 'genehmigen', orgPersonId)
+}
+
+async function beitrittAblehnen(profileId: string) {
+  await beitrittEntscheiden(profileId, 'ablehnen', null)
 }
 
 async function lagerErstellen() {
@@ -323,7 +430,7 @@ async function lagerErstellen() {
 
   lagerSpeichern.value = false
   await ladeVereinDaten()
-  await router.push(`/lager/${neuesLager.id}/fahrplan`)
+  await router.push(`/lager/${neuesLager.id}/dashboard`)
 }
 
 function lagerOeffnen(l: VereinsLager) {
@@ -387,7 +494,6 @@ onMounted(async () => {
           <h2>Lager im Verein</h2>
           <p class="hint">
             Kommende/laufende Lager: als Leiter beitreten oder als Gast ansehen.
-            <router-link to="/lager/import">eCamp-PDF importieren</router-link> ·
             <a :href="ECAMP_URL" target="_blank" rel="noopener">eCamp öffnen ↗</a>
           </p>
 
@@ -434,87 +540,116 @@ onMounted(async () => {
 
         <section class="karte">
           <h2>Mitglieder / Leiter im Verein</h2>
-          <p class="hint">Nur Vereinsleitung kann Beitrittsanfragen entscheiden und Personen manuell pflegen.</p>
-          <table v-if="mitgliederAktiv.length" class="liste">
-            <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th></tr></thead>
-            <tbody>
-              <tr v-for="m in mitgliederAktiv" :key="`${m.organisation_id}-${m.profile_id}`">
-                <td>{{ profilVon(m)?.vorname ?? '' }} {{ profilVon(m)?.nachname ?? '' }}</td>
-                <td>{{ profilVon(m)?.email ?? '–' }}</td>
-                <td>{{ m.rolle }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="hint">Noch keine bestätigten Mitglieder.</p>
-
-          <div v-if="istVereinsleitung && anfragen.length" class="anfragen-box">
-            <h3>Beitrittsanfragen</h3>
-            <article v-for="a in anfragen" :key="a.profile_id" class="anfrage-karte">
-              <strong>{{ profilVon(a)?.vorname ?? '' }} {{ profilVon(a)?.nachname ?? '' }}</strong>
-              <span class="hint">{{ profilVon(a)?.email ?? '–' }}</span>
-              <div class="inline-aktionen">
-                <button @click="beitrittEntscheiden(a.profile_id, 'genehmigen')">Genehmigen</button>
-                <button class="secondary" @click="beitrittEntscheiden(a.profile_id, 'ablehnen')">Ablehnen</button>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="karte">
-          <h2>Personen-Pool (manuell)</h2>
           <p class="hint">
-            Für Leiter ohne Login. Diese Personen können später mit echten Accounts verknüpft werden.
+            Alle Leiter mit Login sowie manuell erfasste Personen. Nur Vereinsleitung entscheidet Beitrittsanfragen.
           </p>
-          <table v-if="orgPersonen.length" class="liste">
+          <table v-if="vereinsLeiterListe.length" class="liste">
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Kontakt</th>
-                <th>Hinweis</th>
-                <th>Login</th>
+                <th>E-Mail</th>
+                <th>Rolle</th>
+                <th>Quelle</th>
                 <th v-if="istVereinsleitung">Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in orgPersonen" :key="p.id">
-                <td v-if="istVereinsleitung && personEdit[p.id]" class="cell-edit">
-                  <input v-model="personEdit[p.id].vorname" placeholder="Vorname" />
-                  <input v-model="personEdit[p.id].nachname" placeholder="Nachname" />
+              <tr v-for="z in vereinsLeiterListe" :key="z.key">
+                <template v-if="istVereinsleitung && z.org_person_id && personEdit[z.org_person_id]">
+                  <td class="cell-edit">
+                    <input v-model="personEdit[z.org_person_id].vorname" placeholder="Vorname" />
+                    <input v-model="personEdit[z.org_person_id].nachname" placeholder="Nachname" />
+                  </td>
+                  <td class="cell-edit">
+                    <input v-model="personEdit[z.org_person_id].email" type="email" placeholder="E-Mail" />
+                    <input v-model="personEdit[z.org_person_id].telefon" placeholder="Telefon" />
+                  </td>
+                  <td>
+                    <input v-model="personEdit[z.org_person_id].rolle_hinweis" placeholder="Rolle/Hinweis" />
+                  </td>
+                </template>
+                <template v-else>
+                  <td>{{ z.vorname }} {{ z.nachname }}</td>
+                  <td>{{ z.email ?? '–' }}</td>
+                  <td>{{ z.rolle }}</td>
+                </template>
+                <td>
+                  <span v-if="z.typ === 'login' && z.verknuepft">Login</span>
+                  <span v-else-if="z.verknuepft">Login (verknüpft)</span>
+                  <span v-else>Manuell</span>
                 </td>
-                <td v-else>{{ p.vorname }} {{ p.nachname }}</td>
-                <td v-if="istVereinsleitung && personEdit[p.id]" class="cell-edit">
-                  <input v-model="personEdit[p.id].email" type="email" placeholder="E-Mail" />
-                  <input v-model="personEdit[p.id].telefon" placeholder="Telefon" />
-                </td>
-                <td v-else>{{ p.email ?? '–' }}<br><span class="klein">{{ p.telefon }}</span></td>
-                <td v-if="istVereinsleitung && personEdit[p.id]">
-                  <input v-model="personEdit[p.id].rolle_hinweis" placeholder="Rolle/Hinweis" />
-                </td>
-                <td v-else>{{ p.rolle_hinweis ?? '–' }}</td>
-                <td>{{ p.profile_id ? 'verknüpft' : 'manuell' }}</td>
-                <td v-if="istVereinsleitung && personEdit[p.id]">
-                  <div class="inline-aktionen">
+                <td v-if="istVereinsleitung">
+                  <div v-if="z.org_person_id" class="inline-aktionen">
                     <button
                       class="secondary klein-btn"
-                      :disabled="personAktionLade[p.id]"
-                      @click="personAktualisieren(p.id)"
+                      :disabled="personAktionLade[z.org_person_id]"
+                      @click="personAktualisieren(z.org_person_id!)"
                     >
-                      {{ personAktionLade[p.id] ? '...' : 'Speichern' }}
+                      Speichern
                     </button>
                     <button
                       class="secondary klein-btn"
-                      :disabled="personAktionLade[p.id]"
-                      @click="personLoeschen(p.id)"
+                      :disabled="personAktionLade[z.org_person_id]"
+                      @click="personLoeschen(z.org_person_id!)"
                     >
                       Löschen
                     </button>
                   </div>
+                  <span v-else class="hint klein">–</span>
                 </td>
               </tr>
             </tbody>
           </table>
-          <p v-else class="hint">Noch keine Personen erfasst.</p>
+          <p v-else class="hint">Noch keine Leiter erfasst.</p>
 
+          <div v-if="istVereinsleitung && anfragen.length" class="anfragen-box">
+            <h3>Beitrittsanfragen</h3>
+            <article v-for="a in anfragen" :key="a.profile_id" class="anfrage-karte">
+              <div class="anfrage-kopf">
+                <strong>{{ profilName(a) }}</strong>
+                <span class="anfrage-mail">{{ profilEmail(a) }}</span>
+              </div>
+              <div class="inline-aktionen anfrage-aktionen">
+                <button
+                  :disabled="anfrageAktionLade[a.profile_id]"
+                  @click="beitrittAnnehmen(a.profile_id)"
+                >
+                  Neuer Leiter annehmen
+                </button>
+                <div class="verknuepf-zeile">
+                  <select v-model="verknuepfOrgPerson[a.profile_id]">
+                    <option value="">Manuellen Leiter wählen…</option>
+                    <option
+                      v-for="p in manuelleLeiterOhneLogin"
+                      :key="p.id"
+                      :value="p.id"
+                    >
+                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                    </option>
+                  </select>
+                  <button
+                    class="secondary"
+                    :disabled="anfrageAktionLade[a.profile_id] || !verknuepfOrgPerson[a.profile_id]"
+                    @click="beitrittVerknuepfen(a.profile_id)"
+                  >
+                    Leiter verknüpfen
+                  </button>
+                </div>
+                <button
+                  class="secondary"
+                  :disabled="anfrageAktionLade[a.profile_id]"
+                  @click="beitrittAblehnen(a.profile_id)"
+                >
+                  Leiter ablehnen
+                </button>
+              </div>
+            </article>
+          </div>
+
+          <h3 v-if="istVereinsleitung">Leiter manuell erfassen</h3>
+          <p v-if="istVereinsleitung" class="hint">
+            Für Leiter ohne Login. Beim Beitritt kann ein Login später mit dem manuellen Eintrag verknüpft werden.
+          </p>
           <form v-if="istVereinsleitung" class="inline-form" @submit.prevent="personHinzufuegen">
             <input v-model="personForm.vorname" placeholder="Vorname" required />
             <input v-model="personForm.nachname" placeholder="Nachname" required />
@@ -523,20 +658,6 @@ onMounted(async () => {
             <input v-model="personForm.rolle_hinweis" placeholder="Rolle / Hinweis" />
             <button type="submit" :disabled="personSpeichern">{{ personSpeichern ? 'Speichere…' : 'Person hinzufügen' }}</button>
           </form>
-        </section>
-
-        <section class="karte">
-          <h2>Wissensspeicher / Fahrplan-Vorlagen</h2>
-          <ul v-if="orgVorlagen.length" class="vorlagen-liste">
-            <li v-for="v in orgVorlagen" :key="v.id">
-              <strong>{{ v.titel }}</strong>
-              <span class="meta">
-                {{ v.ebene === 'verein' ? 'Verein' : (v.monate_vor_lager != null ? `${v.monate_vor_lager} Mo. vor Lager` : 'Lager') }}
-                · {{ v.kategorie }}
-              </span>
-            </li>
-          </ul>
-          <p v-else class="hint">Keine Vorlagen gefunden.</p>
         </section>
       </template>
 
@@ -599,6 +720,11 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
   padding: 0.65rem 0.8rem;
   margin-bottom: 0.45rem;
 }
+.anfrage-kopf { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.5rem; }
+.anfrage-mail { color: var(--color-text-muted); font-size: 0.88rem; }
+.anfrage-aktionen { flex-direction: column; align-items: stretch; }
+.verknuepf-zeile { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.verknuepf-zeile select { min-width: 220px; flex: 1; }
 .vergangen { margin-top: 0.75rem; }
 .vergangen summary { cursor: pointer; font-weight: 600; }
 .link-like { border: none; background: transparent; color: var(--color-accent); padding: 0; cursor: pointer; }

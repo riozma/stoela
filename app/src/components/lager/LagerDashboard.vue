@@ -196,11 +196,9 @@ function formatAenderungZeit(iso: string) {
 
     <div v-if="bearbeiten" class="schnell-links">
       <span class="links-label">Schnellzugriff</span>
-      <button class="secondary" @click="emit('tab', 'fahrplan')">Fahrplan</button>
       <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
-      <button v-if="hatKuecheTab" class="secondary" @click="emit('tab', 'aemtli:kueche')">Küche</button>
-      <button v-else class="secondary" @click="emit('tab', 'einkauf')">Einkaufsliste</button>
       <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
+      <button class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
       <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
 

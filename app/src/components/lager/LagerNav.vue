@@ -12,14 +12,11 @@ const props = defineProps<{
   lagerId: string
   activeTab: string
   programmLink?: string
-  meineAemtli: AemtliTab[]
   isLeitung: boolean
-  hatKuecheTab: boolean
   leiterAnfragen: number
   tnCount: number
   leiterCount: number
   mobileOpen?: boolean
-  moerderliAktiv?: boolean
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -47,10 +44,6 @@ function gruppeAktiv(sections: string[]) {
   return sections.some((s) => isActive(s))
 }
 
-function aemtliGruppeAktiv() {
-  return props.activeTab.startsWith('aemtli:')
-}
-
 function navKlick() {
   if (route.meta?.mobileNavClose !== false) emit('close')
 }
@@ -70,12 +63,16 @@ function navKlick() {
       Chatbot
     </router-link>
 
-    <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link moerderli-nav" @click="navKlick">
-      Mörderli
-    </router-link>
-
     <router-link :to="programmLink ?? sectionPath('programm')" class="nav-link" :class="{ aktiv: isActive('programm') }" @click="navKlick">
       Programm
+    </router-link>
+
+    <router-link :to="aemtliPath('Finanzen')" class="nav-link" :class="{ aktiv: isAemtliActive('Finanzen') }" @click="navKlick">
+      Finanzen
+    </router-link>
+
+    <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }" @click="navKlick">
+      Quittungen
     </router-link>
 
     <div class="nav-dropdown" data-label="Leute" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">
@@ -94,72 +91,13 @@ function navKlick() {
       </div>
     </div>
 
-    <div v-if="meineAemtli.length" class="nav-dropdown" data-label="Meine Ämtli" :class="{ 'gruppe-aktiv': aemtliGruppeAktiv() }">
-      <span class="nav-dropdown-label">Meine Ämtli</span>
-      <div class="nav-dropdown-menu">
-        <router-link
-          v-for="a in meineAemtli"
-          :key="a.id"
-          :to="aemtliPath(a.name)"
-          class="nav-link"
-          :class="{ aktiv: isAemtliActive(a.name) }"
-          @click="navKlick"
-        >
-          {{ a.name }}
-        </router-link>
-      </div>
-    </div>
+    <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }" @click="navKlick">
+      Team
+    </router-link>
 
-    <div class="nav-dropdown" data-label="Vorbereitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['fahrplan', 'vorweekend', 'elterninfo']) }">
-      <span class="nav-dropdown-label">Vorbereitung</span>
-      <div class="nav-dropdown-menu">
-        <router-link :to="sectionPath('fahrplan')" class="nav-link" :class="{ aktiv: isActive('fahrplan') }" @click="navKlick">
-          Fahrplan
-        </router-link>
-        <router-link :to="sectionPath('vorweekend')" class="nav-link" :class="{ aktiv: isActive('vorweekend') }" @click="navKlick">
-          Vorweekend
-        </router-link>
-        <router-link :to="sectionPath('elterninfo')" class="nav-link" :class="{ aktiv: isActive('elterninfo') }" @click="navKlick">
-          Elterninfo
-        </router-link>
-      </div>
-    </div>
-
-    <div class="nav-dropdown" data-label="Organisation" :class="{ 'gruppe-aktiv': gruppeAktiv(['einkauf', 'quittungen']) }">
-      <span class="nav-dropdown-label">Organisation</span>
-      <div class="nav-dropdown-menu">
-        <router-link
-          v-if="!hatKuecheTab"
-          :to="sectionPath('einkauf')"
-          class="nav-link"
-          :class="{ aktiv: isActive('einkauf') }"
-          @click="navKlick"
-        >
-          Einkaufsliste
-        </router-link>
-        <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }" @click="navKlick">
-          Quittungen
-        </router-link>
-      </div>
-    </div>
-
-    <div v-if="isLeitung" class="nav-dropdown" data-label="Leitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['gemini', 'team', 'einstellungen', 'statistik']) }">
-      <span class="nav-dropdown-label">Leitung</span>
-      <div class="nav-dropdown-menu">
-        <router-link :to="sectionPath('gemini')" class="nav-link" :class="{ aktiv: isActive('gemini') }" @click="navKlick">
-          Assistant
-        </router-link>
-        <router-link :to="sectionPath('statistik')" class="nav-link" :class="{ aktiv: isActive('statistik') }" @click="navKlick">
-          Statistik
-        </router-link>
-        <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }" @click="navKlick">
-          Team &amp; Zugriff
-        </router-link>
-        <router-link :to="sectionPath('einstellungen')" class="nav-link" :class="{ aktiv: isActive('einstellungen') }" @click="navKlick">
-          Einstellungen
-        </router-link>
-      </div>
-    </div>
+    <router-link :to="sectionPath('einstellungen')" class="nav-link" :class="{ aktiv: isActive('einstellungen') }" @click="navKlick">
+      Einstellungen
+    </router-link>
   </nav>
 </template>
 

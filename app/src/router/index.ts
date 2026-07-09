@@ -2,13 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import LoginView from '../views/LoginView.vue'
 import StartseiteView from '../views/StartseiteView.vue'
-import LagerImport from '../views/LagerImport.vue'
 import LagerDetail from '../views/LagerDetail.vue'
 import AnmeldungTN from '../views/AnmeldungTN.vue'
 import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
 import Willkommen from '../views/Willkommen.vue'
 import OrganisationView from '../views/OrganisationView.vue'
-import MoerderliView from '../views/MoerderliView.vue'
+import LagerBearbeitungView from '../views/LagerBearbeitungView.vue'
+import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,11 +17,21 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/lager', redirect: '/organisation' },
     { path: '/organisation', name: 'organisation', component: OrganisationView, meta: { requiresAuth: true } },
-    { path: '/lager/import', name: 'lager-import', component: LagerImport, meta: { requiresAuth: true } },
+    { path: '/lager/import', name: 'lager-import', redirect: '/organisation' },
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },
     { path: '/lager/:id/anmelden-leiter', name: 'anmeldung-leiter', component: AnmeldungLeiter, meta: { requiresAuth: true } },
-    { path: '/lager/:id/moerderli', name: 'moerderli', component: MoerderliView, meta: { requiresAuth: true } },
+    {
+      path: '/lager/:id/moerderli',
+      name: 'moerderli',
+      redirect: (to) => ({ path: `/lager/${to.params.id}/bearbeitung` }),
+    },
+    {
+      path: '/lager/:id/bearbeitung',
+      name: 'lager-bearbeitung',
+      component: LagerBearbeitungView,
+      meta: { requiresAuth: true },
+    },
     {
       path: '/lager/:id',
       redirect: (to) => ({ path: `/lager/${to.params.id}/dashboard` }),
@@ -73,6 +83,19 @@ router.beforeEach(async (to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && loggedIn) return '/'
+  const lagerId = typeof to.params.id === 'string' ? to.params.id : null
+  if (lagerId && to.name === 'lager-section') {
+    const section = to.params.section as string
+    if (!isNavSectionAllowed(section)) {
+      return { path: `/lager/${lagerId}/bearbeitung` }
+    }
+  }
+  if (lagerId && to.name === 'lager-aemtli') {
+    const slug = to.params.aemtliSlug as string
+    if (!isNavSectionAllowed(`aemtli:${slug}`)) {
+      return { path: `/lager/${lagerId}/bearbeitung` }
+    }
+  }
   return true
 })
 
