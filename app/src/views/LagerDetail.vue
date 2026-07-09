@@ -1184,10 +1184,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <LagerChatbotPanel
           :lager-id="lagerId"
           :lager-name="lager.name"
-          :lager-status="lager.status"
-          :start-datum="lager.start_datum"
-          :end-datum="lager.end_datum"
-          :ort="lager.ort"
         />
       </section>
 
