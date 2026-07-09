@@ -1,5 +1,6 @@
 -- Bereinigt Stöcklilager Zuchwil: alle Leiter/TN im laufenden Lager und in der Organisation,
 -- ausser manuelzeltner@gmail.com behält vollen Zugriff.
+-- Ausführung: GitHub Actions „Supabase cleanup rollout“ oder `supabase db query --linked --file ...`
 
 do $$
 declare
