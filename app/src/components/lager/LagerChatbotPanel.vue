@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from '../../supabaseClient'
 
 interface ChatMessage {
@@ -30,6 +31,24 @@ function neueId() {
 
 function zeitFormat(ts: number) {
   return new Date(ts).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+}
+
+async function fehlerText(error: unknown, data: unknown): Promise<string> {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const msg = (data as { error?: string }).error
+    if (msg) return msg
+  }
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.json()
+      if (body?.error) return String(body.error)
+      if (body?.detail) return String(body.detail).slice(0, 240)
+    } catch {
+      // ignore parse errors
+    }
+  }
+  if (error instanceof Error && error.message) return error.message
+  return 'Unbekannter Fehler'
 }
 
 async function scrollNachUnten() {
@@ -71,8 +90,8 @@ async function senden() {
 
   sende.value = false
 
-  if (error) {
-    fehler.value = error.message
+  if (error || data?.error) {
+    fehler.value = await fehlerText(error, data)
     messages.value.push({
       id: neueId(),
       role: 'assistant',
