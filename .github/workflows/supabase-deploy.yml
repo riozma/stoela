@@ -1,0 +1,72 @@
+name: Supabase deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - supabase/migrations/**
+      - supabase/cleanup_stoecklilager_rollout.sql
+      - .github/workflows/supabase-deploy.yml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN repository secret."
+            exit 1
+          fi
+          if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            supabase link --project-ref iiakqkdcdqhhhrkwagtb --password "$SUPABASE_DB_PASSWORD"
+          else
+            supabase link --project-ref iiakqkdcdqhhhrkwagtb
+          fi
+
+      - name: Push database migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push
+
+      - name: Run Stöcklilager cleanup SQL
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db query --linked --file supabase/cleanup_stoecklilager_rollout.sql
+
+      - name: Verify database state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db query --linked --output table "
+            select
+              (select count(*) from anmeldungen_tn at
+                 join lager l on l.id = at.lager_id
+                 join organisation o on o.id = l.organisation_id
+                 where lower(o.slug) = 'stoeckli' or lower(o.name) like '%stöcklilager%' or lower(o.name) like '%stoecklilager%'
+              ) as tn_count,
+              (select count(*) from anmeldungen_leiter al
+                 join lager l on l.id = al.lager_id
+                 join organisation o on o.id = l.organisation_id
+                 where lower(o.slug) = 'stoeckli' or lower(o.name) like '%stöcklilager%' or lower(o.name) like '%stoecklilager%'
+              ) as leiter_count,
+              (select count(*) from organisation_mitglieder om
+                 join organisation o on o.id = om.organisation_id
+                 where lower(o.slug) = 'stoeckli' or lower(o.name) like '%stöcklilager%' or lower(o.name) like '%stoecklilager%'
+              ) as org_mitglieder_count,
+              exists (
+                select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.proname = 'verein_leiter_bearbeiten'
+              ) as hat_leiter_bearbeiten
+          "

@@ -147,11 +147,12 @@ function profilEmail(m: VereinsMitglied): string {
 
 const vereinsLeiterListe = computed((): VereinsLeiterZeile[] => {
   const zeilen: VereinsLeiterZeile[] = []
-  const verknuepfteProfile = new Set<string>()
-
-  for (const person of orgPersonen.value) {
-    if (person.profile_id) verknuepfteProfile.add(person.profile_id)
-  }
+  const personByProfile = new Map(
+    orgPersonen.value
+      .filter((p) => p.profile_id)
+      .map((p) => [p.profile_id!, p.id]),
+  )
+  const loginProfileIds = new Set(mitgliederAktiv.value.map((m) => m.profile_id))
 
   for (const m of mitgliederAktiv.value) {
     const p = profilVon(m)
@@ -163,16 +164,13 @@ const vereinsLeiterListe = computed((): VereinsLeiterZeile[] => {
       email: p?.email ?? null,
       rolle: m.rolle,
       profile_id: m.profile_id,
-      org_person_id: null,
+      org_person_id: personByProfile.get(m.profile_id) ?? null,
       verknuepft: true,
     })
   }
 
   for (const person of orgPersonen.value) {
-    if (person.profile_id && verknuepfteProfile.has(person.profile_id)) {
-      const schonAlsLogin = zeilen.some((z) => z.profile_id === person.profile_id)
-      if (schonAlsLogin) continue
-    }
+    if (person.profile_id && loginProfileIds.has(person.profile_id)) continue
     zeilen.push({
       key: `person-${person.id}`,
       typ: person.profile_id ? 'login' : 'manuell',
@@ -324,6 +322,26 @@ async function mitgliedAktualisieren(profileId: string) {
     return
   }
   info.value = 'Leiter aktualisiert.'
+  await ladeVereinDaten()
+}
+
+async function mitgliedEntfernen(profileId: string, name: string) {
+  if (!orgAuswahl.value || !istOrgAdmin.value) return
+  const sicher = window.confirm(`«${name}» wirklich aus dem Verein entfernen?`)
+  if (!sicher) return
+  info.value = ''
+  fehler.value = ''
+  mitgliedAktionLade.value[profileId] = true
+  const { error } = await supabase.rpc('verein_leiter_entfernen', {
+    p_organisation_id: orgAuswahl.value,
+    p_profile_id: profileId,
+  })
+  mitgliedAktionLade.value[profileId] = false
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = 'Leiter aus dem Verein entfernt.'
   await ladeVereinDaten()
 }
 
@@ -583,7 +601,7 @@ onMounted(async () => {
           <h2>Mitglieder / Leiter im Verein</h2>
           <p class="hint">
             Alle Leiter mit Login sowie manuell erfasste Personen. Nur Vereinsleitung entscheidet Beitrittsanfragen.
-            Vereins-Admins können Name und Rolle von Login-Leitern bearbeiten (inkl. eigenes Konto).
+            Vereins-Admins können Login-Leiter bearbeiten und aus dem Verein entfernen (inkl. eigenes Konto, ausser letzter Admin).
           </p>
           <table v-if="vereinsLeiterListe.length" class="liste">
             <thead>
@@ -642,6 +660,13 @@ onMounted(async () => {
                       @click="mitgliedAktualisieren(z.profile_id!)"
                     >
                       Speichern
+                    </button>
+                    <button
+                      class="secondary klein-btn"
+                      :disabled="mitgliedAktionLade[z.profile_id]"
+                      @click="mitgliedEntfernen(z.profile_id!, `${z.vorname} ${z.nachname}`.trim() || z.email || 'Leiter')"
+                    >
+                      Entfernen
                     </button>
                   </div>
                   <div v-else-if="istVereinsleitung && z.org_person_id" class="inline-aktionen">
