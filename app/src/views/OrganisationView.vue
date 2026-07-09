@@ -421,7 +421,7 @@ async function beitrittEntscheiden(
   }
   verknuepfOrgPerson.value[profileId] = ''
   if (entscheidung === 'genehmigen') {
-    info.value = orgPersonId ? 'Beitritt genehmigt und mit manuellem Leiter verknüpft.' : 'Neuer Leiter aufgenommen.'
+    info.value = orgPersonId ? 'Beitritt genehmigt – Name und Kontakt vom manuellen Eintrag übernommen.' : 'Neuer Leiter aufgenommen.'
   } else {
     info.value = 'Beitritt abgelehnt.'
   }
