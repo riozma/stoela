@@ -90,7 +90,9 @@ const vorLagerListe = ref<{ id: string; name: string; jahr: number }[]>([])
 const personForm = ref({ vorname: '', nachname: '', email: '', telefon: '', rolle_hinweis: '' })
 const personSpeichern = ref(false)
 const personEdit = ref<Record<string, { vorname: string; nachname: string; email: string; telefon: string; rolle_hinweis: string }>>({})
+const mitgliedEdit = ref<Record<string, { vorname: string; nachname: string; rolle: 'mitglied' | 'leitung' | 'admin' }>>({})
 const personAktionLade = ref<Record<string, boolean>>({})
+const mitgliedAktionLade = ref<Record<string, boolean>>({})
 const verknuepfOrgPerson = ref<Record<string, string>>({})
 const anfrageAktionLade = ref<Record<string, boolean>>({})
 
@@ -114,6 +116,7 @@ const aktuellerVerein = computed(() => aktiveVereine.value.find((v) => v.organis
 const istVereinsleitung = computed(() =>
   !!aktuellerVerein.value && ['leitung', 'admin'].includes(aktuellerVerein.value.meine_rolle),
 )
+const istOrgAdmin = computed(() => aktuellerVerein.value?.meine_rolle === 'admin')
 
 const anfragen = computed(() => mitglieder.value.filter((m) => m.status === 'angefragt'))
 const mitgliederAktiv = computed(() => mitglieder.value.filter((m) => m.status === 'mitglied'))
@@ -241,6 +244,7 @@ async function ladeVereinDaten() {
   mitglieder.value = (m ?? []) as VereinsMitglied[]
   orgPersonen.value = (p ?? []) as VereinsPerson[]
   personEdit.value = {}
+  mitgliedEdit.value = {}
   for (const person of orgPersonen.value) {
     personEdit.value[person.id] = {
       vorname: person.vorname,
@@ -248,6 +252,14 @@ async function ladeVereinDaten() {
       email: person.email ?? '',
       telefon: person.telefon ?? '',
       rolle_hinweis: person.rolle_hinweis ?? '',
+    }
+  }
+  for (const mitglied of mitglieder.value.filter((e) => e.status === 'mitglied')) {
+    const profil = profilVon(mitglied)
+    mitgliedEdit.value[mitglied.profile_id] = {
+      vorname: profil?.vorname ?? '',
+      nachname: profil?.nachname ?? '',
+      rolle: mitglied.rolle,
     }
   }
   orgVorlagen.value = (v ?? []) as OrgTodoVorlage[]
@@ -283,6 +295,35 @@ async function personHinzufuegen() {
   }
   personForm.value = { vorname: '', nachname: '', email: '', telefon: '', rolle_hinweis: '' }
   info.value = 'Person hinzugefügt.'
+  await ladeVereinDaten()
+}
+
+async function mitgliedAktualisieren(profileId: string) {
+  if (!orgAuswahl.value || !istOrgAdmin.value) return
+  const edit = mitgliedEdit.value[profileId]
+  if (!edit) return
+  const vorname = edit.vorname.trim()
+  const nachname = edit.nachname.trim()
+  if (!vorname || !nachname) {
+    fehler.value = 'Vorname und Nachname sind Pflicht.'
+    return
+  }
+  info.value = ''
+  fehler.value = ''
+  mitgliedAktionLade.value[profileId] = true
+  const { error } = await supabase.rpc('verein_leiter_bearbeiten', {
+    p_organisation_id: orgAuswahl.value,
+    p_profile_id: profileId,
+    p_vorname: vorname,
+    p_nachname: nachname,
+    p_rolle: edit.rolle,
+  })
+  mitgliedAktionLade.value[profileId] = false
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = 'Leiter aktualisiert.'
   await ladeVereinDaten()
 }
 
@@ -542,6 +583,7 @@ onMounted(async () => {
           <h2>Mitglieder / Leiter im Verein</h2>
           <p class="hint">
             Alle Leiter mit Login sowie manuell erfasste Personen. Nur Vereinsleitung entscheidet Beitrittsanfragen.
+            Vereins-Admins können Name und Rolle von Login-Leitern bearbeiten (inkl. eigenes Konto).
           </p>
           <table v-if="vereinsLeiterListe.length" class="liste">
             <thead>
@@ -550,12 +592,26 @@ onMounted(async () => {
                 <th>E-Mail</th>
                 <th>Rolle</th>
                 <th>Quelle</th>
-                <th v-if="istVereinsleitung">Aktionen</th>
+                <th v-if="istOrgAdmin || istVereinsleitung">Aktionen</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="z in vereinsLeiterListe" :key="z.key">
-                <template v-if="istVereinsleitung && z.org_person_id && personEdit[z.org_person_id]">
+                <template v-if="istOrgAdmin && z.profile_id && mitgliedEdit[z.profile_id] && z.typ === 'login'">
+                  <td class="cell-edit">
+                    <input v-model="mitgliedEdit[z.profile_id].vorname" placeholder="Vorname" />
+                    <input v-model="mitgliedEdit[z.profile_id].nachname" placeholder="Nachname" />
+                  </td>
+                  <td>{{ z.email ?? '–' }}</td>
+                  <td>
+                    <select v-model="mitgliedEdit[z.profile_id].rolle">
+                      <option value="mitglied">Mitglied</option>
+                      <option value="leitung">Leitung</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                </template>
+                <template v-else-if="istVereinsleitung && z.org_person_id && personEdit[z.org_person_id]">
                   <td class="cell-edit">
                     <input v-model="personEdit[z.org_person_id].vorname" placeholder="Vorname" />
                     <input v-model="personEdit[z.org_person_id].nachname" placeholder="Nachname" />
@@ -578,8 +634,17 @@ onMounted(async () => {
                   <span v-else-if="z.verknuepft">Login (verknüpft)</span>
                   <span v-else>Manuell</span>
                 </td>
-                <td v-if="istVereinsleitung">
-                  <div v-if="z.org_person_id" class="inline-aktionen">
+                <td v-if="istOrgAdmin || istVereinsleitung">
+                  <div v-if="istOrgAdmin && z.profile_id && mitgliedEdit[z.profile_id] && z.typ === 'login'" class="inline-aktionen">
+                    <button
+                      class="secondary klein-btn"
+                      :disabled="mitgliedAktionLade[z.profile_id]"
+                      @click="mitgliedAktualisieren(z.profile_id!)"
+                    >
+                      Speichern
+                    </button>
+                  </div>
+                  <div v-else-if="istVereinsleitung && z.org_person_id" class="inline-aktionen">
                     <button
                       class="secondary klein-btn"
                       :disabled="personAktionLade[z.org_person_id]"
