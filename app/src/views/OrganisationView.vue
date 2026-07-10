@@ -34,6 +34,7 @@ interface VereinsLeiterZeile {
   vorname: string
   nachname: string
   email: string | null
+  telefon: string | null
   rolle: string
   profile_id: string | null
   org_person_id: string | null
@@ -145,26 +146,35 @@ function profilEmail(m: VereinsMitglied): string {
   return profilVon(m)?.email ?? '–'
 }
 
+function rollenLabel(rolle: string): string {
+  if (rolle === 'mitglied') return 'Mitglied'
+  if (rolle === 'leitung') return 'Leitung'
+  if (rolle === 'admin') return 'Admin'
+  return rolle
+}
+
 const vereinsLeiterListe = computed((): VereinsLeiterZeile[] => {
   const zeilen: VereinsLeiterZeile[] = []
   const personByProfile = new Map(
     orgPersonen.value
       .filter((p) => p.profile_id)
-      .map((p) => [p.profile_id!, p.id]),
+      .map((p) => [p.profile_id!, p]),
   )
   const loginProfileIds = new Set(mitgliederAktiv.value.map((m) => m.profile_id))
 
   for (const m of mitgliederAktiv.value) {
     const p = profilVon(m)
+    const verknuepftePerson = personByProfile.get(m.profile_id)
     zeilen.push({
       key: `login-${m.profile_id}`,
       typ: 'login',
       vorname: p?.vorname ?? '',
       nachname: p?.nachname ?? '',
       email: p?.email ?? null,
+      telefon: verknuepftePerson?.telefon ?? null,
       rolle: m.rolle,
       profile_id: m.profile_id,
-      org_person_id: personByProfile.get(m.profile_id) ?? null,
+      org_person_id: verknuepftePerson?.id ?? null,
       verknuepft: true,
     })
   }
@@ -177,6 +187,7 @@ const vereinsLeiterListe = computed((): VereinsLeiterZeile[] => {
       vorname: person.vorname,
       nachname: person.nachname,
       email: person.email,
+      telefon: person.telefon,
       rolle: person.rolle_hinweis ?? 'Leiter',
       profile_id: person.profile_id,
       org_person_id: person.id,
@@ -599,18 +610,24 @@ onMounted(async () => {
 
         <section class="karte">
           <h2>Mitglieder / Leiter im Verein</h2>
-          <p class="hint">
-            Alle Leiter mit Login sowie manuell erfasste Personen. Nur Vereinsleitung entscheidet Beitrittsanfragen.
-            Vereins-Admins können Login-Leiter bearbeiten und aus dem Verein entfernen (inkl. eigenes Konto, ausser letzter Admin).
+          <p v-if="istOrgAdmin" class="hint">
+            Alle Leiter mit Login sowie manuell erfasste Personen. Als Admin kannst du Login-Leiter bearbeiten und aus dem Verein entfernen.
+          </p>
+          <p v-else-if="istVereinsleitung" class="hint">
+            Alle Leiter mit Login sowie manuell erfasste Personen. Beitrittsanfragen und neue manuelle Einträge verwaltest du unten.
+          </p>
+          <p v-else class="hint">
+            Übersicht aller Leiter und Kontaktdaten im Verein.
           </p>
           <table v-if="vereinsLeiterListe.length" class="liste">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>E-Mail</th>
+                <th>Telefon</th>
                 <th>Rolle</th>
                 <th>Quelle</th>
-                <th v-if="istOrgAdmin || istVereinsleitung">Aktionen</th>
+                <th v-if="istOrgAdmin">Aktionen</th>
               </tr>
             </thead>
             <tbody>
@@ -621,6 +638,7 @@ onMounted(async () => {
                     <input v-model="mitgliedEdit[z.profile_id].nachname" placeholder="Nachname" />
                   </td>
                   <td>{{ z.email ?? '–' }}</td>
+                  <td>{{ z.telefon ?? '–' }}</td>
                   <td>
                     <select v-model="mitgliedEdit[z.profile_id].rolle">
                       <option value="mitglied">Mitglied</option>
@@ -629,13 +647,15 @@ onMounted(async () => {
                     </select>
                   </td>
                 </template>
-                <template v-else-if="istVereinsleitung && z.org_person_id && personEdit[z.org_person_id]">
+                <template v-else-if="istOrgAdmin && z.org_person_id && personEdit[z.org_person_id]">
                   <td class="cell-edit">
                     <input v-model="personEdit[z.org_person_id].vorname" placeholder="Vorname" />
                     <input v-model="personEdit[z.org_person_id].nachname" placeholder="Nachname" />
                   </td>
                   <td class="cell-edit">
                     <input v-model="personEdit[z.org_person_id].email" type="email" placeholder="E-Mail" />
+                  </td>
+                  <td class="cell-edit">
                     <input v-model="personEdit[z.org_person_id].telefon" placeholder="Telefon" />
                   </td>
                   <td>
@@ -645,15 +665,16 @@ onMounted(async () => {
                 <template v-else>
                   <td>{{ z.vorname }} {{ z.nachname }}</td>
                   <td>{{ z.email ?? '–' }}</td>
-                  <td>{{ z.rolle }}</td>
+                  <td>{{ z.telefon ?? '–' }}</td>
+                  <td>{{ rollenLabel(z.rolle) }}</td>
                 </template>
                 <td>
                   <span v-if="z.typ === 'login' && z.verknuepft">Login</span>
                   <span v-else-if="z.verknuepft">Login (verknüpft)</span>
                   <span v-else>Manuell</span>
                 </td>
-                <td v-if="istOrgAdmin || istVereinsleitung">
-                  <div v-if="istOrgAdmin && z.profile_id && mitgliedEdit[z.profile_id] && z.typ === 'login'" class="inline-aktionen">
+                <td v-if="istOrgAdmin">
+                  <div v-if="z.profile_id && mitgliedEdit[z.profile_id] && z.typ === 'login'" class="inline-aktionen">
                     <button
                       class="secondary klein-btn"
                       :disabled="mitgliedAktionLade[z.profile_id]"
@@ -669,7 +690,7 @@ onMounted(async () => {
                       Entfernen
                     </button>
                   </div>
-                  <div v-else-if="istVereinsleitung && z.org_person_id" class="inline-aktionen">
+                  <div v-else-if="z.org_person_id" class="inline-aktionen">
                     <button
                       class="secondary klein-btn"
                       :disabled="personAktionLade[z.org_person_id]"
@@ -691,6 +712,33 @@ onMounted(async () => {
             </tbody>
           </table>
           <p v-else class="hint">Noch keine Leiter erfasst.</p>
+
+          <details class="rollen-info">
+            <summary>Rollen im Verein: Mitglied, Leitung, Admin</summary>
+            <dl>
+              <div class="rollen-eintrag">
+                <dt>Mitglied</dt>
+                <dd>
+                  Siehst Vereinslager, die Leiterliste mit Kontaktdaten und kannst dich als Leiter/in für Lager bewerben.
+                  Keine Verwaltungsrechte im Verein.
+                </dd>
+              </div>
+              <div class="rollen-eintrag">
+                <dt>Leitung</dt>
+                <dd>
+                  Alles wie Mitglied, plus: neue Lager erfassen, Beitrittsanfragen bearbeiten und Leiter ohne Login manuell hinzufügen.
+                  Die Leiterliste ist schreibgeschützt – Bearbeiten nur durch Admins.
+                </dd>
+              </div>
+              <div class="rollen-eintrag">
+                <dt>Admin</dt>
+                <dd>
+                  Vollzugriff auf die Leiterliste: Namen, Rollen und Kontakte von Login-Leitern bearbeiten oder aus dem Verein entfernen.
+                  Manuelle Einträge können ebenfalls bearbeitet werden. Mindestens ein Admin muss im Verein bleiben.
+                </dd>
+              </div>
+            </dl>
+          </details>
 
           <div v-if="istVereinsleitung && anfragen.length" class="anfragen-box">
             <h3>Beitrittsanfragen</h3>
@@ -817,6 +865,12 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .verknuepf-zeile select { min-width: 220px; flex: 1; }
 .vergangen { margin-top: 0.75rem; }
 .vergangen summary { cursor: pointer; font-weight: 600; }
+.rollen-info { margin-top: 1rem; border-top: 1px solid var(--color-border); padding-top: 0.75rem; }
+.rollen-info summary { cursor: pointer; font-weight: 600; }
+.rollen-info dl { margin: 0.75rem 0 0; }
+.rollen-eintrag { margin-bottom: 0.75rem; }
+.rollen-eintrag dt { font-weight: 600; margin-bottom: 0.2rem; }
+.rollen-eintrag dd { margin: 0; color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.45; }
 .link-like { border: none; background: transparent; color: var(--color-accent); padding: 0; cursor: pointer; }
 .vorlagen-liste { list-style: none; padding: 0; margin: 0.5rem 0 0; }
 .vorlagen-liste li { border-bottom: 1px solid var(--color-border); padding: 0.4rem 0; }
