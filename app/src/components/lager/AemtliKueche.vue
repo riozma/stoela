@@ -264,7 +264,7 @@ async function laden() {
     supabase.from('mahlzeiten').select('*').eq('lager_id', props.lagerId).order('tag'),
     supabase.from('mahlzeit_ausnahmen').select('*').eq('lager_id', props.lagerId),
     supabase.from('anmeldungen_tn').select('id, vorname, nachname, rolle, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges').eq('lager_id', props.lagerId).neq('status', 'abgesagt').order('nachname'),
-    supabase.from('anmeldungen_leiter').select('id, vorname, nachname, essensgewohnheiten, anwesend_von, anwesend_bis').eq('lager_id', props.lagerId).in('status', ['bestaetigt', 'angemeldet']).order('nachname'),
+    supabase.from('leiter_teilnahmen').select('id, vorname, nachname, essensgewohnheiten, anwesend_von, anwesend_bis').eq('lager_id', props.lagerId).in('status', ['bestaetigt', 'angemeldet']).order('nachname'),
     supabase.from('kueche_notizen').select('*').eq('lager_id', props.lagerId).order('created_at', { ascending: false }),
   ])
   vorlagen.value = (v ?? []).map((row) => ({ ...row, material: (row.material as MaterialZeile[]) ?? [] }))

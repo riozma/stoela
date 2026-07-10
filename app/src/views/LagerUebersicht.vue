@@ -173,11 +173,13 @@ async function erstellen() {
 
   // Ersteller/in wird automatisch bestätigtes Teammitglied dieses Lagers
   if (session.value) {
-    await supabase.from('lager_leiter').insert({
-      lager_id: neuesLager.id,
-      profile_id: session.value.user.id,
-      rolle: 'lagerleitung',
-      status: 'bestaetigt',
+    await supabase.rpc('lager_leiter_aus_verein_hinzufuegen', {
+      p_lager_id: neuesLager.id,
+      p_profile_id: session.value.user.id,
+      p_org_person_id: null,
+      p_als_lalei: true,
+      p_anwesend_von: form.value.start_datum || null,
+      p_anwesend_bis: form.value.end_datum || null,
     })
   }
 

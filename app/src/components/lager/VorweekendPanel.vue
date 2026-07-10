@@ -64,6 +64,7 @@ async function datenSpeichern() {
     vorweekend_start: wwForm.value.start || null,
     vorweekend_ende: wwForm.value.ende || null,
   }).eq('id', props.lagerId)
+  await supabase.rpc('lager_termine_sync', { p_lager_id: props.lagerId })
 }
 
 async function programmHinzufuegen() {
