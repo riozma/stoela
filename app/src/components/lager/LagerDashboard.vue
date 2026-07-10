@@ -29,14 +29,6 @@ interface LagerAenderung {
   kategorie: string | null
 }
 
-interface ProgrammStat {
-  name: string
-  bloecke_absolut: number
-  bloecke_total: number
-  anteil_prozent: number
-  anwesend_tage: number | null
-}
-
 const props = defineProps<{
   lager: Lager
   bloecke: Block[]
@@ -48,7 +40,6 @@ const props = defineProps<{
   isLeitung?: boolean
   leiterAnfragen?: number
   letzteAenderungen?: LagerAenderung[]
-  programmStatistik?: ProgrammStat[]
   fotoLink?: string | null
 }>()
 
@@ -165,6 +156,9 @@ const aktionen = computed(() => {
   return list
 })
 
+const aktuelleAktion = computed(() => aktionen.value.find((a) => a.typ === 'jetzt') ?? null)
+const weitereAktionen = computed(() => aktionen.value.filter((a) => a.typ !== 'jetzt'))
+
 function formatAenderungZeit(iso: string) {
   return new Intl.DateTimeFormat('de-CH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
 }
@@ -172,6 +166,23 @@ function formatAenderungZeit(iso: string) {
 
 <template>
   <section class="dashboard">
+    <div v-if="bearbeiten" class="schnell-links">
+      <span class="links-label">Schnellzugriff</span>
+      <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
+      <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
+      <button v-if="hatFinanzenAemtli" class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
+      <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
+    </div>
+
+    <button
+      v-if="aktuelleAktion"
+      class="aktion-karte aktion-jetzt"
+      @click="aktuelleAktion.action"
+    >
+      <strong>{{ aktuelleAktion.titel }}</strong>
+      <span>{{ aktuelleAktion.text }}</span>
+    </button>
+
     <header class="lager-kopf">
       <p v-if="lager.ort" class="ort">📍 {{ lager.ort }}</p>
       <p v-if="formatZeitraum()" class="zeitraum">{{ formatZeitraum() }}</p>
@@ -183,9 +194,9 @@ function formatAenderungZeit(iso: string) {
       />
     </header>
 
-    <div class="aktionen">
+    <div v-if="weitereAktionen.length" class="aktionen">
       <button
-        v-for="(a, i) in aktionen"
+        v-for="(a, i) in weitereAktionen"
         :key="i"
         class="aktion-karte"
         :class="'aktion-' + a.typ"
@@ -194,14 +205,6 @@ function formatAenderungZeit(iso: string) {
         <strong>{{ a.titel }}</strong>
         <span>{{ a.text }}</span>
       </button>
-    </div>
-
-    <div v-if="bearbeiten" class="schnell-links">
-      <span class="links-label">Schnellzugriff</span>
-      <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
-      <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
-      <button v-if="hatFinanzenAemtli" class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
-      <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
 
     <a
@@ -217,21 +220,6 @@ function formatAenderungZeit(iso: string) {
       </span>
       <span aria-hidden="true">→</span>
     </a>
-
-    <div v-if="isLeitung && programmStatistik?.length" class="programm-stats">
-      <span class="links-label">Programm-Beteiligung (nur Lagerleitung)</span>
-      <table class="stats-tabelle">
-        <thead><tr><th>Leiter/in</th><th>Blöcke</th><th>Anteil</th><th>Anwesenheit</th></tr></thead>
-        <tbody>
-          <tr v-for="s in programmStatistik" :key="s.name">
-            <td>{{ s.name }}</td>
-            <td>{{ s.bloecke_absolut }}/{{ s.bloecke_total }}</td>
-            <td>{{ s.anteil_prozent }}%</td>
-            <td>{{ s.anwesend_tage ?? 'ganzes Lager' }}<template v-if="s.anwesend_tage"> Tage</template></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
 
     <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
       <span class="links-label">Letzte Änderungen</span>
@@ -258,6 +246,7 @@ function formatAenderungZeit(iso: string) {
 }
 .aktion-karte:hover { background: var(--color-surface-muted); }
 .aktion-jetzt { border-left: 4px solid var(--color-accent); }
+.dashboard > .aktion-jetzt { margin-bottom: 1.25rem; }
 .aktion-hoeck { border-left: 4px solid #c98a3f; }
 .aktion-vorbereiten { border-left: 4px solid #6b7fa8; }
 .aktion-anfragen { border-left: 4px solid #c94f4f; }
@@ -273,9 +262,6 @@ function formatAenderungZeit(iso: string) {
 .foto-link span:first-child { display: flex; flex-direction: column; gap: 0.15rem; }
 .foto-link small { color: var(--color-text-muted); }
 .links-label { width: 100%; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 0.15rem; }
-.stats-tabelle { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.25rem; }
-.stats-tabelle th, .stats-tabelle td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); }
-.programm-stats { margin-bottom: 1.25rem; }
 .letzte-aenderungen { margin-top: 0.5rem; }
 .letzte-aenderungen ul { list-style: none; margin: 0; padding: 0; }
 .letzte-aenderungen li {

@@ -157,7 +157,6 @@ interface LeiterZeile {
   nurTeam: boolean
 }
 const navOffen = ref(false)
-const programmStatistik = ref<{ name: string; bloecke_absolut: number; bloecke_total: number; anteil_prozent: number; anwesend_tage: number | null }[]>([])
 const moerderliAktiv = ref(false)
 const letzteAenderungen = ref<LagerAenderung[]>([])
 const tnNavCount = ref(0)
@@ -1179,12 +1178,6 @@ function aemtliKomponente(name: string) {
   return map[slug] ?? 'generic'
 }
 
-async function ladeProgrammStatistik() {
-  if (!isLeitung.value) return
-  const { data } = await supabase.rpc('lager_programm_statistik', { p_lager_id: lagerId.value })
-  programmStatistik.value = (data as typeof programmStatistik.value) ?? []
-}
-
 async function ladeMoerderliStatus() {
   const { data } = await supabase.from('gute_fee_spiel').select('oeffentlich').eq('lager_id', lagerId.value).maybeSingle()
   moerderliAktiv.value = !!data?.oeffentlich
@@ -1333,7 +1326,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'dashboard') {
-    await Promise.all([ladeLetzteAenderungenListe(), ladeProgrammStatistik(), ladeMoerderliStatus()])
+    await Promise.all([ladeLetzteAenderungenListe(), ladeMoerderliStatus()])
   }
 }
 
@@ -1451,7 +1444,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :is-leitung="isLeitung"
           :leiter-anfragen="leiterAnfragen.length"
           :letzte-aenderungen="letzteAenderungen"
-          :programm-statistik="programmStatistik"
           :foto-link="lager.foto_link"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
