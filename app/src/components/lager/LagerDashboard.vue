@@ -49,6 +49,7 @@ const props = defineProps<{
   leiterAnfragen?: number
   letzteAenderungen?: LagerAenderung[]
   programmStatistik?: ProgrammStat[]
+  fotoLink?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -203,6 +204,20 @@ function formatAenderungZeit(iso: string) {
       <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
 
+    <a
+      v-if="fotoLink"
+      class="foto-link"
+      :href="fotoLink"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <span>
+        <strong>Fotos vom Lager</strong>
+        <small>Fotoalbum / Google Fotos öffnen</small>
+      </span>
+      <span aria-hidden="true">→</span>
+    </a>
+
     <div v-if="isLeitung && programmStatistik?.length" class="programm-stats">
       <span class="links-label">Programm-Beteiligung (nur Lagerleitung)</span>
       <table class="stats-tabelle">
@@ -249,6 +264,14 @@ function formatAenderungZeit(iso: string) {
 .aktion-karte strong { font-size: 0.95rem; }
 .aktion-karte span { font-size: 0.85rem; color: var(--color-text-muted); }
 .schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 1.25rem; }
+.foto-link {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  margin-bottom: 1.25rem; padding: 0.75rem 0.9rem;
+  border: 1px solid var(--color-border); border-left: 4px solid #6b7fa8;
+  border-radius: var(--radius-md); background: var(--color-surface);
+}
+.foto-link span:first-child { display: flex; flex-direction: column; gap: 0.15rem; }
+.foto-link small { color: var(--color-text-muted); }
 .links-label { width: 100%; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 0.15rem; }
 .stats-tabelle { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.25rem; }
 .stats-tabelle th, .stats-tabelle td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); }

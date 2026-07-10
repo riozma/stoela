@@ -87,8 +87,11 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
     <h3>TN-Anmeldungen &amp; Zahlungen</h3>
     <p class="hint">
       {{ bezahltCount }} / {{ tnListe.length }} als bezahlt markiert.
-      <span v-if="istKassier"> Quittungen bearbeitest du unter «Quittungen» → Kassier-Übersicht.</span>
+      <span v-if="istKassier"> Du kannst die Quittungen in der Kassier-Übersicht bearbeiten.</span>
     </p>
+    <router-link class="quittungen-link" :to="`/lager/${lagerId}/quittungen`">
+      Quittungen / Kassier-Übersicht öffnen →
+    </router-link>
     <p v-if="fehler" class="error">{{ fehler }}</p>
 
     <table v-if="tnListe.length" class="liste">
@@ -145,4 +148,5 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
 .feld-klein { width: 80px; }
 .feld-bemerkung { width: 100%; min-width: 140px; }
 .error { color: var(--color-danger); }
+.quittungen-link { display: inline-block; margin: 0 0 0.85rem; font-weight: 600; }
 </style>

@@ -32,7 +32,10 @@ serve(async (req) => {
     ...corsHeaders,
     'Content-Type': 'text/calendar; charset=utf-8',
     'Content-Disposition': 'attachment; filename="vereinskalender.ics"',
-    'Cache-Control': 'public, max-age=300',
+    // Kalender-Clients (insb. Google) sollen nach Änderungen neu validieren.
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
   }
 
   if (organisationId) {

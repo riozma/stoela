@@ -28,6 +28,8 @@ import AemtliBastel from '../components/lager/AemtliBastel.vue'
 import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
 import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
+import AemtliFoto from '../components/lager/AemtliFoto.vue'
+import AemtliLagerleitung from '../components/lager/AemtliLagerleitung.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
@@ -84,6 +86,7 @@ interface Lager {
   vor_lager_id: string | null
   vorweekend_start: string | null
   vorweekend_ende: string | null
+  foto_link: string | null
 }
 interface TN {
   id: string
@@ -1344,7 +1347,7 @@ async function ladeLagerSeite() {
 
   const { data: lagerData, error: lagerError } = await supabase
     .from('lager')
-    .select('id, name, jahr, organisation_id, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende')
+    .select('id, name, jahr, organisation_id, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende, foto_link')
     .eq('id', lagerId.value)
     .single()
 
@@ -1449,6 +1452,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :leiter-anfragen="leiterAnfragen.length"
           :letzte-aenderungen="letzteAenderungen"
           :programm-statistik="programmStatistik"
+          :foto-link="lager.foto_link"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
@@ -2046,6 +2050,15 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <AemtliFinanzen
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :ist-kassier="hatFinanzenAemtli"
+        />
+        <AemtliLagerleitung
+          v-else-if="aemtliSlug(a.name) === 'lagerleitung'"
+          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name"
+        />
+        <AemtliFoto
+          v-else-if="aemtliKomponente(a.name) === 'foto'"
+          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name"
+          @gespeichert="lager.foto_link = $event"
         />
         <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
         <AemtliTelefon v-else-if="aemtliKomponente(a.name) === 'telefon'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />

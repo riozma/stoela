@@ -13,10 +13,17 @@ interface Item {
   einheit: string | null
   notiz: string | null
   updated_at: string
+  nachkaufen: boolean
+  letzte_inventur_am: string | null
 }
 
 const items = ref<Item[]>([])
 const form = ref({ name: '', bestand: 0, min_bestand: 1, einheit: 'Stk', notiz: '' })
+const inventurOffen = ref(false)
+const inventurBestand = ref<Record<string, number>>({})
+const inventurStatus = ref<Record<string, 'genug' | 'nachkaufen'>>({})
+const inventurSpeichern = ref(false)
+const inventurErfolg = ref(false)
 
 const niedrig = computed(() => items.value.filter((i) => i.bestand < i.min_bestand))
 
@@ -34,10 +41,14 @@ async function laden() {
   if (!orgId) return
   const { data } = await supabase
     .from('org_bastel_inventar')
-    .select('id, name, bestand, min_bestand, einheit, notiz, updated_at')
+    .select('id, name, bestand, min_bestand, einheit, notiz, updated_at, nachkaufen, letzte_inventur_am')
     .eq('organisation_id', orgId)
     .order('name')
   items.value = data ?? []
+  inventurBestand.value = Object.fromEntries(items.value.map((i) => [i.id, i.bestand]))
+  inventurStatus.value = Object.fromEntries(
+    items.value.map((i) => [i.id, i.nachkaufen ? 'nachkaufen' : 'genug']),
+  )
 }
 
 onMounted(laden)
@@ -78,6 +89,29 @@ async function loeschen(id: string) {
   await laden()
 }
 
+async function inventurAbschliessen() {
+  inventurSpeichern.value = true
+  inventurErfolg.value = false
+  await Promise.all(
+    items.value.map((item) =>
+      supabase
+        .from('org_bastel_inventar')
+        .update({
+          bestand: Math.max(0, inventurBestand.value[item.id] ?? item.bestand),
+          nachkaufen: inventurStatus.value[item.id] === 'nachkaufen',
+          letzte_inventur_lager_id: props.lagerId,
+          letzte_inventur_am: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', item.id),
+    ),
+  )
+  inventurSpeichern.value = false
+  inventurErfolg.value = true
+  inventurOffen.value = false
+  await laden()
+}
+
 function formatUpdated(iso: string) {
   return new Intl.DateTimeFormat('de-CH', { dateStyle: 'short' }).format(new Date(iso))
 }
@@ -89,6 +123,38 @@ function formatUpdated(iso: string) {
       ⚠ {{ niedrig.length }} Artikel unter Mindestbestand:
       <strong>{{ niedrig.map(i => i.name).join(', ') }}</strong>
     </p>
+
+    <section class="inventur">
+      <div class="inventur-kopf">
+        <div>
+          <h3>Check Ende Lager</h3>
+          <p class="hint">Bestand zählen und festhalten, was reicht oder nachgekauft werden muss.</p>
+        </div>
+        <button type="button" class="secondary" @click="inventurOffen = !inventurOffen">
+          {{ inventurOffen ? 'Abbrechen' : 'Inventur starten' }}
+        </button>
+      </div>
+      <div v-if="inventurOffen" class="inventur-liste">
+        <div v-for="i in items" :key="i.id" class="inventur-zeile">
+          <strong>{{ i.name }}</strong>
+          <label>
+            Bestand
+            <input v-model.number="inventurBestand[i.id]" type="number" min="0" />
+          </label>
+          <label>
+            Ergebnis
+            <select v-model="inventurStatus[i.id]">
+              <option value="genug">Genug vorhanden</option>
+              <option value="nachkaufen">Nachkaufen</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" :disabled="inventurSpeichern" @click="inventurAbschliessen">
+          {{ inventurSpeichern ? 'Speichere…' : 'Inventur abschliessen' }}
+        </button>
+      </div>
+      <p v-if="inventurErfolg" class="ok">Inventur gespeichert.</p>
+    </section>
 
     <h3>Neuer Artikel</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
@@ -106,6 +172,7 @@ function formatUpdated(iso: string) {
           <th>Material</th>
           <th>Bestand</th>
           <th>Min.</th>
+          <th>Status</th>
           <th>Notiz</th>
           <th>Aktualisiert</th>
           <th></th>
@@ -120,6 +187,10 @@ function formatUpdated(iso: string) {
             <button class="secondary klein" @click="bestandAendern(i.id, 1)">+</button>
           </td>
           <td>{{ i.min_bestand }}</td>
+          <td>
+            <span v-if="i.nachkaufen" class="status nachkaufen">Nachkaufen</span>
+            <span v-else class="status genug">Genug</span>
+          </td>
           <td>
             <input
               class="notiz-input"
@@ -159,4 +230,15 @@ button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
 .notiz-input:focus { border-color: var(--color-border); background: var(--color-surface); outline: none; }
 .datum-zelle { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; margin-top: 0.75rem; }
+.inventur { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.inventur-kopf { display: flex; justify-content: space-between; gap: 0.75rem; align-items: start; }
+.inventur-kopf h3, .inventur-kopf .hint { margin: 0 0 0.25rem; }
+.inventur-liste { display: grid; gap: 0.5rem; margin-top: 0.75rem; }
+.inventur-zeile { display: grid; grid-template-columns: minmax(130px, 1fr) 100px minmax(150px, 1fr); gap: 0.5rem; align-items: end; }
+.inventur-zeile label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
+.status { display: inline-block; padding: 0.1rem 0.4rem; border-radius: var(--radius-pill); font-size: 0.75rem; }
+.status.genug { background: #e8f5e9; color: #2e7d32; }
+.status.nachkaufen { background: #fdf0ed; color: var(--color-danger); }
+.ok { color: #2e7d32; font-size: 0.85rem; }
+@media (max-width: 600px) { .inventur-zeile { grid-template-columns: 1fr; } }
 </style>

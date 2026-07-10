@@ -23,7 +23,9 @@ const FELD_LABELS: Record<string, string> = {
 }
 
 const istSocialMedia = computed(() =>
-  props.aemtliName.toLowerCase().includes('social'),
+  ['social', 'werbung', 'publicity'].some((wort) =>
+    props.aemtliName.toLowerCase().includes(wort),
+  ),
 )
 
 const sichtbareFelder = computed(() => {
