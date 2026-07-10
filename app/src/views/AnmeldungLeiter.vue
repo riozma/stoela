@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { bestaetigenBis } from '../lib/workflowUtils'
 import { ladeProfilLeiterDaten, speichereProfilLeiterDaten } from '../lib/profileNames'
+import { ESSENS_OPTIONEN, essensLabel } from '../lib/tnAnmeldung'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,7 +39,25 @@ const form = ref({
   anwesend_von: '',
   anwesend_bis: '',
   provisorisch: false,
+  essensgewohnheiten: [] as typeof ESSENS_OPTIONEN[number]['id'][],
+  essensgewohnheiten_keine: false,
+  essensgewohnheiten_sonstiges: '',
 })
+
+function toggleEssens(id: typeof ESSENS_OPTIONEN[number]['id']) {
+  if (form.value.essensgewohnheiten_keine) form.value.essensgewohnheiten_keine = false
+  const idx = form.value.essensgewohnheiten.indexOf(id)
+  if (idx >= 0) form.value.essensgewohnheiten.splice(idx, 1)
+  else form.value.essensgewohnheiten.push(id)
+}
+
+function keineEssensGewohnheiten() {
+  form.value.essensgewohnheiten_keine = !form.value.essensgewohnheiten_keine
+  if (form.value.essensgewohnheiten_keine) {
+    form.value.essensgewohnheiten = []
+    form.value.essensgewohnheiten_sonstiges = ''
+  }
+}
 
 onMounted(async () => {
   if (!session.value) {
@@ -105,6 +124,12 @@ async function absenden() {
     return
   }
 
+  const essensText = essensLabel(
+    form.value.essensgewohnheiten,
+    form.value.essensgewohnheiten_sonstiges,
+    form.value.essensgewohnheiten_keine,
+  )
+
   const { data: inserted, error } = await supabase
     .from('anmeldungen_leiter')
     .insert({
@@ -119,6 +144,7 @@ async function absenden() {
       telefon: form.value.telefon || null,
       anwesend_von: form.value.provisorisch ? null : (form.value.anwesend_von || null),
       anwesend_bis: form.value.provisorisch ? null : (form.value.anwesend_bis || null),
+      essensgewohnheiten: essensText === '–' ? null : essensText,
       status: form.value.provisorisch ? 'angemeldet' : 'angefragt',
       anmeldung_art: form.value.provisorisch ? 'provisorisch' : 'fix',
       bestaetigen_bis: lagerInfo.value?.start_datum ? bestaetigenBis(lagerInfo.value.start_datum) : null,
@@ -199,6 +225,22 @@ async function absenden() {
           <label>Anwesend bis <input v-model="form.anwesend_bis" type="date" /></label>
         </template>
         <p v-if="form.provisorisch && bestaetigungHinweis" class="hint">{{ bestaetigungHinweis }}</p>
+
+        <fieldset class="essen-feld">
+          <legend>Essensgewohnheiten</legend>
+          <label v-for="o in ESSENS_OPTIONEN" :key="o.id" class="checkbox-label">
+            <input type="checkbox" :checked="form.essensgewohnheiten.includes(o.id)" @change="toggleEssens(o.id)" />
+            {{ o.label }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" :checked="form.essensgewohnheiten_keine" @change="keineEssensGewohnheiten" />
+            Keine besonderen Gewohnheiten
+          </label>
+          <label>Sonstiges
+            <input v-model="form.essensgewohnheiten_sonstiges" placeholder="z.B. kein Rindfleisch" />
+          </label>
+        </fieldset>
+
         <button type="submit" :disabled="speichern">{{ speichern ? 'Sende...' : 'Anmeldung senden' }}</button>
       </form>
       <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -213,4 +255,6 @@ form { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 1.5rem; 
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .error { color: var(--color-danger); }
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.5rem; font-size: 0.88rem !important; color: var(--color-text) !important; }
+.essen-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.essen-feld legend { font-size: 0.85rem; color: var(--color-text-muted); padding: 0 0.25rem; }
 </style>

@@ -85,7 +85,7 @@ async function speichernExtra() {
       :organisation-id="organisationId"
       titel="Social-Media Logins (aus Verein → Links & Zugänge)"
       :filter="filterSocialMediaLogins"
-      leer-hinweis="Kein Instagram/Social-Media-Login unter Verein → Links & Zugänge hinterlegt."
+      leer-hinweis="Keine Social-Media-Zugänge mit Instagram, TikTok etc. unter Verein → Links & Zugänge gefunden."
     />
 
     <form class="extra-form" @submit.prevent="speichernExtra">
