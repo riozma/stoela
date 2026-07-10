@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { supabase } from '../../supabaseClient'
 import { SICHTBARKEIT_LABELS, type OrgRessource } from '../../lib/orgRessourcen'
 
@@ -24,6 +24,7 @@ async function laden() {
 }
 
 onMounted(laden)
+watch(() => props.organisationId, laden)
 
 function togglePw(id: string) {
   sichtbarePasswoerter.value[id] = !sichtbarePasswoerter.value[id]
