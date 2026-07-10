@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '../../supabaseClient'
+import {
+  QUITTUNG_KATEGORIEN,
+  kategorieLabel,
+  kategorienFuerRichtung,
+  type QuittungRichtung,
+} from '../../lib/quittungenKategorien'
 
 interface Iban {
   id: string
@@ -19,6 +25,8 @@ interface Quittung {
   betrag: number
   zweck: string
   status: 'pending' | 'bezahlt' | 'abgelehnt'
+  kategorie: string | null
+  richtung: QuittungRichtung
   ablehnungsgrund: string | null
   bearbeitet_am: string | null
   created_at: string
@@ -49,10 +57,14 @@ watch(() => props.istKassier, (k) => {
 const form = ref({
   betrag: '',
   zweck: '',
+  richtung: 'ausgabe' as QuittungRichtung,
+  kategorie: '',
   ibanId: '',
   neueIban: '',
   neueIbanBezeichnung: '',
 })
+
+const kategorieOptionen = computed(() => kategorienFuerRichtung(form.value.richtung))
 
 const bearbeitung = ref<{ id: string; betrag: string; zweck: string } | null>(null)
 const ablehnung = ref<{ id: string; grund: string } | null>(null)
@@ -93,7 +105,7 @@ async function laden() {
     supabase
       .from('quittungen')
       .select(`
-        id, betrag, zweck, status, ablehnungsgrund, bearbeitet_am, created_at, einreicher_id, iban_id,
+        id, betrag, zweck, status, kategorie, richtung, ablehnungsgrund, bearbeitet_am, created_at, einreicher_id, iban_id,
         profile_ibans ( id, iban, bezeichnung ),
         profiles:einreicher_id ( vorname, nachname, email ),
         quittung_dateien ( id, storage_path, dateiname )
@@ -183,6 +195,8 @@ async function einreichen() {
       iban_id: ibanId,
       betrag: Number(form.value.betrag),
       zweck: form.value.zweck,
+      kategorie: form.value.kategorie || null,
+      richtung: form.value.richtung,
     })
     .select('id')
     .single()
@@ -310,6 +324,18 @@ async function loeschen(id: string) {
       </details>
 
       <form class="form-grid" @submit.prevent="einreichen">
+        <label>Art
+          <select v-model="form.richtung" @change="form.kategorie = ''">
+            <option value="ausgabe">Ausgabe</option>
+            <option value="einnahme">Einnahme</option>
+          </select>
+        </label>
+        <label>Kategorie
+          <select v-model="form.kategorie" required>
+            <option value="">– wählen –</option>
+            <option v-for="k in kategorieOptionen" :key="k.id" :value="k.id">{{ k.label }}</option>
+          </select>
+        </label>
         <label>Betrag (CHF) <input v-model="form.betrag" type="number" step="0.05" min="0" required /></label>
         <label class="full">Verwendungszweck <input v-model="form.zweck" required placeholder="Wofür wurde es verwendet?" /></label>
         <label class="full">
@@ -328,7 +354,7 @@ async function loeschen(id: string) {
             <strong>{{ formatBetrag(q.betrag) }}</strong>
           </div>
           <p>{{ q.zweck }}</p>
-          <p class="meta">Eingereicht: {{ formatDatum(q.created_at) }}</p>
+          <p v-if="q.kategorie" class="meta">{{ q.richtung === 'einnahme' ? 'Einnahme' : 'Ausgabe' }} · {{ kategorieLabel(q.kategorie) }}</p>
           <p v-if="q.bearbeitet_am" class="meta">Bearbeitet: {{ formatDatum(q.bearbeitet_am) }}</p>
           <p v-if="q.status === 'abgelehnt' && q.ablehnungsgrund" class="ablehnung">Grund: {{ q.ablehnungsgrund }}</p>
 
@@ -366,6 +392,7 @@ async function loeschen(id: string) {
             <span class="status">{{ statusIcon[q.status] }} {{ statusLabel[q.status] }}</span>
             <strong>{{ formatBetrag(q.betrag) }}</strong>
           </div>
+          <p v-if="q.kategorie" class="meta">{{ q.richtung === 'einnahme' ? 'Einnahme' : 'Ausgabe' }} · {{ kategorieLabel(q.kategorie) }}</p>
           <p><strong>{{ einreicherName(q) }}</strong> · {{ q.zweck }}</p>
           <p class="meta">IBAN: {{ q.profile_ibans?.iban ?? '–' }}</p>
           <p v-if="q.status === 'abgelehnt' && q.ablehnungsgrund" class="ablehnung">Abgelehnt: {{ q.ablehnungsgrund }}</p>

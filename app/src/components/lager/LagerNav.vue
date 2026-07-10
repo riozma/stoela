@@ -13,7 +13,7 @@ const props = defineProps<{
   activeTab: string
   programmLink?: string
   isLeitung: boolean
-  hatFinanzenAemtli?: boolean
+  meineAemtli: AemtliTab[]
   leiterAnfragen: number
   tnCount: number
   leiterCount: number
@@ -68,14 +68,19 @@ function navKlick() {
       Programm
     </router-link>
 
+    <router-link :to="sectionPath('kalender')" class="nav-link" :class="{ aktiv: isActive('kalender') }" @click="navKlick">
+      Kalender
+    </router-link>
+
     <router-link
-      v-if="hatFinanzenAemtli"
-      :to="aemtliPath('Finanzen')"
+      v-for="a in meineAemtli"
+      :key="a.id"
+      :to="aemtliPath(a.name)"
       class="nav-link"
-      :class="{ aktiv: isAemtliActive('Finanzen') }"
+      :class="{ aktiv: isAemtliActive(a.name) }"
       @click="navKlick"
     >
-      Finanzen
+      {{ a.name }}
     </router-link>
 
     <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }" @click="navKlick">

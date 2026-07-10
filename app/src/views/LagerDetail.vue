@@ -34,6 +34,8 @@ import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
 import ElterninfoPanel from '../components/lager/ElterninfoPanel.vue'
+import LeiterZeitstrahlPanel from '../components/lager/LeiterZeitstrahlPanel.vue'
+import LagerKalenderPanel from '../components/lager/LagerKalenderPanel.vue'
 import LagerNav from '../components/lager/LagerNav.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
@@ -170,8 +172,13 @@ const activeTab = computed<Tab>(() => {
 })
 
 const tabErlaubt = computed(() => {
+  if (activeTab.value.startsWith('aemtli:')) {
+    const slug = activeTab.value.slice(7)
+    if (meineAemtli.value.some((a) => aemtliSlug(a.name) === slug)) return true
+    if (slug === 'finanzen' && isLeitung.value) return true
+    return false
+  }
   if (!isNavSectionAllowed(activeTab.value)) return false
-  if (activeTab.value === 'aemtli:finanzen' && !hatFinanzenAemtli.value) return false
   return true
 })
 
@@ -1267,7 +1274,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :active-tab="activeTab"
         :programm-link="programmLink"
         :is-leitung="isLeitung"
-        :hat-finanzen-aemtli="hatFinanzenAemtli"
+        :meine-aemtli="meineAemtli"
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
@@ -1328,6 +1335,22 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :start-datum="lager.start_datum"
           :is-leitung="isLeitung"
           :vor-lager-id="lager.vor_lager_id"
+        />
+      </section>
+
+      <!-- Kalender -->
+      <section v-if="activeTab === 'kalender'">
+        <h2>Lager-Kalender</h2>
+        <LagerKalenderPanel :lager-id="lagerId" :lager-name="lager.name" :is-leitung="isLeitung" />
+      </section>
+
+      <!-- Leiter-Zeitstrahl (Vollansicht) -->
+      <section v-if="activeTab === 'leiter-zeitstrahl'">
+        <h2>Leiter-Anwesenheit im Zeitverlauf</h2>
+        <LeiterZeitstrahlPanel
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
         />
       </section>
 
@@ -1455,6 +1478,12 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <!-- Leiter & Team -->
       <section v-if="activeTab === 'leiter'">
         <h2>Leiter &amp; Team</h2>
+        <LeiterZeitstrahlPanel
+          v-if="lager.start_datum && lager.end_datum"
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
+        />
         <p class="hint">
           Leiterbewerbung:
           <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>

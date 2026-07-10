@@ -1,4 +1,4 @@
-/** Während des Lager-Rollouts nur diese Bereiche erreichbar. */
+/** Alle Lager-Bereiche erreichbar (Rollout abgeschlossen). Ämtli-Zugriff wird in LagerDetail geprüft. */
 export const LAGER_NAV_SECTIONS = [
   'dashboard',
   'chatbot',
@@ -8,15 +8,18 @@ export const LAGER_NAV_SECTIONS = [
   'teilnehmer',
   'leiter',
   'gruppen',
+  'fahrplan',
+  'vorweekend',
+  'elterninfo',
+  'statistik',
+  'gemini',
+  'einkauf',
+  'kalender',
+  'leiter-zeitstrahl',
   'bearbeitung',
 ] as const
 
-export const LAGER_NAV_AEMTLI = ['finanzen'] as const
-
 export function isNavSectionAllowed(tab: string): boolean {
-  if (tab.startsWith('aemtli:')) {
-    const slug = tab.slice(7)
-    return (LAGER_NAV_AEMTLI as readonly string[]).includes(slug)
-  }
+  if (tab.startsWith('aemtli:')) return true
   return (LAGER_NAV_SECTIONS as readonly string[]).includes(tab)
 }

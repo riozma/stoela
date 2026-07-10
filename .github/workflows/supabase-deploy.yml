@@ -4,11 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - supabase/migrations/**
-      - supabase/functions/**
-      - supabase/cleanup_stoecklilager_rollout.sql
-      - .github/workflows/supabase-deploy.yml
 
 jobs:
   deploy:
@@ -46,7 +41,7 @@ jobs:
         run: |
           supabase functions deploy lager-chatbot --no-verify-jwt
           supabase functions deploy lager-gemini-assistant --no-verify-jwt
-          supabase functions deploy parse-lager-pdf --no-verify-jwt
+          supabase functions deploy lager-kalender-ics --no-verify-jwt
 
       - name: Verify database state
         env:
