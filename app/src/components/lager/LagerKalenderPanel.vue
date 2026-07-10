@@ -18,6 +18,7 @@ const props = defineProps<{
 
 const termine = ref<LagerTermin[]>([])
 const kalenderToken = ref('')
+const kalenderTitel = ref('')
 const fehler = ref('')
 const speichern = ref(false)
 const bearbeitenId = ref<string | null>(null)
@@ -32,7 +33,11 @@ const form = ref({
   ort: '',
   beschreibung: '',
   oeffentlich: false,
+  nurEinTag: true,
 })
+
+const einTagTypen: LagerTerminTyp[] = ['elternabend', 'kennenlernabend', 'diashow']
+const istEinTagTyp = computed(() => einTagTypen.includes(form.value.typ))
 
 const webcalUrl = computed(() => {
   if (!kalenderToken.value) return ''
@@ -46,6 +51,11 @@ const httpsKalenderUrl = computed(() => {
   const base = String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')
   return `${base}/functions/v1/lager-kalender-ics?lager_id=${props.lagerId}&token=${kalenderToken.value}`
 })
+
+async function ladenKalenderTitel() {
+  const { data } = await supabase.rpc('lager_kalender_titel', { p_lager_id: props.lagerId })
+  kalenderTitel.value = (data as string) ?? props.lagerName
+}
 
 async function laden() {
   fehler.value = ''
@@ -67,6 +77,7 @@ async function laden() {
     .eq('lager_id', props.lagerId)
     .order('start_datum', { ascending: true, nullsFirst: false })
   termine.value = (t2 ?? []) as LagerTermin[]
+  await ladenKalenderTitel()
 }
 
 onMounted(laden)
@@ -83,11 +94,13 @@ function resetForm() {
     ort: '',
     beschreibung: '',
     oeffentlich: false,
+    nurEinTag: true,
   }
 }
 
 function bearbeitenStart(t: LagerTermin) {
   bearbeitenId.value = t.id
+  const einTag = !t.end_datum || t.end_datum === t.start_datum
   form.value = {
     typ: t.typ,
     titel: t.titel,
@@ -98,6 +111,7 @@ function bearbeitenStart(t: LagerTermin) {
     ort: t.ort ?? '',
     beschreibung: t.beschreibung ?? '',
     oeffentlich: t.oeffentlich,
+    nurEinTag: einTagTypen.includes(t.typ) ? einTag : false,
   }
 }
 
@@ -105,12 +119,15 @@ async function speichernHandler() {
   if (!props.isLeitung) return
   speichern.value = true
   fehler.value = ''
+  const endDatum = form.value.nurEinTag || !form.value.end_datum
+    ? form.value.start_datum || null
+    : form.value.end_datum || null
   const payload = {
     lager_id: props.lagerId,
     typ: form.value.typ,
     titel: form.value.titel.trim() || TERMIN_TYP_LABELS[form.value.typ],
     start_datum: form.value.start_datum || null,
-    end_datum: form.value.end_datum || null,
+    end_datum: endDatum,
     start_zeit: form.value.start_zeit || null,
     end_zeit: form.value.end_zeit || null,
     ort: form.value.ort || null,
@@ -142,7 +159,16 @@ async function icsDownload() {
     fehler.value = error?.message ?? 'ICS konnte nicht erzeugt werden.'
     return
   }
-  downloadIcs(`${props.lagerName.replace(/\s+/g, '_')}_kalender.ics`, data as string)
+  downloadIcs(`${(kalenderTitel.value || props.lagerName).replace(/\s+/g, '_')}_kalender.ics`, data as string)
+}
+
+async function linkKopieren(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    fehler.value = ''
+  } catch {
+    fehler.value = 'Link konnte nicht kopiert werden – bitte manuell markieren.'
+  }
 }
 
 const oeffentlicheTypen: LagerTerminTyp[] = ['elternabend', 'kennenlernabend', 'diashow']
@@ -163,10 +189,37 @@ const oeffentlicheTypen: LagerTerminTyp[] = ['elternabend', 'kennenlernabend', '
       </div>
     </header>
 
+    <p v-if="kalenderTitel" class="kalender-name">
+      Kalender-Name beim Abonnieren: <strong>{{ kalenderTitel }}</strong>
+    </p>
+
+    <details class="anleitung">
+      <summary>Kalender abonnieren – Anleitung</summary>
+      <div class="anleitung-inhalt">
+        <p><strong>Google Kalender</strong></p>
+        <ol>
+          <li>Links «Andere Kalender» → «Von URL»</li>
+          <li>HTTPS-Link einfügen (unten) → «Kalender hinzufügen»</li>
+        </ol>
+        <p><strong>Apple Kalender (iPhone/Mac)</strong></p>
+        <ol>
+          <li>Einstellungen → Kalender → Accounts → «Kalenderabo hinzufügen»</li>
+          <li>webcal-Link einfügen oder ICS-Datei öffnen</li>
+        </ol>
+        <p><strong>Outlook</strong></p>
+        <ol>
+          <li>«Kalender hinzufügen» → «Aus dem Internet»</li>
+          <li>HTTPS-Link einfügen</li>
+        </ol>
+        <p><strong>Alternativ:</strong> «ICS herunterladen» und Datei per Doppelklick importieren.</p>
+      </div>
+    </details>
+
     <p v-if="kalenderToken" class="abo-hinweis">
-      Kalender abonnieren (Google/Apple/Outlook):<br />
-      <code>{{ webcalUrl }}</code><br />
-      <span class="klein">HTTPS: {{ httpsKalenderUrl }}</span>
+      Abo-Link (webcal): <code>{{ webcalUrl }}</code>
+      <button type="button" class="secondary klein" @click="linkKopieren(webcalUrl)">Kopieren</button><br />
+      HTTPS: <code>{{ httpsKalenderUrl }}</code>
+      <button type="button" class="secondary klein" @click="linkKopieren(httpsKalenderUrl)">Kopieren</button>
     </p>
 
     <ul v-if="termine.length" class="termin-liste">
@@ -194,12 +247,19 @@ const oeffentlicheTypen: LagerTerminTyp[] = ['elternabend', 'kennenlernabend', '
       </label>
       <label>Titel <input v-model="form.titel" /></label>
       <label>Start <input v-model="form.start_datum" type="date" /></label>
-      <label>Ende <input v-model="form.end_datum" type="date" /></label>
+      <template v-if="istEinTagTyp">
+        <label class="checkbox grid-full">
+          <input v-model="form.nurEinTag" type="checkbox" />
+          Nur an einem Tag (kein Datumsbereich)
+        </label>
+        <label v-if="!form.nurEinTag">Ende <input v-model="form.end_datum" type="date" /></label>
+      </template>
+      <label v-else>Ende <input v-model="form.end_datum" type="date" /></label>
       <label>Von <input v-model="form.start_zeit" type="time" /></label>
       <label>Bis <input v-model="form.end_zeit" type="time" /></label>
       <label>Ort <input v-model="form.ort" /></label>
       <label>Beschreibung <input v-model="form.beschreibung" /></label>
-      <label v-if="oeffentlicheTypen.includes(form.typ)" class="checkbox">
+      <label v-if="oeffentlicheTypen.includes(form.typ)" class="checkbox grid-full">
         <input v-model="form.oeffentlich" type="checkbox" />
         In TN-Anmeldung / Elterninfo anzeigen
       </label>
@@ -235,5 +295,11 @@ label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; 
 .checkbox { flex-direction: row !important; align-items: center; color: var(--color-text) !important; }
 .inline { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 button.klein { font-size: 0.78rem; padding: 0.2rem 0.45rem; }
-.klein { font-size: 0.78rem; color: var(--color-text-muted); display: block; margin-top: 0.35rem; }
+.kalender-name { font-size: 0.9rem; margin: 0 0 0.75rem; }
+.anleitung { margin: 0 0 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; }
+.anleitung summary { cursor: pointer; font-weight: 600; }
+.anleitung-inhalt { margin-top: 0.65rem; font-size: 0.85rem; color: var(--color-text-muted); }
+.anleitung-inhalt ol { margin: 0.25rem 0 0.75rem 1.2rem; padding: 0; }
+.grid-full { grid-column: 1 / -1; }
+.error { color: var(--color-danger); }
 </style>
