@@ -586,6 +586,8 @@ async function leiterHinzufuegen() {
     p_als_lalei: false,
     p_anwesend_von: lager.value?.start_datum ?? null,
     p_anwesend_bis: lager.value?.end_datum ?? null,
+    p_vorname: person.vorname || null,
+    p_nachname: person.nachname || null,
   })
   leiterSpeichern.value = false
   if (err) {
