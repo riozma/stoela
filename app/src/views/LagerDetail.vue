@@ -217,6 +217,7 @@ const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr:
 const vorLagerIdForm = ref('')
 const andereLager = ref<{ id: string; name: string; jahr: number }[]>([])
 const lagerSpeichern = ref(false)
+const organisationName = ref('')
 const lagerLoeschen = ref(false)
 const lagerLoeschenFehler = ref('')
 
@@ -968,6 +969,7 @@ async function lagerSpeichernFn() {
   lagerSpeichern.value = false
   if (!err && lager.value) {
     Object.assign(lager.value, lagerForm.value)
+    await supabase.rpc('lager_termine_sync', { p_lager_id: lagerId.value })
   }
 }
 
@@ -1231,6 +1233,15 @@ async function ladeLagerSeite() {
   }
 
   lager.value = lagerData
+  organisationName.value = ''
+  if (lagerData.organisation_id) {
+    const { data: org } = await supabase
+      .from('organisation')
+      .select('name')
+      .eq('id', lagerData.organisation_id)
+      .single()
+    organisationName.value = org?.name ?? ''
+  }
   lagerForm.value = {
     name: lagerData.name,
     ort: lagerData.ort ?? '',
@@ -1343,7 +1354,13 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <!-- Kalender -->
       <section v-if="activeTab === 'kalender'">
         <h2>Lager-Kalender</h2>
-        <LagerKalenderPanel :lager-id="lagerId" :lager-name="lager.name" :is-leitung="isLeitung" />
+        <LagerKalenderPanel
+          :lager-id="lagerId"
+          :lager-name="lager.name"
+          :organisation-id="lager.organisation_id"
+          :organisation-name="organisationName"
+          :is-leitung="isLeitung"
+        />
       </section>
 
       <!-- Leiter-Zeitstrahl (Vollansicht) -->
