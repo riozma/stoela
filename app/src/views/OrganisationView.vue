@@ -8,9 +8,11 @@ import AppHeader from '../components/AppHeader.vue'
 import { ECAMP_URL } from '../lib/constants'
 import {
   leerRessourceForm,
+  RESSOURCE_TYP_LABELS,
   SICHTBARKEIT_LABELS,
   type OrgRessource,
   type OrgRessourceForm,
+  type OrgRessourceTyp,
 } from '../lib/orgRessourcen'
 
 interface VereinMitgliedschaft {
@@ -123,6 +125,8 @@ const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: 
 const lagerSpeichern = ref(false)
 
 const orgRessourcen = ref<OrgRessource[]>([])
+const orgLinks = computed(() => orgRessourcen.value.filter((r) => r.typ === 'link'))
+const orgLogindaten = computed(() => orgRessourcen.value.filter((r) => r.typ === 'zugang'))
 const ressourceForm = ref<OrgRessourceForm>(leerRessourceForm())
 const ressourceBearbeiten = ref(false)
 const ressourceSpeichern = ref(false)
@@ -322,8 +326,8 @@ async function ladeOrgRessourcen() {
   orgRessourcen.value = (data ?? []) as OrgRessource[]
 }
 
-function ressourceNeu() {
-  ressourceForm.value = { ...leerRessourceForm(), sortierung: orgRessourcen.value.length }
+function ressourceNeu(typ: OrgRessourceTyp = 'link') {
+  ressourceForm.value = { ...leerRessourceForm(), typ, sortierung: orgRessourcen.value.length }
   ressourceBearbeiten.value = true
 }
 
@@ -359,7 +363,7 @@ async function ressourceSpeichernHandler() {
     p_id: f.id,
     p_typ: f.typ,
     p_titel: f.titel,
-    p_url: f.typ === 'link' ? f.url : null,
+    p_url: f.url || null,
     p_benutzername: f.typ === 'zugang' ? f.benutzername : null,
     p_passwort: f.typ === 'zugang' && f.passwort.trim() ? f.passwort : null,
     p_notiz: f.notiz || null,
@@ -755,23 +759,44 @@ onMounted(async () => {
         <section class="karte">
           <h2>Links &amp; Zugänge</h2>
           <p class="hint">
-            Wichtige Links (z.&nbsp;B. Google Drive) und geteilte Logins für den Verein.
-            Zugänge sind nur über diese Seite sichtbar – nicht in der öffentlichen TN-Anmeldung.
+            Wichtige <strong>Links</strong> (z.&nbsp;B. Google Drive) und geteilte <strong>Logindaten</strong> (Seite, E-Mail/Benutzername, Passwort).
+            Nur über diese Seite sichtbar – nicht in der öffentlichen TN-Anmeldung.
             {{ istOrgAdmin ? 'Als Admin kannst du Einträge verwalten und die Sichtbarkeit festlegen.' : 'Du siehst nur Einträge, für die du berechtigt bist.' }}
           </p>
 
-          <div v-if="orgRessourcen.length" class="ressourcen-liste">
-            <article v-for="r in orgRessourcen" :key="r.id" class="ressource-karte">
-              <div class="ressource-kopf">
-                <strong>{{ r.titel }}</strong>
-                <span class="badge">{{ r.typ === 'link' ? 'Link' : 'Zugang' }}</span>
-                <span class="klein">{{ SICHTBARKEIT_LABELS[r.sichtbarkeit] }}</span>
-              </div>
-              <template v-if="r.typ === 'link' && r.url">
-                <a :href="r.url" target="_blank" rel="noopener noreferrer">{{ r.url }}</a>
-              </template>
-              <template v-else-if="r.typ === 'zugang'">
-                <p v-if="r.benutzername" class="zugang-zeile"><span>Benutzer:</span> {{ r.benutzername }}</p>
+          <div class="ressourcen-gruppe">
+            <h3>Links</h3>
+            <div v-if="orgLinks.length" class="ressourcen-liste">
+              <article v-for="r in orgLinks" :key="r.id" class="ressource-karte">
+                <div class="ressource-kopf">
+                  <strong>{{ r.titel }}</strong>
+                  <span class="klein">{{ SICHTBARKEIT_LABELS[r.sichtbarkeit] }}</span>
+                </div>
+                <a v-if="r.url" :href="r.url" target="_blank" rel="noopener noreferrer">{{ r.url }}</a>
+                <p v-if="r.notiz" class="klein">{{ r.notiz }}</p>
+                <div v-if="istOrgAdmin" class="inline-aktionen">
+                  <button type="button" class="secondary klein-btn" @click="ressourceEditStart(r)">Bearbeiten</button>
+                  <button type="button" class="secondary klein-btn" @click="ressourceLoeschen(r.id)">Löschen</button>
+                </div>
+              </article>
+            </div>
+            <p v-else class="hint">Noch keine Links hinterlegt.</p>
+            <button v-if="istOrgAdmin && !ressourceBearbeiten" type="button" class="secondary klein-btn" @click="ressourceNeu('link')">+ Link hinzufügen</button>
+          </div>
+
+          <div class="ressourcen-gruppe">
+            <h3>Logindaten</h3>
+            <div v-if="orgLogindaten.length" class="ressourcen-liste">
+              <article v-for="r in orgLogindaten" :key="r.id" class="ressource-karte">
+                <div class="ressource-kopf">
+                  <strong>{{ r.titel }}</strong>
+                  <span class="klein">{{ SICHTBARKEIT_LABELS[r.sichtbarkeit] }}</span>
+                </div>
+                <p v-if="r.url" class="zugang-zeile">
+                  <span>Seite:</span>
+                  <a :href="r.url" target="_blank" rel="noopener noreferrer">{{ r.url }}</a>
+                </p>
+                <p v-if="r.benutzername" class="zugang-zeile"><span>E-Mail / Benutzer:</span> {{ r.benutzername }}</p>
                 <p v-if="r.passwort" class="zugang-zeile">
                   <span>Passwort:</span>
                   <code>{{ sichtbarePasswoerter[r.id] ? r.passwort : '••••••••' }}</code>
@@ -779,31 +804,34 @@ onMounted(async () => {
                     {{ sichtbarePasswoerter[r.id] ? 'Verbergen' : 'Anzeigen' }}
                   </button>
                 </p>
-              </template>
-              <p v-if="r.notiz" class="klein">{{ r.notiz }}</p>
-              <div v-if="istOrgAdmin" class="inline-aktionen">
-                <button type="button" class="secondary klein-btn" @click="ressourceEditStart(r)">Bearbeiten</button>
-                <button type="button" class="secondary klein-btn" @click="ressourceLoeschen(r.id)">Löschen</button>
-              </div>
-            </article>
+                <p v-if="r.notiz" class="klein">{{ r.notiz }}</p>
+                <div v-if="istOrgAdmin" class="inline-aktionen">
+                  <button type="button" class="secondary klein-btn" @click="ressourceEditStart(r)">Bearbeiten</button>
+                  <button type="button" class="secondary klein-btn" @click="ressourceLoeschen(r.id)">Löschen</button>
+                </div>
+              </article>
+            </div>
+            <p v-else class="hint">Noch keine Logindaten hinterlegt.</p>
+            <button v-if="istOrgAdmin && !ressourceBearbeiten" type="button" class="secondary klein-btn" @click="ressourceNeu('zugang')">+ Logindaten hinzufügen</button>
           </div>
-          <p v-else class="hint">Noch keine Links oder Zugänge hinterlegt.</p>
 
-          <div v-if="istOrgAdmin" class="ressource-admin">
-            <button v-if="!ressourceBearbeiten" type="button" @click="ressourceNeu">+ Link oder Zugang hinzufügen</button>
-            <form v-else class="ressource-form" @submit.prevent="ressourceSpeichernHandler">
+          <div v-if="istOrgAdmin && ressourceBearbeiten" class="ressource-admin">
+            <form class="ressource-form" @submit.prevent="ressourceSpeichernHandler">
+              <h3>{{ ressourceForm.id ? 'Eintrag bearbeiten' : (ressourceForm.typ === 'link' ? 'Link hinzufügen' : 'Logindaten hinzufügen') }}</h3>
               <label>Typ
                 <select v-model="ressourceForm.typ">
-                  <option value="link">Link (URL)</option>
-                  <option value="zugang">Zugang (Login)</option>
+                  <option value="link">{{ RESSOURCE_TYP_LABELS.link }}</option>
+                  <option value="zugang">{{ RESSOURCE_TYP_LABELS.zugang }}</option>
                 </select>
               </label>
               <label>Titel <input v-model="ressourceForm.titel" required /></label>
-              <label v-if="ressourceForm.typ === 'link'">URL <input v-model="ressourceForm.url" type="url" required placeholder="https://drive.google.com/..." /></label>
-              <template v-else>
-                <label>Benutzername <input v-model="ressourceForm.benutzername" autocomplete="off" /></label>
+              <label>{{ ressourceForm.typ === 'link' ? 'URL' : 'Link zur Seite' }}
+                <input v-model="ressourceForm.url" type="url" required placeholder="https://..." />
+              </label>
+              <template v-if="ressourceForm.typ === 'zugang'">
+                <label>E-Mail / Benutzername <input v-model="ressourceForm.benutzername" required autocomplete="off" /></label>
                 <label>Passwort
-                  <input v-model="ressourceForm.passwort" type="password" autocomplete="new-password" :placeholder="ressourceForm.id ? 'Leer lassen = unverändert' : ''" />
+                  <input v-model="ressourceForm.passwort" type="password" autocomplete="new-password" :required="!ressourceForm.id" :placeholder="ressourceForm.id ? 'Leer lassen = unverändert' : ''" />
                 </label>
               </template>
               <label>Notiz <input v-model="ressourceForm.notiz" placeholder="Optional" /></label>
@@ -1170,6 +1198,8 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .error { color: var(--color-danger); }
 .lalei-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
+.ressourcen-gruppe { margin: 1.25rem 0; }
+.ressourcen-gruppe h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .ressourcen-liste { display: grid; gap: 0.65rem; margin: 0.75rem 0; }
 .ressource-karte { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem 0.85rem; }
 .ressource-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }

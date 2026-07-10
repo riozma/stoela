@@ -34,6 +34,11 @@ export const SICHTBARKEIT_LABELS: Record<OrgRessourceSichtbarkeit, string> = {
   ausgewaehlt: 'Ausgewählte Mitglieder',
 }
 
+export const RESSOURCE_TYP_LABELS: Record<OrgRessourceTyp, string> = {
+  link: 'Link',
+  zugang: 'Logindaten',
+}
+
 export function leerRessourceForm(): OrgRessourceForm {
   return {
     id: null,
