@@ -19,19 +19,19 @@ CREATE TABLE IF NOT EXISTS mahlzeiten (
 ALTER TABLE mahlzeiten ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY mahlzeiten_select ON mahlzeiten FOR SELECT USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY mahlzeiten_insert ON mahlzeiten FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY mahlzeiten_update ON mahlzeiten FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY mahlzeiten_delete ON mahlzeiten FOR DELETE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = mahlzeiten.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 -- 2. Höck-Rollen Tabelle
@@ -49,19 +49,19 @@ CREATE TABLE IF NOT EXISTS hoeck_rollen (
 ALTER TABLE hoeck_rollen ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY hoeck_rollen_select ON hoeck_rollen FOR SELECT USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_rollen_insert ON hoeck_rollen FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_rollen_update ON hoeck_rollen FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_rollen_delete ON hoeck_rollen FOR DELETE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_rollen.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 -- 3. Höck-Rollen-Zuweisungen (Leute pro Rolle)
@@ -76,19 +76,39 @@ CREATE TABLE IF NOT EXISTS hoeck_zuweisungen (
 ALTER TABLE hoeck_zuweisungen ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY hoeck_zuweisungen_select ON hoeck_zuweisungen FOR SELECT USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_zuweisungen.hoeck_rolle_id::text::uuid IS NOT NULL)
+  EXISTS (
+    SELECT 1 FROM lager_leiter t
+    WHERE t.lager_id = (SELECT hr.lager_id FROM hoeck_rollen hr WHERE hr.id = hoeck_zuweisungen.hoeck_rolle_id)
+    AND t.profile_id = auth.uid()
+    AND t.status = 'bestaetigt'
+  )
 );
 
 CREATE POLICY hoeck_zuweisungen_insert ON hoeck_zuweisungen FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_zuweisungen.hoeck_rolle_id::text::uuid IS NOT NULL)
+  EXISTS (
+    SELECT 1 FROM lager_leiter t
+    WHERE t.lager_id = (SELECT hr.lager_id FROM hoeck_rollen hr WHERE hr.id = hoeck_zuweisungen.hoeck_rolle_id)
+    AND t.profile_id = auth.uid()
+    AND t.status = 'bestaetigt'
+  )
 );
 
 CREATE POLICY hoeck_zuweisungen_update ON hoeck_zuweisungen FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_zuweisungen.hoeck_rolle_id::text::uuid IS NOT NULL)
+  EXISTS (
+    SELECT 1 FROM lager_leiter t
+    WHERE t.lager_id = (SELECT hr.lager_id FROM hoeck_rollen hr WHERE hr.id = hoeck_zuweisungen.hoeck_rolle_id)
+    AND t.profile_id = auth.uid()
+    AND t.status = 'bestaetigt'
+  )
 );
 
 CREATE POLICY hoeck_zuweisungen_delete ON hoeck_zuweisungen FOR DELETE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_zuweisungen.hoeck_rolle_id::text::uuid IS NOT NULL)
+  EXISTS (
+    SELECT 1 FROM lager_leiter t
+    WHERE t.lager_id = (SELECT hr.lager_id FROM hoeck_rollen hr WHERE hr.id = hoeck_zuweisungen.hoeck_rolle_id)
+    AND t.profile_id = auth.uid()
+    AND t.status = 'bestaetigt'
+  )
 );
 
 -- 4. Kiosk & Telefon Gruppen-Zuteilung pro Tag

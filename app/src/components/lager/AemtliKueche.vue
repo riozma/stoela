@@ -435,7 +435,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
       :lager-id="lagerId"
       :start-datum="startDatum"
       :end-datum="endDatum"
-      :is-leitung="kannEinkaufMelden"
+      :is-leitung="!!kannEinkaufMelden"
     />
 
     <!-- Übersicht -->
