@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import { downloadIcs } from '../../lib/ics'
+import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../../lib/orgKalender'
 import {
   TERMIN_TYP_LABELS,
   KALENDER_READONLY_TYPEN,
@@ -27,6 +28,8 @@ const termine = ref<LagerTermin[]>([])
 const kalenderToken = ref('')
 const kalenderTitel = ref('')
 const fehler = ref('')
+const kopiertLink = ref<'https' | 'webcal' | null>(null)
+let kopiertTimer: ReturnType<typeof setTimeout> | null = null
 const speichern = ref(false)
 const bearbeitenId = ref<string | null>(null)
 
@@ -48,18 +51,13 @@ const istEinTagTyp = computed(() => einTagTypen.includes(form.value.typ))
 
 const orgKalenderBereit = computed(() => Boolean(props.organisationId && kalenderToken.value))
 
-const webcalUrl = computed(() => {
-  if (!orgKalenderBereit.value) return ''
-  const base = String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')
-  const httpsUrl = `${base}/functions/v1/lager-kalender-ics?organisation_id=${props.organisationId}&token=${kalenderToken.value}`
-  return httpsUrl.replace(/^https:\/\//, 'webcal://')
-})
+const webcalUrl = computed(() =>
+  orgKalenderBereit.value ? orgKalenderWebcalUrl(props.organisationId!, kalenderToken.value) : '',
+)
 
-const httpsKalenderUrl = computed(() => {
-  if (!orgKalenderBereit.value) return ''
-  const base = String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')
-  return `${base}/functions/v1/lager-kalender-ics?organisation_id=${props.organisationId}&token=${kalenderToken.value}`
-})
+const httpsKalenderUrl = computed(() =>
+  orgKalenderBereit.value ? orgKalenderHttpsUrl(props.organisationId!, kalenderToken.value) : '',
+)
 
 function istReadonly(t: LagerTermin) {
   return KALENDER_READONLY_TYPEN.includes(t.typ)
@@ -212,10 +210,15 @@ async function icsDownload() {
   downloadIcs(`${(kalenderTitel.value || props.organisationName).replace(/\s+/g, '_')}_kalender.ics`, data as string)
 }
 
-async function linkKopieren(text: string) {
+async function linkKopieren(typ: 'https' | 'webcal') {
+  const text = typ === 'https' ? httpsKalenderUrl.value : webcalUrl.value
+  if (!text) return
   try {
     await navigator.clipboard.writeText(text)
     fehler.value = ''
+    kopiertLink.value = typ
+    if (kopiertTimer) clearTimeout(kopiertTimer)
+    kopiertTimer = setTimeout(() => { kopiertLink.value = null }, 2500)
   } catch {
     fehler.value = 'Link konnte nicht kopiert werden – bitte manuell markieren.'
   }
@@ -266,10 +269,27 @@ async function linkKopieren(text: string) {
     </details>
 
     <p v-if="orgKalenderBereit" class="abo-hinweis">
-      Abo-Link (webcal): <code>{{ webcalUrl }}</code>
-      <button type="button" class="secondary klein" @click="linkKopieren(webcalUrl)">Kopieren</button><br />
-      HTTPS: <code>{{ httpsKalenderUrl }}</code>
-      <button type="button" class="secondary klein" @click="linkKopieren(httpsKalenderUrl)">Kopieren</button>
+      HTTPS (Google, Outlook): <code>{{ httpsKalenderUrl }}</code>
+      <button
+        type="button"
+        class="secondary klein"
+        :class="{ kopiert: kopiertLink === 'https' }"
+        @click="linkKopieren('https')"
+      >
+        {{ kopiertLink === 'https' ? '✓ Kopiert' : 'Kopieren' }}
+      </button><br />
+      webcal (Apple): <code>{{ webcalUrl }}</code>
+      <button
+        type="button"
+        class="secondary klein"
+        :class="{ kopiert: kopiertLink === 'webcal' }"
+        @click="linkKopieren('webcal')"
+      >
+        {{ kopiertLink === 'webcal' ? '✓ Kopiert' : 'Kopieren' }}
+      </button>
+    </p>
+    <p class="hint kalender-hinweis">
+      Der Link liefert eine Kalenderdatei (.ics), keine Webseite. Google/Outlook: HTTPS-Link. Apple: webcal-Link.
     </p>
 
     <ul v-if="termine.length" class="termin-liste">
@@ -342,5 +362,6 @@ button.klein { font-size: 0.78rem; padding: 0.2rem 0.45rem; }
 .anleitung summary { cursor: pointer; font-weight: 600; }
 .anleitung-inhalt { margin-top: 0.65rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .anleitung-inhalt ol { margin: 0.25rem 0 0.75rem 1.2rem; padding: 0; }
-.error { color: var(--color-danger); }
+.kalender-hinweis { margin-top: -0.5rem; }
+.kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 </style>

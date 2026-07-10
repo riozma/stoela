@@ -6,6 +6,8 @@ import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
 import { ECAMP_URL } from '../lib/constants'
+import { downloadIcs } from '../lib/ics'
+import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../lib/orgKalender'
 import {
   leerRessourceForm,
   RESSOURCE_TYP_LABELS,
@@ -125,8 +127,19 @@ const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: 
 const lagerSpeichern = ref(false)
 
 const orgRessourcen = ref<OrgRessource[]>([])
+const orgKalenderToken = ref('')
+const orgKalenderTitel = ref('')
+const kalenderLinkKopiert = ref<'https' | 'webcal' | null>(null)
+let kalenderKopiertTimer: ReturnType<typeof setTimeout> | null = null
 const orgLinks = computed(() => orgRessourcen.value.filter((r) => r.typ === 'link'))
 const orgLogindaten = computed(() => orgRessourcen.value.filter((r) => r.typ === 'zugang'))
+const orgKalenderBereit = computed(() => Boolean(orgAuswahl.value && orgKalenderToken.value))
+const orgKalenderHttps = computed(() =>
+  orgKalenderBereit.value ? orgKalenderHttpsUrl(orgAuswahl.value, orgKalenderToken.value) : '',
+)
+const orgKalenderWebcal = computed(() =>
+  orgKalenderBereit.value ? orgKalenderWebcalUrl(orgAuswahl.value, orgKalenderToken.value) : '',
+)
 const ressourceForm = ref<OrgRessourceForm>(leerRessourceForm())
 const ressourceBearbeiten = ref(false)
 const ressourceSpeichern = ref(false)
@@ -258,7 +271,7 @@ async function ladeVereinDaten() {
   if (!orgAuswahl.value) return
   const orgId = orgAuswahl.value
 
-  const [{ data: m }, { data: p }, { data: v }, { data: l }, { data: vor }] = await Promise.all([
+  const [{ data: m }, { data: p }, { data: v }, { data: l }, { data: vor }, { data: org }] = await Promise.all([
     supabase.rpc('list_verein_mitglieder_mit_profil', { p_organisation_id: orgId }),
     supabase
       .from('org_personen')
@@ -278,7 +291,11 @@ async function ladeVereinDaten() {
       .select('id, name, jahr')
       .eq('organisation_id', orgId)
       .order('jahr', { ascending: false }),
+    supabase.from('organisation').select('name, kalender_token').eq('id', orgId).single(),
   ])
+
+  orgKalenderToken.value = org?.kalender_token ?? ''
+  orgKalenderTitel.value = org?.name ?? aktuellerVerein.value?.name ?? 'Vereinskalender'
 
   mitglieder.value = ((m ?? []) as Omit<VereinsMitglied, 'organisation_id'>[]).map((row) => ({
     ...row,
@@ -398,6 +415,29 @@ async function ressourceLoeschen(id: string) {
 
 function togglePasswortSichtbar(id: string) {
   sichtbarePasswoerter.value[id] = !sichtbarePasswoerter.value[id]
+}
+
+async function kalenderLinkKopieren(typ: 'https' | 'webcal') {
+  const text = typ === 'https' ? orgKalenderHttps.value : orgKalenderWebcal.value
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    kalenderLinkKopiert.value = typ
+    if (kalenderKopiertTimer) clearTimeout(kalenderKopiertTimer)
+    kalenderKopiertTimer = setTimeout(() => { kalenderLinkKopiert.value = null }, 2500)
+  } catch {
+    fehler.value = 'Link konnte nicht kopiert werden.'
+  }
+}
+
+async function orgKalenderIcsDownload() {
+  if (!orgAuswahl.value) return
+  const { data, error } = await supabase.rpc('get_org_kalender_ics', { p_organisation_id: orgAuswahl.value })
+  if (error || !data) {
+    fehler.value = error?.message ?? 'ICS konnte nicht erzeugt werden.'
+    return
+  }
+  downloadIcs(`${orgKalenderTitel.value.replace(/\s+/g, '_')}_kalender.ics`, data as string)
 }
 
 function toggleRessourceMitglied(profileId: string) {
@@ -859,6 +899,38 @@ onMounted(async () => {
           </div>
         </section>
 
+        <section v-if="orgKalenderBereit" class="karte">
+          <h2>Vereinskalender</h2>
+          <p class="hint">
+            Ein Kalender für alle Lager im Verein. Name beim Abonnieren: <strong>{{ orgKalenderTitel }}</strong>.
+            Für Google/Outlook den <strong>HTTPS-Link</strong> verwenden, für Apple den <strong>webcal-Link</strong>.
+            Im Browser öffnet der Link eine Kalenderdatei (.ics) – keine normale Webseite.
+          </p>
+          <p class="abo-hinweis">
+            HTTPS (Google, Outlook):
+            <code>{{ orgKalenderHttps }}</code>
+            <button
+              type="button"
+              class="secondary klein-btn"
+              :class="{ kopiert: kalenderLinkKopiert === 'https' }"
+              @click="kalenderLinkKopieren('https')"
+            >
+              {{ kalenderLinkKopiert === 'https' ? '✓ Kopiert' : 'Kopieren' }}
+            </button><br />
+            webcal (Apple):
+            <code>{{ orgKalenderWebcal }}</code>
+            <button
+              type="button"
+              class="secondary klein-btn"
+              :class="{ kopiert: kalenderLinkKopiert === 'webcal' }"
+              @click="kalenderLinkKopieren('webcal')"
+            >
+              {{ kalenderLinkKopiert === 'webcal' ? '✓ Kopiert' : 'Kopieren' }}
+            </button>
+          </p>
+          <button type="button" class="secondary klein-btn" @click="orgKalenderIcsDownload">ICS herunterladen</button>
+        </section>
+
         <section class="karte">
           <h2>Lager im Verein</h2>
           <p class="hint">
@@ -887,45 +959,6 @@ onMounted(async () => {
               </li>
             </ul>
           </details>
-        </section>
-
-        <section v-if="istVereinsleitung" class="karte">
-          <h2>Neues Lager erfassen</h2>
-          <form class="lager-form" @submit.prevent="lagerErstellen">
-            <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
-            <label>Name <input v-model="lagerForm.name" required /></label>
-            <label>Ort <input ref="ortInput" v-model="lagerForm.ort" placeholder="Adresse eingeben..." /></label>
-            <label>Start <input v-model="lagerForm.start_datum" type="date" /></label>
-            <label>Ende <input v-model="lagerForm.end_datum" type="date" /></label>
-            <label>Vorjahres-Lager
-              <select v-model="lagerForm.vor_lager_id">
-                <option value="">– optional –</option>
-                <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
-              </select>
-            </label>
-            <fieldset class="lalei-feld">
-              <legend>Lagerleitung (Lalei)</legend>
-              <label class="radio-label">
-                <input v-model="lagerForm.laleiModus" type="radio" value="selbst" />
-                Ich bin Lagerleitung (Lalei)
-              </label>
-              <label class="radio-label">
-                <input v-model="lagerForm.laleiModus" type="radio" value="verein" />
-                Person aus dem Verein als Lalei wählen
-              </label>
-              <label v-if="lagerForm.laleiModus === 'verein'">
-                Lalei
-                <select v-model="lagerForm.laleiPersonId" required>
-                  <option value="">– Person wählen –</option>
-                  <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
-                    {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
-                  </option>
-                </select>
-              </label>
-              <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend (Start/Ende oben).</p>
-            </fieldset>
-            <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
-          </form>
         </section>
 
         <section class="karte">
@@ -1116,6 +1149,45 @@ onMounted(async () => {
             <input v-model="personForm.rolle_hinweis" placeholder="Rolle / Hinweis" />
             <button type="submit" :disabled="personSpeichern">{{ personSpeichern ? 'Speichere…' : 'Person hinzufügen' }}</button>
           </form>
+
+          <template v-if="istVereinsleitung">
+            <h3 class="unterabschnitt">Neues Lager erfassen</h3>
+            <form class="lager-form" @submit.prevent="lagerErstellen">
+              <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
+              <label>Name <input v-model="lagerForm.name" required /></label>
+              <label>Ort <input ref="ortInput" v-model="lagerForm.ort" placeholder="Adresse eingeben..." /></label>
+              <label>Start <input v-model="lagerForm.start_datum" type="date" /></label>
+              <label>Ende <input v-model="lagerForm.end_datum" type="date" /></label>
+              <label>Vorjahres-Lager
+                <select v-model="lagerForm.vor_lager_id">
+                  <option value="">– optional –</option>
+                  <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
+                </select>
+              </label>
+              <fieldset class="lalei-feld">
+                <legend>Lagerleitung (Lalei)</legend>
+                <label class="radio-label">
+                  <input v-model="lagerForm.laleiModus" type="radio" value="selbst" />
+                  Ich bin Lagerleitung (Lalei)
+                </label>
+                <label class="radio-label">
+                  <input v-model="lagerForm.laleiModus" type="radio" value="verein" />
+                  Person aus dem Verein als Lalei wählen
+                </label>
+                <label v-if="lagerForm.laleiModus === 'verein'">
+                  Lalei
+                  <select v-model="lagerForm.laleiPersonId" required>
+                    <option value="">– Person wählen –</option>
+                    <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
+                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                    </option>
+                  </select>
+                </label>
+                <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend (Start/Ende oben).</p>
+              </fieldset>
+              <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
+            </form>
+          </template>
         </section>
       </template>
 
@@ -1210,5 +1282,8 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .mitglieder-auswahl { grid-column: 1 / -1; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.65rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
 .mitglieder-auswahl legend { font-weight: 600; width: 100%; }
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.4rem; color: var(--color-text) !important; font-size: 0.85rem !important; }
+.unterabschnitt { margin: 1.5rem 0 0.65rem; font-size: 1rem; }
+.abo-hinweis { font-size: 0.82rem; background: var(--color-surface-muted); padding: 0.5rem 0.65rem; border-radius: var(--radius-md); word-break: break-all; margin: 0.65rem 0; }
+.kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 .ressource-admin { margin-top: 0.5rem; }
 </style>
