@@ -125,19 +125,19 @@ CREATE TABLE IF NOT EXISTS hoeck_gruppen_dienste (
 ALTER TABLE hoeck_gruppen_dienste ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY hoeck_gruppen_dienste_select ON hoeck_gruppen_dienste FOR SELECT USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_gruppen_dienste_insert ON hoeck_gruppen_dienste FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_gruppen_dienste_update ON hoeck_gruppen_dienste FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 CREATE POLICY hoeck_gruppen_dienste_delete ON hoeck_gruppen_dienste FOR DELETE USING (
-  EXISTS (SELECT 1 FROM team t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() && t.status = 'bestaetigt')
+  EXISTS (SELECT 1 FROM lager_leiter t WHERE t.lager_id = hoeck_gruppen_dienste.lager_id AND t.profile_id = auth.uid() AND t.status = 'bestaetigt')
 );
 
 -- 5. App Admin Berechtigung
