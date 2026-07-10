@@ -279,6 +279,16 @@ function formatAenderungZeit(iso: string) {
       <span aria-hidden="true">→</span>
     </a>
 
+    <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
+      <span class="links-label">Letzte Änderungen</span>
+      <ul>
+        <li v-for="(a, i) in letzteAenderungen" :key="i">
+          <time>{{ formatAenderungZeit(a.zeit) }}</time>
+          <span>{{ a.beschreibung }}</span>
+        </li>
+      </ul>
+    </div>
+
     <div v-if="todosGeladen && jahresTodos.length > 0" class="fahrplan-uebersicht">
       <div class="fahrplan-kopf">
         <span class="links-label">Jahresfahrplan</span>
@@ -299,16 +309,6 @@ function formatAenderungZeit(iso: string) {
           <span class="todo-titel">{{ t.titel }}</span>
           <span v-if="t.faellig_am" class="todo-meta">Bis {{ formatFaellig(t.faellig_am) }}</span>
           <span v-else class="todo-meta">{{ zustaendigLabel(t.zustaendig) }}</span>
-        </li>
-      </ul>
-    </div>
-
-    <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
-      <span class="links-label">Letzte Änderungen</span>
-      <ul>
-        <li v-for="(a, i) in letzteAenderungen" :key="i">
-          <time>{{ formatAenderungZeit(a.zeit) }}</time>
-          <span>{{ a.beschreibung }}</span>
         </li>
       </ul>
     </div>
