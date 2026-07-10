@@ -120,11 +120,11 @@ const lagerForm = ref({
   start_datum: '',
   end_datum: '',
   vor_lager_id: '',
-  laleiModus: 'selbst' as 'selbst' | 'verein',
-  laleiPersonId: '',
 })
 const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: string; nachname: string; email: string | null }[]>([])
 const lagerSpeichern = ref(false)
+const laleiModalOffen = ref(false)
+const laleiModal = ref({ modus: 'selbst' as 'selbst' | 'verein', personId: '' })
 
 const orgRessourcen = ref<OrgRessource[]>([])
 const orgKalenderToken = ref('')
@@ -648,6 +648,17 @@ async function beitrittAblehnen(profileId: string) {
   await beitrittEntscheiden(profileId, 'ablehnen', null)
 }
 
+function lagerFormularAbsenden() {
+  if (!session.value || !orgAuswahl.value) return
+  fehler.value = ''
+  laleiModal.value = { modus: 'selbst', personId: '' }
+  laleiModalOffen.value = true
+}
+
+function laleiModalAbbrechen() {
+  laleiModalOffen.value = false
+}
+
 async function lagerErstellen() {
   if (!session.value || !orgAuswahl.value) return
   info.value = ''
@@ -679,7 +690,7 @@ async function lagerErstellen() {
     return
   }
 
-  if (lagerForm.value.laleiModus === 'selbst') {
+  if (laleiModal.value.modus === 'selbst') {
     const { error: laleiErr } = await supabase.rpc('lager_leiter_aus_verein_hinzufuegen', {
       p_lager_id: neuesLager.id,
       p_profile_id: session.value.user.id,
@@ -694,7 +705,7 @@ async function lagerErstellen() {
       return
     }
   } else {
-    const person = lagerPersonenPool.value.find((p) => p.id === lagerForm.value.laleiPersonId)
+    const person = lagerPersonenPool.value.find((p) => p.id === laleiModal.value.personId)
     if (!person) {
       lagerSpeichern.value = false
       fehler.value = 'Bitte eine Person als Lagerleitung (Lalei) wählen.'
@@ -735,6 +746,7 @@ async function lagerErstellen() {
   }
 
   lagerSpeichern.value = false
+  laleiModalOffen.value = false
   await ladeVereinDaten()
   await router.push(`/lager/${neuesLager.id}/dashboard`)
 }
@@ -1152,7 +1164,7 @@ onMounted(async () => {
 
           <template v-if="istVereinsleitung">
             <h3 class="unterabschnitt">Neues Lager erfassen</h3>
-            <form class="lager-form" @submit.prevent="lagerErstellen">
+            <form class="lager-form" @submit.prevent="lagerFormularAbsenden">
               <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
               <label>Name <input v-model="lagerForm.name" required /></label>
               <label>Ort <input ref="ortInput" v-model="lagerForm.ort" placeholder="Adresse eingeben..." /></label>
@@ -1164,29 +1176,41 @@ onMounted(async () => {
                   <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
                 </select>
               </label>
-              <fieldset class="lalei-feld">
-                <legend>Lagerleitung (Lalei)</legend>
-                <label class="radio-label">
-                  <input v-model="lagerForm.laleiModus" type="radio" value="selbst" />
-                  Ich bin Lagerleitung (Lalei)
-                </label>
-                <label class="radio-label">
-                  <input v-model="lagerForm.laleiModus" type="radio" value="verein" />
-                  Person aus dem Verein als Lalei wählen
-                </label>
-                <label v-if="lagerForm.laleiModus === 'verein'">
-                  Lalei
-                  <select v-model="lagerForm.laleiPersonId" required>
-                    <option value="">– Person wählen –</option>
-                    <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
-                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
-                    </option>
-                  </select>
-                </label>
-                <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend (Start/Ende oben).</p>
-              </fieldset>
               <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
             </form>
+
+            <div v-if="laleiModalOffen" class="modal-overlay" @click.self="laleiModalAbbrechen">
+              <div class="modal-karte" role="dialog" aria-labelledby="lalei-modal-titel">
+                <h3 id="lalei-modal-titel">Lagerleitung (Lalei) festlegen</h3>
+                <p class="hint">Wer ist Lagerleitung für «{{ lagerForm.name }}»?</p>
+                <fieldset class="lalei-feld">
+                  <label class="radio-label">
+                    <input v-model="laleiModal.modus" type="radio" value="selbst" />
+                    Ich bin Lagerleitung (Lalei)
+                  </label>
+                  <label class="radio-label">
+                    <input v-model="laleiModal.modus" type="radio" value="verein" />
+                    Person aus dem Verein als Lalei wählen
+                  </label>
+                  <label v-if="laleiModal.modus === 'verein'">
+                    Lalei
+                    <select v-model="laleiModal.personId" required>
+                      <option value="">– Person wählen –</option>
+                      <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
+                        {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                      </option>
+                    </select>
+                  </label>
+                  <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend.</p>
+                </fieldset>
+                <div class="modal-aktionen">
+                  <button type="button" class="secondary" @click="laleiModalAbbrechen">Abbrechen</button>
+                  <button type="button" :disabled="lagerSpeichern" @click="lagerErstellen">
+                    {{ lagerSpeichern ? 'Erstelle…' : 'Lager erstellen' }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </template>
         </section>
       </template>
@@ -1269,6 +1293,16 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .ok { color: #2e7d32; }
 .error { color: var(--color-danger); }
 .lalei-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 200;
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-karte {
+  background: var(--color-surface); border-radius: var(--radius-md); padding: 1.25rem;
+  max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.modal-karte h3 { margin: 0 0 0.5rem; }
+.modal-aktionen { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
 .radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
 .ressourcen-gruppe { margin: 1.25rem 0; }
 .ressourcen-gruppe h3 { margin: 0 0 0.5rem; font-size: 1rem; }

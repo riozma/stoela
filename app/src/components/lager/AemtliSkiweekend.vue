@@ -37,7 +37,7 @@ interface Anmeldung {
 const ski = ref<SkiWochenende | null>(null)
 const programm = ref<ProgEintrag[]>([])
 const anmeldungen = ref<Anmeldung[]>([])
-const skiForm = ref({ jahr: new Date().getFullYear() + 1, ort: '', start: '', ende: '', budget: null as number | null, notiz: '' })
+const skiForm = ref({ jahr: 0, ort: '', start: '', ende: '', budget: null as number | null, notiz: '' })
 const progForm = ref({ tag: '', start: '09:00', ende: '17:00', titel: '', ort: '' })
 const anmForm = ref({ vorname: '', nachname: '', von: '', bis: '', notiz: '' })
 
@@ -53,7 +53,8 @@ async function ladeOrgId() {
 async function laden() {
   const orgId = await ladeOrgId()
   if (!orgId) return
-  const jahr = new Date().getFullYear() + 1
+  const { data: lagerRow } = await supabase.from('lager').select('jahr').eq('id', props.lagerId).single()
+  const jahr = lagerRow?.jahr ?? new Date().getFullYear()
   let { data: s } = await supabase.from('org_skiweekend').select('*').eq('organisation_id', orgId).eq('jahr', jahr).maybeSingle()
   if (!s) {
     const { data: neu } = await supabase.from('org_skiweekend').insert({
@@ -94,6 +95,8 @@ async function skiSpeichern() {
     notiz: skiForm.value.notiz || null,
   }).eq('id', ski.value.id)
   await laden()
+  const orgId = await ladeOrgId()
+  if (orgId) await supabase.rpc('org_termine_sync', { p_organisation_id: orgId })
 }
 
 async function progHinzufuegen() {
@@ -127,7 +130,7 @@ async function anmelden() {
 
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
-    <p class="hint org-hinweis">Skiweekend wird auf <strong>Organisationsebene</strong> geplant (nicht pro Lager). Budget mit Kassier absprechen.</p>
+    <p class="hint org-hinweis">Skiweekend wird auf <strong>Organisationsebene</strong> geplant. Termin erscheint automatisch im Kalender (kein Duplikat).</p>
 
     <template v-if="ski">
       <h3>Skiweekend {{ ski.jahr }}</h3>

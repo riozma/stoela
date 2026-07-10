@@ -26,10 +26,13 @@ const felder = ref({
   lagerleiter_telefon: '',
   lagerleiter_email: '',
   elternabend_datum: '',
+  elternabend_zeit: '',
   elternabend_ort: '',
   kennenlernabend_datum: '',
+  kennenlernabend_zeit: '',
   kennenlernabend_ort: '',
   diashow_datum: '',
+  diashow_zeit: '',
   diashow_ort: '',
   lageradresse: '',
   lagertelefon: '',
@@ -63,6 +66,7 @@ onMounted(laden)
 
 async function speichern() {
   await supabase.from('lager').update({ elterninfo_config: felder.value }).eq('id', props.lagerId)
+  await supabase.rpc('lager_termine_sync', { p_lager_id: props.lagerId })
 }
 
 const brief = computed(() => {
@@ -152,11 +156,15 @@ function downloadBrief() {
       <label>E-Mail <input v-model="felder.lagerleiter_email" type="email" /></label>
 
       <h4>Termine</h4>
-      <label>Elternabend <input v-model="felder.elternabend_datum" placeholder="Mi 26.6.2024, 19:00" /></label>
+      <p class="hint grid-full">Auch unter Teilnehmer und Kalender editierbar – wird automatisch synchronisiert.</p>
+      <label>Elternabend Datum <input v-model="felder.elternabend_datum" type="date" /></label>
+      <label>Elternabend Uhrzeit <input v-model="felder.elternabend_zeit" type="time" /></label>
       <label>Ort Elternabend <input v-model="felder.elternabend_ort" /></label>
-      <label>Kennenlernabend <input v-model="felder.kennenlernabend_datum" /></label>
+      <label>Kennenlernabend Datum <input v-model="felder.kennenlernabend_datum" type="date" /></label>
+      <label>Kennenlernabend Uhrzeit <input v-model="felder.kennenlernabend_zeit" type="time" /></label>
       <label>Ort Kennenlernabend <input v-model="felder.kennenlernabend_ort" /></label>
-      <label>Diashow <input v-model="felder.diashow_datum" /></label>
+      <label>Diashow Datum <input v-model="felder.diashow_datum" type="date" /></label>
+      <label>Diashow Uhrzeit <input v-model="felder.diashow_zeit" type="time" /></label>
       <label>Ort Diashow <input v-model="felder.diashow_ort" /></label>
 
       <h4>Reise & Lager</h4>

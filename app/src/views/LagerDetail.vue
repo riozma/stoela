@@ -37,6 +37,7 @@ import VorweekendPanel from '../components/lager/VorweekendPanel.vue'
 import ElterninfoPanel from '../components/lager/ElterninfoPanel.vue'
 import LeiterZeitstrahlPanel from '../components/lager/LeiterZeitstrahlPanel.vue'
 import LagerKalenderPanel from '../components/lager/LagerKalenderPanel.vue'
+import OeffentlicheTerminePanel from '../components/lager/OeffentlicheTerminePanel.vue'
 import LagerNav from '../components/lager/LagerNav.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
@@ -1034,6 +1035,13 @@ function zuPflichtTab(tab: string) {
   void router.push(`/lager/${lagerId.value}/${tab}`)
 }
 
+function pflichtTabLabel(tab: string) {
+  if (tab === 'einstellungen') return 'Zu Einstellungen'
+  if (tab === 'teilnehmer') return 'Zu Teilnehmer'
+  if (tab === 'kalender') return 'Zum Kalender'
+  return tab
+}
+
 async function lagerSpeichernFn() {
   if (!lager.value) return
   lagerSpeichern.value = true
@@ -1530,6 +1538,41 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
       <!-- Teilnehmer -->
       <section v-if="activeTab === 'teilnehmer'">
+        <h3>TN-Anmeldung</h3>
+        <p v-if="isLeitung" class="hint">
+          «Anmeldung offen» oder «Laufend» erlauben die öffentliche TN-Anmeldung.
+          Stammdaten (Name, Start, Ende, Ort) müssen unter Einstellungen gesetzt sein.
+        </p>
+        <div v-if="isLeitung" class="anmeldung-aktivierung">
+          <label>
+            Lager-Status für TN-Anmeldung
+            <select :value="lager.status" @change="statusAendern(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
+              <option value="planung">Planung (Anmeldung geschlossen)</option>
+              <option value="anmeldung_offen">Anmeldung offen</option>
+              <option value="laufend">Laufend (Anmeldung weiterhin möglich)</option>
+              <option value="abgeschlossen">Abgeschlossen</option>
+              <option value="archiviert">Archiviert</option>
+            </select>
+          </label>
+          <p v-if="statusFehler" class="error">{{ statusFehler }}</p>
+          <ul v-if="statusFehlendLinks.length" class="status-fehlend">
+            <li v-for="f in statusFehlendLinks" :key="f.label">
+              <strong>{{ f.label }}</strong> fehlt –
+              <button type="button" class="link-like" @click="zuPflichtTab(f.tab)">
+                {{ pflichtTabLabel(f.tab) }}
+              </button>
+            </li>
+          </ul>
+        </div>
+        <p v-else class="hint">Status: <strong>{{ lager.status }}</strong></p>
+
+        <OeffentlicheTerminePanel
+          v-if="isLeitung"
+          :lager-id="lagerId"
+          :is-leitung="isLeitung"
+          kompakt
+        />
+
         <p class="hint">
           Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-tn`">/anmelden-tn</router-link> ·
           Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
@@ -1985,24 +2028,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         </div>
 
         <h3>Lager-Status</h3>
-        <select :value="lager.status" @change="statusAendern(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
-          <option value="planung">Planung</option>
-          <option value="anmeldung_offen">Anmeldung offen</option>
-          <option value="laufend">Laufend</option>
-          <option value="abgeschlossen">Abgeschlossen</option>
-          <option value="archiviert">Archiviert</option>
-        </select>
-        <p v-if="statusFehler" class="error">{{ statusFehler }}</p>
-        <ul v-if="statusFehlendLinks.length" class="status-fehlend">
-          <li v-for="f in statusFehlendLinks" :key="f.label">
-            <strong>{{ f.label }}</strong> fehlt –
-            <button type="button" class="link-like" @click="zuPflichtTab(f.tab)">
-              {{ f.tab === 'einstellungen' ? 'Zu Einstellungen' : f.tab }}
-            </button>
-          </li>
-        </ul>
-        <p v-if="lager.status === 'planung'" class="hint">
-          «Anmeldung offen» erst möglich, wenn Name, Start, Ende und Ort unter Einstellungen gesetzt sind.
+        <p class="hint">
+          Aktuell: <strong>{{ lager.status }}</strong> –
+          TN-Anmeldung aktivieren unter <button type="button" class="link-like" @click="zuPflichtTab('teilnehmer')">Teilnehmer</button>.
         </p>
 
         <h3>Willkommens-Link für TN</h3>
@@ -2037,7 +2065,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 </template>
 
 <style scoped>
-.bearbeiten-box { margin: 1rem 0; padding: 0.85rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .leiter-team-tabelle { font-size: 0.82rem; }
 .leiter-team-tabelle th, .leiter-team-tabelle td { padding: 0.4rem 0.5rem; vertical-align: top; }
 .zeile-bearbeiten { background: var(--color-surface-muted); }

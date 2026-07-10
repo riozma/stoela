@@ -10,6 +10,7 @@ import {
   KALENDER_READONLY_HINTS,
   KALENDER_FORM_TYPEN,
   KALENDER_SINGLETON_TYPEN,
+  KALENDER_AEMTLI_SYNC_HINTS,
   kannKalenderTerminLoeschen,
   kannKalenderTerminBearbeiten,
   istKalenderNurEinstellungen,
@@ -18,6 +19,7 @@ import {
   type LagerTermin,
   type LagerTerminTyp,
 } from '../../lib/lagerTermine'
+import OeffentlicheTerminePanel from './OeffentlicheTerminePanel.vue'
 
 const props = defineProps<{
   lagerId: string
@@ -71,7 +73,7 @@ function istDatumEditierbar(t: LagerTermin) {
 }
 
 function readonlyHinweis(t: LagerTermin) {
-  return KALENDER_READONLY_HINTS[t.typ] ?? null
+  return KALENDER_READONLY_HINTS[t.typ] ?? KALENDER_AEMTLI_SYNC_HINTS[t.typ] ?? null
 }
 
 async function ladenKalenderTitel() {
@@ -168,12 +170,16 @@ async function speichernHandler() {
     const endDatum = form.value.nurEinTag || !form.value.end_datum
       ? form.value.start_datum || null
       : form.value.end_datum || null
-    const { error } = await supabase.rpc('lager_termin_oeffentlich_speichern', {
-      p_termin_id: bearbeitenId.value,
+    const { error } = await supabase.rpc('lager_termin_oeffentlich_upsert', {
+      p_lager_id: props.lagerId,
+      p_typ: form.value.typ,
       p_start_datum: form.value.start_datum,
       p_end_datum: endDatum,
+      p_start_zeit: form.value.start_zeit || null,
+      p_end_zeit: form.value.end_zeit || null,
       p_ort: form.value.ort || null,
       p_nur_ein_tag: form.value.nurEinTag,
+      p_termin_id: bearbeitenId.value,
     })
     speichern.value = false
     if (error) {
@@ -267,7 +273,7 @@ async function linkKopieren(typ: 'https' | 'webcal') {
         <p class="hint">
           Termine dieses Lagers. Der Abo-Link gilt <strong>vereinsweit</strong> – alle Lager laden auf dieselbe URL.
           Der Lager-Termin ist mit den Einstellungen verknüpft (ein Eintrag, kein Duplikat).
-          Elternabend/Kennenlernabend/Diashow unter Elterninfo. Skiweekend, Höck und Sonstiges hier löschbar.
+          Elternabend/Kennenlernabend/Diashow unten erfassen. Skiweekend kommt aus dem Ämtli.
         </p>
       </div>
       <div class="aktionen">
@@ -326,6 +332,13 @@ async function linkKopieren(typ: 'https' | 'webcal') {
       Der Link liefert eine Kalenderdatei (.ics), keine Webseite. Google/Outlook: HTTPS-Link. Apple: webcal-Link.
     </p>
 
+    <OeffentlicheTerminePanel
+      v-if="isLeitung"
+      :lager-id="lagerId"
+      :is-leitung="isLeitung"
+      @gespeichert="laden"
+    />
+
     <ul v-if="termine.length" class="termin-liste">
       <li v-for="t in termine" :key="t.id" class="termin-zeile" :class="{ readonly: istNurEinstellungen(t) }">
         <span class="typ">{{ TERMIN_TYP_LABELS[t.typ] }}</span>
@@ -355,6 +368,8 @@ async function linkKopieren(typ: 'https' | 'webcal') {
         </label>
         <label v-if="!form.nurEinTag">Ende <input v-model="form.end_datum" type="date" /></label>
         <label>Ort <input v-model="form.ort" /></label>
+        <label>Von <input v-model="form.start_zeit" type="time" /></label>
+        <label>Bis <input v-model="form.end_zeit" type="time" /></label>
       </template>
       <template v-else-if="!bearbeitenId">
         <label>Typ
