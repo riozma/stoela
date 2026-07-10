@@ -30,7 +30,6 @@ const speichern = ref(false)
 const eltern = ref<ElternDaten>(leerEltern())
 const kind = ref<KindDaten>(leerKind())
 const kinder = ref<KindDaten[]>([])
-const elternKontaktId = ref<string | null>(null)
 
 const beitragGesamt = computed(() => {
   if (!lager.value) return 0
@@ -165,64 +164,43 @@ async function anmeldungAbsenden() {
   speichern.value = true
 
   try {
-    let kontaktId = elternKontaktId.value
-    if (!kontaktId) {
-      const { data: kontakt, error: kErr } = await supabase
-        .from('tn_eltern_kontakte')
-        .insert({
-          lager_id: lagerId,
-          eltern_email: eltern.value.eltern_email.trim(),
-          eltern_vorname: eltern.value.eltern_vorname.trim(),
-          eltern_nachname: eltern.value.eltern_nachname.trim(),
-          telefon: eltern.value.telefon.trim(),
-          adresse: eltern.value.adresse.trim(),
-          plz: eltern.value.plz.trim(),
-          ort: eltern.value.ort.trim(),
-          aufenthaltsort: eltern.value.aufenthaltsort_unbekannt ? null : eltern.value.aufenthaltsort.trim() || null,
-          aufenthaltsort_unbekannt: eltern.value.aufenthaltsort_unbekannt,
-        })
-        .select('id')
-        .single()
-      if (kErr || !kontakt) throw kErr ?? new Error('Elternkontakt konnte nicht gespeichert werden.')
-      kontaktId = kontakt.id
-      elternKontaktId.value = kontaktId
-    }
-
-    let nr = 1
-    for (const k of kinder.value) {
+    const kinderPayload = kinder.value.map((k) => {
       const essensText = essensLabel(k.essensgewohnheiten, k.essensgewohnheiten_sonstiges, k.essensgewohnheiten_keine)
-      const { data: tn, error: tnErr } = await supabase
-        .from('anmeldungen_tn')
-        .insert({
-          lager_id: lagerId,
-          vorname: k.vorname.trim(),
-          nachname: k.nachname.trim(),
-          geburtsdatum: k.geburtsdatum,
-          geschlecht: k.geschlecht,
-          ahv_nr: k.ahv_nr.trim(),
-          essensgewohnheiten: essensText === '–' ? null : essensText,
-          essensgewohnheiten_sonstiges: k.essensgewohnheiten_sonstiges.trim() || null,
-          medikamente: k.medikamente.trim() || null,
-          gesundheit_bemerkungen: k.gesundheit_bemerkungen.trim() || null,
-          sonstige_info: k.sonstige_info.trim() || null,
-          eltern_email: eltern.value.eltern_email.trim(),
-          eltern_aufenthaltsort: eltern.value.aufenthaltsort_unbekannt
-            ? 'Wird später mitgeteilt'
-            : eltern.value.aufenthaltsort.trim() || null,
-          notfallkontakt: `${eltern.value.eltern_vorname.trim()} ${eltern.value.eltern_nachname.trim()} · ${eltern.value.telefon.trim()}`,
-          eltern_kontakt_id: kontaktId,
-          kind_nr: nr,
-        })
-        .select('id')
-        .single()
-      if (tnErr || !tn) throw tnErr ?? new Error(`Anmeldung für ${k.vorname} fehlgeschlagen.`)
-
-      if (k.krankenkasse_vorne) await uploadDokument(tn.id, 'krankenkasse_vorne', k.krankenkasse_vorne)
-      if (k.krankenkasse_hinten) await uploadDokument(tn.id, 'krankenkasse_hinten', k.krankenkasse_hinten)
-      for (const impf of k.impfungen) {
-        await uploadDokument(tn.id, 'impfung', impf)
+      return {
+        vorname: k.vorname.trim(),
+        nachname: k.nachname.trim(),
+        geburtsdatum: k.geburtsdatum,
+        geschlecht: k.geschlecht,
+        ahv_nr: k.ahv_nr.trim(),
+        allergien: k.allergien.trim(),
+        essensgewohnheiten: essensText === '–' ? '' : essensText,
+        essensgewohnheiten_sonstiges: k.essensgewohnheiten_sonstiges.trim(),
+        medikamente: k.medikamente.trim(),
+        gesundheit_bemerkungen: k.gesundheit_bemerkungen.trim(),
+        sonstige_info: k.sonstige_info.trim(),
       }
-      nr += 1
+    })
+
+    const { data, error } = await supabase.rpc('tn_anmeldung_absenden', {
+      p_lager_id: lagerId,
+      p_eltern: {
+        ...eltern.value,
+        aufenthaltsort: eltern.value.aufenthaltsort_unbekannt ? '' : eltern.value.aufenthaltsort.trim(),
+      },
+      p_kinder: kinderPayload,
+    })
+    if (error || !data) throw error ?? new Error('Anmeldung konnte nicht gespeichert werden.')
+
+    const result = data as { anmeldungen: { index: number; id: string }[] }
+    for (const anmeldung of result.anmeldungen) {
+      const k = kinder.value[anmeldung.index]
+      if (!k) continue
+      const tnId = anmeldung.id
+      if (k.krankenkasse_vorne) await uploadDokument(tnId, 'krankenkasse_vorne', k.krankenkasse_vorne)
+      if (k.krankenkasse_hinten) await uploadDokument(tnId, 'krankenkasse_hinten', k.krankenkasse_hinten)
+      for (const impf of k.impfungen) {
+        await uploadDokument(tnId, 'impfung', impf)
+      }
     }
 
     schritt.value = 'fertig'
@@ -374,6 +352,9 @@ async function anmeldungAbsenden() {
 
         <fieldset>
           <legend>Gesundheit (optional)</legend>
+          <label>Allergien / Unverträglichkeiten
+            <textarea v-model="kind.allergien" rows="2" />
+          </label>
           <label>Medikamente – welche, wann?
             <textarea v-model="kind.medikamente" rows="2" />
           </label>
@@ -427,6 +408,7 @@ async function anmeldungAbsenden() {
         <li v-for="(k, i) in kinder" :key="i">
           <strong>{{ k.vorname }} {{ k.nachname }}</strong>
           <span>Geb. {{ k.geburtsdatum }} · AHV {{ k.ahv_nr }}</span>
+          <span v-if="k.allergien">Allergien: {{ k.allergien }}</span>
           <span>{{ essensLabel(k.essensgewohnheiten, k.essensgewohnheiten_sonstiges, k.essensgewohnheiten_keine) }}</span>
         </li>
       </ul>

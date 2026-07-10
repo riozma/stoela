@@ -2038,14 +2038,14 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
         <AemtliKueche
           v-if="aemtliKomponente(a.name) === 'kueche' && session"
-          :lager-id="lagerId" :aemtli-id="a.id" :lager-name="lager.name"
+          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :lager-name="lager.name"
           :user-id="session.user.id" :start-datum="lager.start_datum" :end-datum="lager.end_datum"
           :kann-einkauf-melden="istBestaetigterLeiter || isLeitung"
           :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
         <AemtliFinanzen
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
-          :lager-id="lagerId" :aemtli-id="a.id" :ist-kassier="hatFinanzenAemtli"
+          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :ist-kassier="hatFinanzenAemtli"
         />
         <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
         <AemtliTelefon v-else-if="aemtliKomponente(a.name) === 'telefon'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />

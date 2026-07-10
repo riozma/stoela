@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
-import AemtliTodos from './AemtliTodos.vue'
+import AemtliShell from './AemtliShell.vue'
 
 interface TN {
   id: string
@@ -20,6 +20,7 @@ interface TnFinanz {
 const props = defineProps<{
   lagerId: string
   aemtliId: string
+  aemtliName: string
   istKassier: boolean
 }>()
 
@@ -81,9 +82,9 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
 </script>
 
 <template>
+  <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
     <section class="finanzen">
-    <h2>Finanzen – TN-Anmeldungen</h2>
-    <AemtliTodos :lager-id="lagerId" :aemtli-id="aemtliId" aemtli-name="Finanzen" />
+    <h3>TN-Anmeldungen &amp; Zahlungen</h3>
     <p class="hint">
       {{ bezahltCount }} / {{ tnListe.length }} als bezahlt markiert.
       <span v-if="istKassier"> Quittungen bearbeitest du unter «Quittungen» → Kassier-Übersicht.</span>
@@ -133,6 +134,7 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
     </table>
     <p v-else class="hint">Noch keine Teilnehmer angemeldet.</p>
   </section>
+  </AemtliShell>
 </template>
 
 <style scoped>
