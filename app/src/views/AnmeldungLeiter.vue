@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { bestaetigenBis } from '../lib/workflowUtils'
+import { ladeProfilLeiterDaten, speichereProfilLeiterDaten } from '../lib/profileNames'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,8 @@ const gesendet = ref(false)
 const speichern = ref(false)
 const fehler = ref('')
 const bestehendeAnfrage = ref<string | null>(null)
+const profilHatStammdaten = ref(false)
+const profilHatNamen = ref(false)
 
 const form = ref({
   vorname: '',
@@ -55,9 +58,15 @@ onMounted(async () => {
   form.value.anwesend_von = data.start_datum ?? ''
   form.value.anwesend_bis = data.end_datum ?? ''
 
-  const { data: profil } = await supabase.from('profiles').select('vorname, nachname').eq('id', session.value.user.id).single()
-  if (profil?.vorname) form.value.vorname = profil.vorname
-  if (profil?.nachname) form.value.nachname = profil.nachname
+  const profil = await ladeProfilLeiterDaten(session.value.user)
+  form.value.vorname = profil.vorname
+  form.value.nachname = profil.nachname
+  form.value.geburtsdatum = profil.geburtsdatum
+  form.value.geschlecht = profil.geschlecht
+  form.value.ahv_nr = profil.ahv_nr
+  form.value.telefon = profil.telefon
+  profilHatNamen.value = profil.namenVollstaendig
+  profilHatStammdaten.value = profil.stammdatenVollstaendig
 
   const { data: anfrage } = await supabase
     .from('anmeldungen_leiter')
@@ -80,13 +89,29 @@ async function absenden() {
   if (!session.value) return
   fehler.value = ''
   speichern.value = true
+
+  try {
+    await speichereProfilLeiterDaten(session.value.user.id, {
+      vorname: form.value.vorname,
+      nachname: form.value.nachname,
+      geburtsdatum: form.value.geburtsdatum,
+      geschlecht: form.value.geschlecht,
+      ahv_nr: form.value.ahv_nr,
+      telefon: form.value.telefon,
+    })
+  } catch (e) {
+    speichern.value = false
+    fehler.value = e instanceof Error ? e.message : 'Profil konnte nicht gespeichert werden.'
+    return
+  }
+
   const { data: inserted, error } = await supabase
     .from('anmeldungen_leiter')
     .insert({
       lager_id: lagerId,
       profile_id: session.value.user.id,
-      vorname: form.value.vorname,
-      nachname: form.value.nachname,
+      vorname: form.value.vorname.trim(),
+      nachname: form.value.nachname.trim(),
       geburtsdatum: form.value.geburtsdatum || null,
       geschlecht: form.value.geschlecht || null,
       ahv_nr: form.value.ahv_nr || null,
@@ -144,19 +169,27 @@ async function absenden() {
 
     <template v-else-if="!gesendet">
       <form @submit.prevent="absenden">
-        <label>Vorname <input v-model="form.vorname" type="text" required /></label>
-        <label>Nachname <input v-model="form.nachname" type="text" required /></label>
-        <label>Geburtsdatum <input v-model="form.geburtsdatum" type="date" /></label>
-        <label>Geschlecht
-          <select v-model="form.geschlecht">
-            <option value="">–</option>
-            <option value="m">männlich</option>
-            <option value="w">weiblich</option>
-            <option value="d">divers</option>
-          </select>
-        </label>
-        <label>AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
-        <label>Telefon <input v-model="form.telefon" type="tel" /></label>
+        <template v-if="!profilHatNamen">
+          <label>Vorname <input v-model="form.vorname" type="text" required /></label>
+          <label>Nachname <input v-model="form.nachname" type="text" required /></label>
+        </template>
+        <p v-else class="hint">Angemeldet als {{ form.vorname }} {{ form.nachname }}</p>
+
+        <template v-if="!profilHatStammdaten">
+          <label>Geburtsdatum <input v-model="form.geburtsdatum" type="date" /></label>
+          <label>Geschlecht
+            <select v-model="form.geschlecht">
+              <option value="">–</option>
+              <option value="m">männlich</option>
+              <option value="w">weiblich</option>
+              <option value="d">divers</option>
+            </select>
+          </label>
+          <label>AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
+          <label>Telefon <input v-model="form.telefon" type="tel" /></label>
+        </template>
+        <p v-else class="hint">Stammdaten aus deinem Profil übernommen (Geburtsdatum, Geschlecht, AHV, Telefon).</p>
+
         <label class="checkbox-label">
           <input v-model="form.provisorisch" type="checkbox" />
           Provisorisch anmelden (An-/Abreise noch unklar – spätestens 3 Monate vor Lager bestätigen)

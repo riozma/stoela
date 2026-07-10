@@ -110,7 +110,10 @@ const lagerForm = ref({
   start_datum: '',
   end_datum: '',
   vor_lager_id: '',
+  laleiModus: 'selbst' as 'selbst' | 'verein',
+  laleiPersonId: '',
 })
+const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: string; nachname: string; email: string | null }[]>([])
 const lagerSpeichern = ref(false)
 
 const ortInput = ref<HTMLInputElement | null>(null)
@@ -288,6 +291,29 @@ async function ladeVereinDaten() {
   orgVorlagen.value = (v ?? []) as OrgTodoVorlage[]
   lager.value = (l ?? []) as VereinsLager[]
   vorLagerListe.value = (vor ?? []) as { id: string; name: string; jahr: number }[]
+
+  await ladeLagerPersonenPool()
+}
+
+async function ladeLagerPersonenPool() {
+  if (!orgAuswahl.value) {
+    lagerPersonenPool.value = []
+    return
+  }
+  const orgId = orgAuswahl.value
+  const { data } = await supabase.rpc('list_verein_personen_fuer_lager', { p_organisation_id: orgId })
+  if (data?.length) {
+    lagerPersonenPool.value = data as typeof lagerPersonenPool.value
+    return
+  }
+  const { data: mitgliederData } = await supabase.rpc('list_verein_mitglieder_mit_profil', { p_organisation_id: orgId })
+  lagerPersonenPool.value = (mitgliederData ?? []).map((m: { profile_id: string; vorname: string; nachname: string; email: string }) => ({
+    id: `login-${m.profile_id}`,
+    profile_id: m.profile_id,
+    vorname: m.vorname ?? '',
+    nachname: m.nachname ?? '',
+    email: m.email ?? null,
+  }))
 }
 
 async function datenLaden() {
@@ -501,12 +527,56 @@ async function lagerErstellen() {
     return
   }
 
-  await supabase.from('lager_leiter').insert({
-    lager_id: neuesLager.id,
-    profile_id: session.value.user.id,
-    rolle: 'lagerleitung',
-    status: 'bestaetigt',
-  })
+  if (lagerForm.value.laleiModus === 'selbst') {
+    const { error: laleiErr } = await supabase.rpc('lager_leiter_aus_verein_hinzufuegen', {
+      p_lager_id: neuesLager.id,
+      p_profile_id: session.value.user.id,
+      p_org_person_id: null,
+      p_als_lalei: true,
+      p_anwesend_von: lagerForm.value.start_datum || null,
+      p_anwesend_bis: lagerForm.value.end_datum || null,
+    })
+    if (laleiErr) {
+      lagerSpeichern.value = false
+      fehler.value = laleiErr.message
+      return
+    }
+  } else {
+    const person = lagerPersonenPool.value.find((p) => p.id === lagerForm.value.laleiPersonId)
+    if (!person) {
+      lagerSpeichern.value = false
+      fehler.value = 'Bitte eine Person als Lagerleitung (Lalei) wählen.'
+      return
+    }
+    let pProfileId: string | null = person.profile_id
+    let pOrgPersonId: string | null = null
+    if (person.id.startsWith('login-')) pProfileId = person.id.slice(6)
+    else if (person.id.startsWith('person-')) {
+      pOrgPersonId = person.id.slice(7)
+      if (!pProfileId) pProfileId = null
+    }
+    const { error: laleiErr } = await supabase.rpc('lager_leiter_aus_verein_hinzufuegen', {
+      p_lager_id: neuesLager.id,
+      p_profile_id: pProfileId,
+      p_org_person_id: pOrgPersonId,
+      p_als_lalei: true,
+      p_anwesend_von: lagerForm.value.start_datum || null,
+      p_anwesend_bis: lagerForm.value.end_datum || null,
+    })
+    if (laleiErr) {
+      lagerSpeichern.value = false
+      fehler.value = laleiErr.message
+      return
+    }
+    if (session.value.user.id !== pProfileId) {
+      await supabase.from('lager_leiter').insert({
+        lager_id: neuesLager.id,
+        profile_id: session.value.user.id,
+        rolle: 'leiter',
+        status: 'bestaetigt',
+      })
+    }
+  }
 
   if (lagerForm.value.start_datum) {
     await supabase.rpc('lager_todos_generieren', { p_lager_id: neuesLager.id })
@@ -618,6 +688,27 @@ onMounted(async () => {
                 <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
               </select>
             </label>
+            <fieldset class="lalei-feld">
+              <legend>Lagerleitung (Lalei)</legend>
+              <label class="radio-label">
+                <input v-model="lagerForm.laleiModus" type="radio" value="selbst" />
+                Ich bin Lagerleitung (Lalei)
+              </label>
+              <label class="radio-label">
+                <input v-model="lagerForm.laleiModus" type="radio" value="verein" />
+                Person aus dem Verein als Lalei wählen
+              </label>
+              <label v-if="lagerForm.laleiModus === 'verein'">
+                Lalei
+                <select v-model="lagerForm.laleiPersonId" required>
+                  <option value="">– Person wählen –</option>
+                  <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
+                    {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                  </option>
+                </select>
+              </label>
+              <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend (Start/Ende oben).</p>
+            </fieldset>
             <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
           </form>
         </section>
@@ -890,4 +981,6 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .vorlagen-liste li { border-bottom: 1px solid var(--color-border); padding: 0.4rem 0; }
 .ok { color: #2e7d32; }
 .error { color: var(--color-danger); }
+.lalei-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
 </style>

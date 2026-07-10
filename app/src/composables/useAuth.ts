@@ -15,7 +15,13 @@ supabase.auth.onAuthStateChange((_event, newSession) => {
 })
 
 export function useAuth() {
-  async function signUpWithPassword(email: string, password: string, vorname: string, nachname: string) {
+  async function signUpWithPassword(
+    email: string,
+    password: string,
+    vorname: string,
+    nachname: string,
+    geburtsdatum?: string,
+  ) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -23,6 +29,7 @@ export function useAuth() {
         data: {
           given_name: vorname.trim(),
           family_name: nachname.trim(),
+          geburtsdatum: geburtsdatum?.trim() || undefined,
         },
       },
     })

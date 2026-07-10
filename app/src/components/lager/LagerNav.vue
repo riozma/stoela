@@ -98,10 +98,6 @@ function navKlick() {
       </div>
     </div>
 
-    <router-link :to="sectionPath('team')" class="nav-link" :class="{ aktiv: isActive('team') }" @click="navKlick">
-      Team
-    </router-link>
-
     <router-link :to="sectionPath('einstellungen')" class="nav-link" :class="{ aktiv: isActive('einstellungen') }" @click="navKlick">
       Einstellungen
     </router-link>

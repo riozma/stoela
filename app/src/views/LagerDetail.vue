@@ -96,6 +96,7 @@ interface LeiterAnmeldung {
   vorname: string
   nachname: string
   email?: string
+  telefon?: string | null
   geburtsdatum: string | null
   geschlecht: string | null
   ahv_nr: string | null
@@ -371,11 +372,33 @@ const leiterRollenMap = ref<Record<string, LeiterRolleZuweisung[]>>({})
 const neueRolleName = ref<Record<string, string>>({})
 const orgPersonenPool = ref<OrgPersonPool[]>([])
 const orgPersonAuswahl = ref('')
+const leiterBearbeitenId = ref<string | null>(null)
+const leiterEditForm = ref({
+  vorname: '',
+  nachname: '',
+  geburtsdatum: '',
+  geschlecht: '',
+  ahv_nr: '',
+  telefon: '',
+  anwesend_von: '',
+  anwesend_bis: '',
+})
+
+const verfuegbareOrgPersonen = computed(() =>
+  orgPersonenPool.value.filter((p) => {
+    if (p.profile_id && leiterListe.value.some((l) => l.profile_id === p.profile_id)) return false
+    const name = `${p.vorname} ${p.nachname}`.trim().toLowerCase()
+    if (!name) return true
+    return !leiterListe.value.some(
+      (l) => `${l.vorname} ${l.nachname}`.trim().toLowerCase() === name,
+    )
+  }),
+)
 
 async function ladeLeiter() {
   const { data } = await supabase
     .from('anmeldungen_leiter')
-    .select('id, profile_id, vorname, nachname, email, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr')
+    .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
@@ -393,21 +416,15 @@ async function leiterLoeschen(leiter: LeiterAnmeldung) {
   const sicher = window.confirm(`Leiter "${leiter.vorname} ${leiter.nachname}" wirklich löschen?`)
   if (!sicher) return
   leiterFehler.value = ''
-  const { error: delErr } = await supabase
-    .from('anmeldungen_leiter')
-    .delete()
-    .eq('id', leiter.id)
-    .eq('lager_id', lagerId.value)
+  const { error: delErr } = await supabase.rpc('leiter_anmeldung_sicher_loeschen', {
+    p_anmeldung_id: leiter.id,
+  })
   if (delErr) {
     leiterFehler.value = delErr.message
+    if (delErr.message.includes('letzte Lagerleitung')) {
+      window.alert('Es muss mindestens eine Person die Rolle Lagerleitung (Lalei) behalten.')
+    }
     return
-  }
-  if (leiter.profile_id) {
-    await supabase
-      .from('lager_leiter')
-      .delete()
-      .eq('lager_id', lagerId.value)
-      .eq('profile_id', leiter.profile_id)
   }
   await Promise.all([leiterNachAenderung(), ladeTeam(), ladeGruppen()])
 }
@@ -444,28 +461,66 @@ async function ladeOrgPersonenPool() {
     orgPersonenPool.value = []
     return
   }
+
   const { data, error } = await supabase.rpc('list_verein_personen_fuer_lager', {
     p_organisation_id: orgId,
   })
-  if (error) {
-    leiterFehler.value = error.message
-    orgPersonenPool.value = []
+
+  if (!error && data?.length) {
+    orgPersonenPool.value = data.map((row: {
+      id: string
+      profile_id: string | null
+      vorname: string
+      nachname: string
+      email: string | null
+    }) => ({
+      id: row.id,
+      profile_id: row.profile_id,
+      vorname: row.vorname,
+      nachname: row.nachname,
+      email: row.email,
+    }))
     return
   }
-  orgPersonenPool.value = (data ?? []).map((row: {
-    id: string
-    profile_id: string | null
-    vorname: string
-    nachname: string
-    email: string | null
-    quelle: string
-  }) => ({
-    id: row.id,
-    profile_id: row.profile_id,
-    vorname: row.vorname,
-    nachname: row.nachname,
-    email: row.email,
-  }))
+
+  const [{ data: mitglieder }, { data: personen }] = await Promise.all([
+    supabase.rpc('list_verein_mitglieder_mit_profil', { p_organisation_id: orgId }),
+    supabase
+      .from('org_personen')
+      .select('id, profile_id, vorname, nachname, email')
+      .eq('organisation_id', orgId)
+      .eq('aktiv', true),
+  ])
+
+  const pool: OrgPersonPool[] = []
+  const profileIds = new Set<string>()
+
+  for (const m of mitglieder ?? []) {
+    if (!m.profile_id) continue
+    profileIds.add(m.profile_id)
+    pool.push({
+      id: `login-${m.profile_id}`,
+      profile_id: m.profile_id,
+      vorname: m.vorname ?? '',
+      nachname: m.nachname ?? '',
+      email: m.email ?? null,
+    })
+  }
+
+  for (const p of personen ?? []) {
+    if (p.profile_id && profileIds.has(p.profile_id)) continue
+    pool.push({
+      id: `person-${p.id}`,
+      profile_id: p.profile_id,
+      vorname: p.vorname,
+      nachname: p.nachname,
+      email: p.email,
+    })
+  }
+
+  pool.sort((a, b) => `${a.nachname} ${a.vorname}`.localeCompare(`${b.nachname} ${b.vorname}`, 'de'))
+  orgPersonenPool.value = pool
+  if (error && !pool.length) leiterFehler.value = error.message
 }
 
 async function ladeLeiterRollen() {
@@ -507,41 +562,74 @@ async function leiterHinzufuegen() {
     leiterFehler.value = 'Bitte Person aus dem Verein auswählen.'
     return
   }
-  if (leiterListe.value.some((l) =>
-    (person.profile_id && l.profile_id === person.profile_id)
-    || (l.vorname.toLowerCase() === person.vorname.toLowerCase() && l.nachname.toLowerCase() === person.nachname.toLowerCase()),
-  )) {
-    leiterSpeichern.value = false
-    leiterFehler.value = 'Diese Person ist bereits in der Lagerleiter-Liste.'
-    return
+
+  let pProfileId: string | null = person.profile_id
+  let pOrgPersonId: string | null = null
+  if (person.id.startsWith('login-')) {
+    pProfileId = person.id.slice(6)
+  } else if (person.id.startsWith('person-')) {
+    pOrgPersonId = person.id.slice(7)
+    if (!pProfileId) pProfileId = null
   }
 
-  const status = person.profile_id ? 'bestaetigt' : 'angemeldet'
-  const { data: neu, error: err } = await supabase.from('anmeldungen_leiter').insert({
-    lager_id: lagerId.value,
-    profile_id: person.profile_id,
-    vorname: person.vorname,
-    nachname: person.nachname,
-    email: person.email,
-    status,
-    anmeldung_art: person.profile_id ? 'fix' : 'provisorisch',
-    bestaetigen_bis: lager.value?.start_datum ? bestaetigenBis(lager.value.start_datum) : null,
-  }).select('id').single()
+  const { error: err } = await supabase.rpc('lager_leiter_aus_verein_hinzufuegen', {
+    p_lager_id: lagerId.value,
+    p_profile_id: pProfileId,
+    p_org_person_id: pOrgPersonId,
+    p_als_lalei: false,
+    p_anwesend_von: lager.value?.start_datum ?? null,
+    p_anwesend_bis: lager.value?.end_datum ?? null,
+  })
   leiterSpeichern.value = false
-  if (err) { leiterFehler.value = err.message; return }
-  if (person.profile_id) {
-    await supabase.from('lager_leiter').upsert({
-      lager_id: lagerId.value,
-      profile_id: person.profile_id,
-      rolle: 'leiter',
-      status: 'bestaetigt',
-    }, { onConflict: 'lager_id,profile_id' })
+  if (err) {
+    leiterFehler.value = err.message
+    return
   }
-  const name = `${person.vorname} ${person.nachname}`
+  const name = `${person.vorname} ${person.nachname}`.trim() || person.email || 'Leiter'
   orgPersonAuswahl.value = ''
   void logLagerAktivitaet(lagerId.value, `Leiter aus Verein hinzugefügt: ${name}`, 'leiter')
   await leiterNachAenderung()
   await ladeLetzteAenderungenListe()
+}
+
+function darfLeiterBearbeiten(l: LeiterAnmeldung) {
+  return isLeitung.value || (l.profile_id != null && l.profile_id === session.value?.user.id)
+}
+
+function leiterBearbeitenStart(l: LeiterAnmeldung) {
+  leiterBearbeitenId.value = l.id
+  leiterEditForm.value = {
+    vorname: l.vorname,
+    nachname: l.nachname,
+    geburtsdatum: l.geburtsdatum ?? '',
+    geschlecht: l.geschlecht ?? '',
+    ahv_nr: l.ahv_nr ?? '',
+    telefon: l.telefon ?? '',
+    anwesend_von: l.anwesend_von ?? '',
+    anwesend_bis: l.anwesend_bis ?? '',
+  }
+}
+
+async function leiterBearbeitenSpeichern() {
+  if (!leiterBearbeitenId.value) return
+  leiterFehler.value = ''
+  const { error: err } = await supabase.rpc('leiter_anmeldung_speichern', {
+    p_anmeldung_id: leiterBearbeitenId.value,
+    p_vorname: leiterEditForm.value.vorname,
+    p_nachname: leiterEditForm.value.nachname,
+    p_geburtsdatum: leiterEditForm.value.geburtsdatum || null,
+    p_geschlecht: leiterEditForm.value.geschlecht || null,
+    p_ahv_nr: leiterEditForm.value.ahv_nr || null,
+    p_telefon: leiterEditForm.value.telefon || null,
+    p_anwesend_von: leiterEditForm.value.anwesend_von || null,
+    p_anwesend_bis: leiterEditForm.value.anwesend_bis || null,
+  })
+  if (err) {
+    leiterFehler.value = err.message
+    return
+  }
+  leiterBearbeitenId.value = null
+  await leiterNachAenderung()
 }
 
 async function rolleZuweisen(anmeldungLeiterId: string, aemtliId: string) {
@@ -814,8 +902,32 @@ async function ladeTeam() {
 }
 
 async function teamEntfernen(teamId: string) {
-  await supabase.from('lager_leiter').delete().eq('id', teamId)
-  await ladeTeam()
+  leiterFehler.value = ''
+  const { error } = await supabase.rpc('lager_leiter_sicher_entfernen', { p_lager_leiter_id: teamId })
+  if (error) {
+    leiterFehler.value = error.message
+    if (error.message.includes('letzte Lagerleitung')) {
+      window.alert('Es muss mindestens eine Person die Rolle Lagerleitung (Lalei) behalten.')
+    }
+    return
+  }
+  await Promise.all([ladeTeam(), ladeLeiter()])
+}
+
+async function teamRolleAendern(teamId: string, rolle: string) {
+  leiterFehler.value = ''
+  const { error } = await supabase.rpc('lager_leiter_rolle_setzen', {
+    p_lager_leiter_id: teamId,
+    p_rolle: rolle,
+  })
+  if (error) {
+    leiterFehler.value = error.message
+    if (error.message.includes('mindestens eine Person')) {
+      window.alert('Es muss mindestens eine Person die Rolle Lagerleitung (Lalei) behalten.')
+    }
+    return
+  }
+  await Promise.all([ladeTeam(), ladeLeiter()])
 }
 
 // --- Einstellungen / ICS ---
@@ -1340,8 +1452,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
       </section>
 
-      <!-- Leiter -->
+      <!-- Leiter & Team -->
       <section v-if="activeTab === 'leiter'">
+        <h2>Leiter &amp; Team</h2>
         <p class="hint">
           Leiterbewerbung:
           <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
@@ -1393,7 +1506,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <thead>
             <tr>
               <th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Status</th><th>Ämtli</th>
-              <th v-if="isLeitung"></th>
+              <th v-if="isLeitung || leiterBestaetigt.some((l) => darfLeiterBearbeiten(l))">Aktionen</th>
             </tr>
           </thead>
           <tbody>
@@ -1437,13 +1550,73 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                   />
                 </div>
               </td>
-              <td v-if="isLeitung">
-                <button type="button" class="secondary klein" @click="leiterLoeschen(l)">Entfernen</button>
+              <td v-if="isLeitung || darfLeiterBearbeiten(l)">
+                <div class="inline-aktionen">
+                  <button type="button" class="secondary klein" @click="leiterBearbeitenStart(l)">Bearbeiten</button>
+                  <button v-if="isLeitung" type="button" class="secondary klein" @click="leiterLoeschen(l)">Entfernen</button>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
         <p v-else class="hint">Noch keine Leiter.</p>
+
+        <div v-if="leiterBearbeitenId" class="bearbeiten-box">
+          <h3>Angaben bearbeiten</h3>
+          <form class="inline-form" @submit.prevent="leiterBearbeitenSpeichern">
+            <input v-model="leiterEditForm.vorname" placeholder="Vorname" required />
+            <input v-model="leiterEditForm.nachname" placeholder="Nachname" required />
+            <input v-model="leiterEditForm.geburtsdatum" type="date" placeholder="Geburtsdatum" />
+            <select v-model="leiterEditForm.geschlecht">
+              <option value="">Geschlecht</option>
+              <option value="m">m</option>
+              <option value="w">w</option>
+              <option value="d">d</option>
+            </select>
+            <input v-model="leiterEditForm.ahv_nr" placeholder="AHV 756.xxxx.xxxx.xx" />
+            <input v-model="leiterEditForm.telefon" placeholder="Telefon" />
+            <input v-model="leiterEditForm.anwesend_von" type="date" placeholder="Anwesend von" />
+            <input v-model="leiterEditForm.anwesend_bis" type="date" placeholder="Anwesend bis" />
+            <button type="submit">Speichern</button>
+            <button type="button" class="secondary" @click="leiterBearbeitenId = null">Abbrechen</button>
+          </form>
+          <p class="hint">Stammdaten werden ins Profil übernommen und gelten vereinweit.</p>
+        </div>
+
+        <h3>Team &amp; Berechtigungen</h3>
+        <p class="hint">Lagerleitung (Lalei) steuert das Lager. Mindestens eine Person muss Lalei bleiben.</p>
+        <table v-if="teamListe.length" class="liste">
+          <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th v-if="isLeitung"></th></tr></thead>
+          <tbody>
+            <tr v-for="t in teamListe" :key="t.id">
+              <td>{{ t.profiles?.vorname ?? '' }} {{ t.profiles?.nachname ?? '' }}</td>
+              <td>{{ t.profiles?.email ?? '–' }}</td>
+              <td>
+                <select
+                  v-if="isLeitung"
+                  :value="t.rolle"
+                  @change="teamRolleAendern(t.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="leiter">Leiter</option>
+                  <option value="lagerleitung">Lagerleitung (Lalei)</option>
+                </select>
+                <span v-else>{{ t.rolle === 'lagerleitung' ? 'Lagerleitung' : t.rolle }}</span>
+              </td>
+              <td>{{ t.status }}</td>
+              <td v-if="isLeitung">
+                <button
+                  v-if="t.profile_id !== session?.user.id"
+                  class="secondary klein"
+                  @click="teamEntfernen(t.id)"
+                >
+                  Entfernen
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="hint">Noch niemand im Team freigeschaltet.</p>
+
         <h3>Leiter hinzufügen (aus Verein)</h3>
         <p class="hint">
           Alle bestätigten Vereinsmitglieder (mit und ohne Login) sowie manuelle Einträge aus dem
@@ -1453,11 +1626,11 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <select v-model="orgPersonAuswahl" required>
             <option value="">Person aus Verein wählen</option>
             <option
-              v-for="p in orgPersonenPool.filter((p) => !leiterListe.some((l) => l.vorname === p.vorname && l.nachname === p.nachname))"
+              v-for="p in verfuegbareOrgPersonen"
               :key="p.id"
               :value="p.id"
             >
-              {{ p.vorname }} {{ p.nachname }}{{ p.profile_id ? '' : ' (ohne Login)' }}
+              {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}{{ p.profile_id ? '' : ' · ohne Login' }}
             </option>
           </select>
           <button type="submit" :disabled="leiterSpeichern">{{ leiterSpeichern ? 'Speichere...' : 'Hinzufügen' }}</button>
@@ -1594,25 +1767,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <p v-else class="error">Nur Lagerleitung hat Zugriff auf Gemini.</p>
       </section>
 
-      <!-- Team / Berechtigungen -->
-      <section v-if="activeTab === 'team'">
-        <p class="hint">Nur freigeschaltete Teammitglieder und die Ersteller/in sehen dieses Lager.</p>
-        <table v-if="teamListe.length" class="liste">
-          <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="t in teamListe" :key="t.id">
-              <td>{{ t.profiles.vorname ?? '' }} {{ t.profiles.nachname ?? '' }}</td>
-              <td>{{ t.profiles.email }}</td>
-              <td>{{ t.rolle }}</td>
-              <td>{{ t.status }}</td>
-              <td>
-                <button v-if="isLeitung && t.profile_id !== session?.user.id" class="secondary klein" @click="teamEntfernen(t.id)">Entfernen</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
       <!-- Einstellungen -->
       <section v-if="activeTab === 'einstellungen'">
         <h3>Lager bearbeiten</h3>
@@ -1676,7 +1830,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 </template>
 
 <style scoped>
-.hint { color: var(--color-text-muted); font-size: 0.9rem; }
+.bearbeiten-box { margin: 1rem 0; padding: 0.85rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
 .lager-page { min-height: 100vh; }
 .lager-top-full {

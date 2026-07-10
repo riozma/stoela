@@ -19,6 +19,7 @@ begin
   end if;
 
   if not public.is_org_mitglied(p_organisation_id)
+    and not public.is_org_leitung(p_organisation_id)
     and not exists (
       select 1
       from lager l

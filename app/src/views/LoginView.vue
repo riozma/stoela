@@ -12,6 +12,7 @@ const email = ref('')
 const password = ref('')
 const vorname = ref('')
 const nachname = ref('')
+const geburtsdatum = ref('')
 const error = ref('')
 const info = ref('')
 const loading = ref(false)
@@ -44,7 +45,7 @@ async function submitRegister() {
   }
   loading.value = true
   try {
-    await signUpWithPassword(email.value, password.value, vorname.value, nachname.value)
+    await signUpWithPassword(email.value, password.value, vorname.value, nachname.value, geburtsdatum.value || undefined)
     info.value = 'Konto erstellt. Bitte E-Mail bestätigen und danach einloggen.'
     modus.value = 'login'
   } catch (e) {
@@ -87,6 +88,7 @@ async function withGoogle() {
     <form v-else @submit.prevent="submitRegister">
       <input v-model="vorname" type="text" required placeholder="Vorname" autocomplete="given-name" />
       <input v-model="nachname" type="text" required placeholder="Nachname" autocomplete="family-name" />
+      <input v-model="geburtsdatum" type="date" placeholder="Geburtsdatum (optional)" />
       <input v-model="email" type="email" required placeholder="deine.email@example.com" autocomplete="email" />
       <input v-model="password" type="password" required minlength="8" placeholder="Passwort (min. 8 Zeichen)" autocomplete="new-password" />
       <button type="submit" :disabled="loading">{{ loading ? 'Erstelle Konto…' : 'Konto erstellen' }}</button>

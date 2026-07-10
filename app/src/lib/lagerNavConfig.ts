@@ -4,7 +4,6 @@ export const LAGER_NAV_SECTIONS = [
   'chatbot',
   'programm',
   'quittungen',
-  'team',
   'einstellungen',
   'teilnehmer',
   'leiter',

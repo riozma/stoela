@@ -86,6 +86,9 @@ router.beforeEach(async (to) => {
   const lagerId = typeof to.params.id === 'string' ? to.params.id : null
   if (lagerId && to.name === 'lager-section') {
     const section = to.params.section as string
+    if (section === 'team') {
+      return { path: `/lager/${lagerId}/leiter` }
+    }
     if (!isNavSectionAllowed(section)) {
       return { path: `/lager/${lagerId}/bearbeitung` }
     }

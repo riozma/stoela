@@ -195,8 +195,14 @@ begin
     end if;
   end if;
 
-  insert into public.profiles (id, email, vorname, nachname)
-  values (new.id, new.email, v_vorname, v_nachname);
+  insert into public.profiles (id, email, vorname, nachname, geburtsdatum)
+  values (
+    new.id,
+    new.email,
+    v_vorname,
+    v_nachname,
+    nullif(new.raw_user_meta_data->>'geburtsdatum', '')::date
+  );
 
   return new;
 end;
