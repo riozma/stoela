@@ -36,6 +36,7 @@ async function standortHinzufuegen() {
   })
   standortForm.value = { ort: '', datum: '', notiz: '' }
   await laden()
+  await supabase.rpc('lager_termine_sync', { p_lager_id: props.lagerId })
 }
 
 async function schichtHinzufuegen() {
@@ -64,6 +65,7 @@ async function anmelden() {
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
     <h3>Standorte</h3>
+    <p class="hint">Standorte mit Datum erscheinen automatisch im Lager-Kalender.</p>
     <form class="inline-form" @submit.prevent="standortHinzufuegen">
       <input v-model="standortForm.ort" placeholder="Ort" required />
       <input v-model="standortForm.datum" type="date" />

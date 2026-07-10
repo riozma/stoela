@@ -32,8 +32,15 @@ export const KALENDER_DATUM_EDITIERBAR: LagerTerminTyp[] = ['elternabend', 'kenn
 /** @deprecated use KALENDER_NUR_EINSTELLUNGEN */
 export const KALENDER_READONLY_TYPEN: LagerTerminTyp[] = KALENDER_NUR_EINSTELLUNGEN
 
-/** Im Kalender-Tab hinzufügbar/bearbeitbar/löschbar (je Lager max. einer) */
-export const KALENDER_FORM_TYPEN: LagerTerminTyp[] = ['skiweekend', 'hoeck', 'sonstiges']
+/** Im Kalender-Tab hinzufügbar/bearbeitbar/löschbar */
+export const KALENDER_FORM_TYPEN: LagerTerminTyp[] = ['hoeck', 'sonstiges']
+
+/** Aus Ämtli synchronisiert – nicht manuell anlegen */
+export const KALENDER_AEMTLI_SYNC_TYPEN: LagerTerminTyp[] = ['skiweekend']
+
+export const KALENDER_AEMTLI_SYNC_HINTS: Partial<Record<LagerTerminTyp, string>> = {
+  skiweekend: 'Unter Ämtli Skiweekend pflegen',
+}
 
 export function kannKalenderTerminLoeschen(typ: LagerTerminTyp) {
   return KALENDER_FORM_TYPEN.includes(typ)
@@ -60,6 +67,7 @@ export const KALENDER_SINGLETON_TYPEN: LagerTerminTyp[] = [
 export const KALENDER_READONLY_HINTS: Partial<Record<LagerTerminTyp, string>> = {
   lager: 'Unter Einstellungen (Start/Ende/Ort)',
   vorweekend: 'Unter Vorweekend',
+  skiweekend: 'Unter Ämtli Skiweekend',
 }
 
 export const TERMIN_TYP_LABELS: Record<LagerTerminTyp, string> = {

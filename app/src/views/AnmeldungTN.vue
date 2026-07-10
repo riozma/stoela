@@ -51,7 +51,7 @@ onMounted(async () => {
   if (error || !data) {
     const { data: peek } = await supabase.rpc('get_lager_anmeldung_peek', { p_lager_id: lagerId })
     ladefehler.value = peek?.status
-      ? `Anmeldung nicht offen (Status: ${peek.status}).`
+      ? `Anmeldung nicht verfügbar (Status: ${peek.status}). Unter Teilnehmer «Anmeldung offen» oder «Laufend» wählen.`
       : 'Die Anmeldung für dieses Lager ist aktuell nicht verfügbar.'
     return
   }
