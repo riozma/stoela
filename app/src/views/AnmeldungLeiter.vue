@@ -34,7 +34,7 @@ const form = ref({
   telefon: '',
   anwesend_von: '',
   anwesend_bis: '',
-  provisorisch: true,
+  provisorisch: false,
 })
 
 onMounted(async () => {

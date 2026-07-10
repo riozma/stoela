@@ -168,11 +168,11 @@ const activeTab = computed<Tab>(() => {
   return (route.params.section as string) || 'dashboard'
 })
 
-const tabErlaubt = computed(() => isNavSectionAllowed(activeTab.value))
-
-const finanzenAemtliId = computed(() =>
-  aemtliListe.value.find((a) => aemtliSlug(a.name) === 'finanzen')?.id ?? '',
-)
+const tabErlaubt = computed(() => {
+  if (!isNavSectionAllowed(activeTab.value)) return false
+  if (activeTab.value === 'aemtli:finanzen' && !hatFinanzenAemtli.value) return false
+  return true
+})
 
 const programmRoute = computed(() => {
   if (route.name === 'programm-tag') return { view: 'tag' as const, date: route.params.programmTag as string }
@@ -194,10 +194,11 @@ const programmLink = computed(() => {
 const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
 const istKueche = ref(false)
 const meineAemtli = ref<Aemtli[]>([])
+const zugewieseneAemtli = ref<Aemtli[]>([])
 
-/** Nur echtes Finanzen-Ämtli – Lagerleitung allein zählt nicht als Kassier */
+/** Nur echtes Finanzen-Ämtli – Lagerleitung allein zählt nicht */
 const hatFinanzenAemtli = computed(() =>
-  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'finanzen'),
+  zugewieseneAemtli.value.some((a) => aemtliSlug(a.name) === 'finanzen'),
 )
 const hatKuecheTab = computed(() =>
   meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kueche'),
@@ -875,7 +876,7 @@ async function ladeMeineAemtli() {
     .ilike('email', email)
 
   const leiterIds = meineLeiter?.map((l) => l.id) ?? []
-  const set = new Map<string, Aemtli>()
+  const zugewiesen = new Map<string, Aemtli>()
 
   if (leiterIds.length) {
     const { data: lr } = await supabase
@@ -884,9 +885,13 @@ async function ladeMeineAemtli() {
       .in('anmeldung_leiter_id', leiterIds)
     for (const row of lr ?? []) {
       const a = row.aemtli as unknown as Aemtli
-      if (a?.id) set.set(a.id, a)
+      if (a?.id) zugewiesen.set(a.id, a)
     }
   }
+
+  zugewieseneAemtli.value = [...zugewiesen.values()].sort((a, b) => a.name.localeCompare(b.name))
+
+  const set = new Map(zugewiesen)
 
   // Lagerleitung sieht alle Vereins-Ämtli (Übersicht & Zuweisung)
   if (isLeitung.value) {
@@ -1135,6 +1140,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :active-tab="activeTab"
         :programm-link="programmLink"
         :is-leitung="isLeitung"
+        :hat-finanzen-aemtli="hatFinanzenAemtli"
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
@@ -1169,6 +1175,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :ist-anwesend="istAnwesend"
           :bearbeiten="true"
           :hat-kueche-tab="hatKuecheTab"
+          :hat-finanzen-aemtli="hatFinanzenAemtli"
           :is-leitung="isLeitung"
           :leiter-anfragen="leiterAnfragen.length"
           :letzte-aenderungen="letzteAenderungen"
@@ -1538,15 +1545,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <AemtliMotto v-else-if="aemtliKomponente(a.name) === 'motto'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliMaterial v-else-if="aemtliKomponente(a.name) === 'material'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliGeneric v-else :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
-      </section>
-
-      <!-- Finanzen (Rollout: immer erreichbar) -->
-      <section v-if="activeTab === 'aemtli:finanzen' && finanzenAemtliId">
-        <AemtliFinanzen
-          :lager-id="lagerId"
-          :aemtli-id="finanzenAemtliId"
-          :ist-kassier="hatFinanzenAemtli || isLeitung"
-        />
       </section>
 
       <!-- Quittungen (alle Leiter) -->

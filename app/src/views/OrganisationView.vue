@@ -22,7 +22,10 @@ interface VereinsMitglied {
   rolle: 'mitglied' | 'leitung' | 'admin'
   status: 'angefragt' | 'mitglied' | 'abgelehnt'
   angefragt_am: string
-  profiles:
+  vorname?: string | null
+  nachname?: string | null
+  email?: string | null
+  profiles?:
     | { vorname: string | null; nachname: string | null; email: string | null }
     | { vorname: string | null; nachname: string | null; email: string | null }[]
     | null
@@ -131,9 +134,21 @@ const vergangeneLager = computed(() => {
 })
 
 function profilVon(m: VereinsMitglied) {
+  if (m.vorname !== undefined || m.nachname !== undefined || m.email !== undefined) {
+    return {
+      vorname: m.vorname ?? null,
+      nachname: m.nachname ?? null,
+      email: m.email ?? null,
+    }
+  }
   if (!m.profiles) return null
   if (Array.isArray(m.profiles)) return m.profiles[0] ?? null
   return m.profiles
+}
+
+function zeilenName(vorname: string, nachname: string, email: string | null) {
+  const name = `${vorname} ${nachname}`.trim()
+  return name || email || 'Name nicht hinterlegt'
 }
 
 function profilName(m: VereinsMitglied): string {
@@ -225,11 +240,7 @@ async function ladeVereinDaten() {
   const orgId = orgAuswahl.value
 
   const [{ data: m }, { data: p }, { data: v }, { data: l }, { data: vor }] = await Promise.all([
-    supabase
-      .from('organisation_mitglieder')
-      .select('organisation_id, profile_id, rolle, status, angefragt_am, profiles:profile_id(vorname, nachname, email)')
-      .eq('organisation_id', orgId)
-      .order('angefragt_am', { ascending: false }),
+    supabase.rpc('list_verein_mitglieder_mit_profil', { p_organisation_id: orgId }),
     supabase
       .from('org_personen')
       .select('id, vorname, nachname, email, telefon, rolle_hinweis, profile_id')
@@ -250,7 +261,10 @@ async function ladeVereinDaten() {
       .order('jahr', { ascending: false }),
   ])
 
-  mitglieder.value = (m ?? []) as VereinsMitglied[]
+  mitglieder.value = ((m ?? []) as Omit<VereinsMitglied, 'organisation_id'>[]).map((row) => ({
+    ...row,
+    organisation_id: orgId,
+  }))
   orgPersonen.value = (p ?? []) as VereinsPerson[]
   personEdit.value = {}
   mitgliedEdit.value = {}
@@ -663,7 +677,7 @@ onMounted(async () => {
                   </td>
                 </template>
                 <template v-else>
-                  <td>{{ z.vorname }} {{ z.nachname }}</td>
+                  <td>{{ zeilenName(z.vorname, z.nachname, z.email) }}</td>
                   <td>{{ z.email ?? '–' }}</td>
                   <td>{{ z.telefon ?? '–' }}</td>
                   <td>{{ rollenLabel(z.rolle) }}</td>

@@ -44,6 +44,7 @@ const props = defineProps<{
   istAnwesend: boolean
   bearbeiten: boolean
   hatKuecheTab?: boolean
+  hatFinanzenAemtli?: boolean
   isLeitung?: boolean
   leiterAnfragen?: number
   letzteAenderungen?: LagerAenderung[]
@@ -198,7 +199,7 @@ function formatAenderungZeit(iso: string) {
       <span class="links-label">Schnellzugriff</span>
       <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
       <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
-      <button class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
+      <button v-if="hatFinanzenAemtli" class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
       <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
     </div>
 

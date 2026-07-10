@@ -13,6 +13,7 @@ const props = defineProps<{
   activeTab: string
   programmLink?: string
   isLeitung: boolean
+  hatFinanzenAemtli?: boolean
   leiterAnfragen: number
   tnCount: number
   leiterCount: number
@@ -67,7 +68,13 @@ function navKlick() {
       Programm
     </router-link>
 
-    <router-link :to="aemtliPath('Finanzen')" class="nav-link" :class="{ aktiv: isAemtliActive('Finanzen') }" @click="navKlick">
+    <router-link
+      v-if="hatFinanzenAemtli"
+      :to="aemtliPath('Finanzen')"
+      class="nav-link"
+      :class="{ aktiv: isAemtliActive('Finanzen') }"
+      @click="navKlick"
+    >
       Finanzen
     </router-link>
 
