@@ -225,7 +225,7 @@ function formatAenderungZeit(iso: string) {
 <template>
   <section class="dashboard">
     <div v-if="bearbeiten" class="schnell-links">
-      <span class="links-label">Schnellzugriff</span>
+      <span class="links-label">Schnellzugrifff</span>
       <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
       <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
       <button v-if="hatFinanzenAemtli" class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
