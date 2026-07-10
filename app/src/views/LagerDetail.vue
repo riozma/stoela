@@ -29,7 +29,8 @@ import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
 import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import AemtliFoto from '../components/lager/AemtliFoto.vue'
-import AemtliLagerleitung from '../components/lager/AemtliLagerleitung.vue'
+import KuecheMahlzeiten from '../components/lager/KuecheMahlzeiten.vue'
+import HoeckBereich from '../components/lager/HoeckBereich.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
@@ -43,7 +44,7 @@ import OeffentlicheTerminePanel from '../components/lager/OeffentlicheTerminePan
 import LagerNav from '../components/lager/LagerNav.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
-import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
+import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli, APP_ADMIN_ROLLE, istAppAdmin, darfAppAdminVergeben } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
@@ -174,7 +175,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | string
+type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | 'hoeck' | string
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -1509,6 +1510,16 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
           :ort="lager.ort"
+        />
+      </section>
+
+      <!-- Höck-Bereich -->
+      <section v-if="activeTab === 'hoeck'">
+        <HoeckBereich
+          :lager-id="lagerId"
+          :start-datum="lager.start_datum"
+          :end-datum="lager.end_datum"
+          :is-leitung="isLeitung"
         />
       </section>
 

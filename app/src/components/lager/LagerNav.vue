@@ -87,6 +87,10 @@ function navKlick() {
       Quittungen
     </router-link>
 
+    <router-link :to="sectionPath('hoeck')" class="nav-link" :class="{ aktiv: isActive('hoeck') }" @click="navKlick">
+      Höck
+    </router-link>
+
     <div class="nav-dropdown" data-label="Leute" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">
       <span class="nav-dropdown-label">Leute</span>
       <div class="nav-dropdown-menu">

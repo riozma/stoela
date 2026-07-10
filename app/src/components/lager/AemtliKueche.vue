@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
 import AemtliShell from './AemtliShell.vue'
+import KuecheMahlzeiten from './KuecheMahlzeiten.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
 type DashboardTab = 'uebersicht' | 'menuplaner' | 'gewohnheiten' | 'einkauf'
@@ -429,6 +430,13 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     </nav>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
+
+    <KuecheMahlzeiten
+      :lager-id="lagerId"
+      :start-datum="startDatum"
+      :end-datum="endDatum"
+      :is-leitung="kannEinkaufMelden"
+    />
 
     <!-- Übersicht -->
     <div v-if="ansicht === 'uebersicht'" class="dash-grid">
