@@ -1174,7 +1174,7 @@ function aemtliKomponente(name: string) {
     skiweekend: 'skiweekend', material: 'material', werbung: 'werbung',
     motto: 'motto', hauswart: 'hauswart', gelaendespielwiese: 'gelaende',
     kuchenstand: 'kuchenstand', sponsoring: 'sponsoring', verkleidung: 'verkleidung',
-    'social-media': 'werbung', publicity: 'werbung',
+    'social-media': 'werbung', publicity: 'werbung', 'app-admin': 'generic',
   }
   return map[slug] ?? 'generic'
 }
@@ -2054,10 +2054,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :ist-kassier="hatFinanzenAemtli"
         />
-        <AemtliLagerleitung
-          v-else-if="aemtliSlug(a.name) === 'lagerleitung'"
-          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name"
-        />
+        <div v-else-if="aemtliSlug(a.name) === 'lagerleitung'" class="aemtli-platzhalter">
+          <p class="hint">Das Ämtli «Lagerleitung» wurde entfernt. Die Lalei wird über die Team-Verwaltung gesteuert.</p>
+        </div>
         <AemtliFoto
           v-else-if="aemtliKomponente(a.name) === 'foto'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name"
@@ -2092,10 +2091,10 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <StatistikPanel :lager-id="lagerId" />
       </section>
 
-      <!-- Gemini (nur Lagerleitung) -->
+      <!-- Gemini (nur Lalei / App Admin) -->
       <section v-if="activeTab === 'gemini'">
         <LagerGeminiPanel
-          v-if="isLeitung"
+          v-if="isLeitung || istAppAdmin(meineAemtli.find(a => a.name === 'App Admin')?.name)"
           :lager-id="lagerId"
           :organisation-id="lager.organisation_id"
           :lager-name="lager.name"
@@ -2106,7 +2105,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :ort="lager.ort"
           @applied="geminiVorschlagAngewendet"
         />
-        <p v-else class="error">Nur Lagerleitung hat Zugriff auf Gemini.</p>
+        <p v-else class="error">Nur Lagerleitung (Lalei) oder App Admin hat Zugriff auf Gemini.</p>
       </section>
 
       <!-- Einstellungen -->
