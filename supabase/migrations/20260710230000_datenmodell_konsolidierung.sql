@@ -511,13 +511,51 @@ drop function if exists public.lager_termin_upsert_cfg(
   uuid, text, text, date, date, text, boolean, integer
 );
 
--- Einmalig bestehende JSON-Termine in die kanonische Tabelle übernehmen.
+-- Einmalig bestehende JSON-Termine direkt übernehmen. Die alte Sync-Funktion
+-- wird dabei bewusst nicht aufgerufen (sie enthielt historische Projektionen).
 do $$
 declare
   r record;
+  v_cfg jsonb;
+  v_datum date;
+  v_zeit time;
 begin
-  for r in select id from public.lager loop
-    perform public.lager_termine_sync(r.id);
+  for r in select id, elterninfo_config from public.lager loop
+    v_cfg := coalesce(r.elterninfo_config, '{}'::jsonb);
+
+    v_datum := public.cfg_text_to_datum(v_cfg->>'elternabend_datum');
+    v_zeit := nullif(v_cfg->>'elternabend_zeit', '')::time;
+    if v_datum is not null then
+      perform public.lager_termin_upsert_cfg(
+        r.id, 'elternabend', 'Elternabend', v_datum, v_datum,
+        nullif(v_cfg->>'elternabend_ort', ''), true, 20, v_zeit, null
+      );
+    end if;
+
+    v_datum := public.cfg_text_to_datum(v_cfg->>'kennenlernabend_datum');
+    v_zeit := nullif(v_cfg->>'kennenlernabend_zeit', '')::time;
+    if v_datum is not null then
+      perform public.lager_termin_upsert_cfg(
+        r.id, 'kennenlernabend', 'Kennenlernabend', v_datum, v_datum,
+        nullif(v_cfg->>'kennenlernabend_ort', ''), true, 30, v_zeit, null
+      );
+    end if;
+
+    v_datum := coalesce(
+      public.cfg_text_to_datum(v_cfg->>'diashow_datum'),
+      public.cfg_text_to_datum(v_cfg->>'lagerrueckblick_datum')
+    );
+    v_zeit := coalesce(
+      nullif(v_cfg->>'diashow_zeit', '')::time,
+      nullif(v_cfg->>'lagerrueckblick_zeit', '')::time
+    );
+    if v_datum is not null then
+      perform public.lager_termin_upsert_cfg(
+        r.id, 'diashow', 'Diashow / Lagerrückblick', v_datum, v_datum,
+        coalesce(nullif(v_cfg->>'diashow_ort', ''), nullif(v_cfg->>'lagerrueckblick_ort', '')),
+        true, 40, v_zeit, null
+      );
+    end if;
   end loop;
 end;
 $$;
@@ -645,7 +683,7 @@ begin
     select id, ort, datum, notiz
     from kuchenstand_standorte
     where lager_id = p_lager_id and datum is not null
-    order by sortierung, created_at
+    order by sortierung, id
   loop
     insert into lager_termine (
       lager_id, typ, titel, start_datum, end_datum, ort,
@@ -746,3 +784,15 @@ $$;
 grant execute on function public.lager_termin_oeffentlich_upsert(
   uuid, text, date, date, time, time, text, boolean, uuid
 ) to authenticated;
+
+-- Alle abgeleiteten Projektionen mit der neuen, eindeutigen Sync-Funktion
+-- aufbauen.
+do $$
+declare
+  r record;
+begin
+  for r in select id from public.lager loop
+    perform public.lager_termine_sync(r.id);
+  end loop;
+end;
+$$;
