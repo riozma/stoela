@@ -137,6 +137,25 @@ export function berechneLagerbeitrag(kindAnzahl: number, erstes: number, weitere
   return erstes + Math.max(0, kindAnzahl - 1) * weiteres
 }
 
+export interface TnAktivierungFehlend {
+  label: string
+  tab: 'einstellungen' | 'elterninfo' | 'kalender'
+}
+
+export function pruefeTnAnmeldungAktivierung(lager: {
+  name?: string | null
+  start_datum?: string | null
+  end_datum?: string | null
+  ort?: string | null
+}): { ok: boolean; fehlend: TnAktivierungFehlend[] } {
+  const fehlend: TnAktivierungFehlend[] = []
+  if (!lager.name?.trim()) fehlend.push({ label: 'Lagername', tab: 'einstellungen' })
+  if (!lager.start_datum?.trim()) fehlend.push({ label: 'Startdatum', tab: 'einstellungen' })
+  if (!lager.end_datum?.trim()) fehlend.push({ label: 'Enddatum', tab: 'einstellungen' })
+  if (!lager.ort?.trim()) fehlend.push({ label: 'Ort', tab: 'einstellungen' })
+  return { ok: fehlend.length === 0, fehlend }
+}
+
 export function essensLabel(ids: readonly EssensOptionId[], sonstiges: string, keine: boolean) {
   if (keine) return 'Keine besonderen Gewohnheiten'
   const teile: string[] = ESSENS_OPTIONEN.filter((o) => ids.includes(o.id)).map((o) => o.label)

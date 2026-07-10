@@ -23,14 +23,14 @@ export interface LagerTermin {
   sortierung: number
 }
 
-/** Nur in Einstellungen / Elterninfo / Vorweekend – nicht im Kalender-Tab bearbeitbar */
-export const KALENDER_READONLY_TYPEN: LagerTerminTyp[] = [
-  'lager',
-  'elternabend',
-  'kennenlernabend',
-  'diashow',
-  'vorweekend',
-]
+/** Nur unter Einstellungen / Vorweekend – kein Bearbeiten im Kalender */
+export const KALENDER_NUR_EINSTELLUNGEN: LagerTerminTyp[] = ['lager', 'vorweekend']
+
+/** Datum/Ort im Kalender änderbar, nicht löschbar */
+export const KALENDER_DATUM_EDITIERBAR: LagerTerminTyp[] = ['elternabend', 'kennenlernabend', 'diashow']
+
+/** @deprecated use KALENDER_NUR_EINSTELLUNGEN */
+export const KALENDER_READONLY_TYPEN: LagerTerminTyp[] = KALENDER_NUR_EINSTELLUNGEN
 
 /** Im Kalender-Tab hinzufügbar/bearbeitbar/löschbar (je Lager max. einer) */
 export const KALENDER_FORM_TYPEN: LagerTerminTyp[] = ['skiweekend', 'hoeck', 'sonstiges']
@@ -39,17 +39,26 @@ export function kannKalenderTerminLoeschen(typ: LagerTerminTyp) {
   return KALENDER_FORM_TYPEN.includes(typ)
 }
 
+export function kannKalenderTerminBearbeiten(typ: LagerTerminTyp) {
+  return KALENDER_FORM_TYPEN.includes(typ) || KALENDER_DATUM_EDITIERBAR.includes(typ)
+}
+
+export function istKalenderNurEinstellungen(typ: LagerTerminTyp) {
+  return KALENDER_NUR_EINSTELLUNGEN.includes(typ)
+}
+
 export const KALENDER_SINGLETON_TYPEN: LagerTerminTyp[] = [
-  ...KALENDER_READONLY_TYPEN,
+  'lager',
+  'elternabend',
+  'kennenlernabend',
+  'diashow',
+  'vorweekend',
   'skiweekend',
   'hoeck',
 ]
 
 export const KALENDER_READONLY_HINTS: Partial<Record<LagerTerminTyp, string>> = {
   lager: 'Unter Einstellungen (Start/Ende/Ort)',
-  elternabend: 'Unter Elterninfo',
-  kennenlernabend: 'Unter Elterninfo',
-  diashow: 'Unter Elterninfo',
   vorweekend: 'Unter Vorweekend',
 }
 

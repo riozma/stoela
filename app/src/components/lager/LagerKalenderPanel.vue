@@ -5,11 +5,14 @@ import { downloadIcs } from '../../lib/ics'
 import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../../lib/orgKalender'
 import {
   TERMIN_TYP_LABELS,
-  KALENDER_READONLY_TYPEN,
+  KALENDER_DATUM_EDITIERBAR,
+  KALENDER_NUR_EINSTELLUNGEN,
   KALENDER_READONLY_HINTS,
   KALENDER_FORM_TYPEN,
   KALENDER_SINGLETON_TYPEN,
   kannKalenderTerminLoeschen,
+  kannKalenderTerminBearbeiten,
+  istKalenderNurEinstellungen,
   formatTerminDatum,
   formatTerminZeit,
   type LagerTermin,
@@ -59,8 +62,12 @@ const httpsKalenderUrl = computed(() =>
   orgKalenderBereit.value ? orgKalenderHttpsUrl(props.organisationId!, kalenderToken.value) : '',
 )
 
-function istReadonly(t: LagerTermin) {
-  return KALENDER_READONLY_TYPEN.includes(t.typ)
+function istNurEinstellungen(t: LagerTermin) {
+  return istKalenderNurEinstellungen(t.typ)
+}
+
+function istDatumEditierbar(t: LagerTermin) {
+  return KALENDER_DATUM_EDITIERBAR.includes(t.typ)
 }
 
 function readonlyHinweis(t: LagerTermin) {
@@ -124,7 +131,7 @@ function resetForm() {
 }
 
 function bearbeitenStart(t: LagerTermin) {
-  if (istReadonly(t)) return
+  if (!kannKalenderTerminBearbeiten(t.typ)) return
   bearbeitenId.value = t.id
   const einTag = !t.end_datum || t.end_datum === t.start_datum
   form.value = {
@@ -137,19 +144,46 @@ function bearbeitenStart(t: LagerTermin) {
     ort: t.ort ?? '',
     beschreibung: t.beschreibung ?? '',
     oeffentlich: t.oeffentlich,
-    nurEinTag: einTagTypen.includes(t.typ) ? einTag : false,
+    nurEinTag: einTagTypen.includes(t.typ) ? einTag : true,
   }
 }
 
+const bearbeitenIstOeffentlich = computed(() =>
+  bearbeitenId.value
+    ? KALENDER_DATUM_EDITIERBAR.includes(form.value.typ)
+    : false,
+)
+
 async function speichernHandler() {
   if (!props.isLeitung) return
-  if (KALENDER_READONLY_TYPEN.includes(form.value.typ)) {
-    fehler.value = 'Dieser Termintyp wird an anderer Stelle gepflegt.'
+  if (KALENDER_NUR_EINSTELLUNGEN.includes(form.value.typ)) {
+    fehler.value = 'Dieser Termintyp wird unter Einstellungen gepflegt.'
     return
   }
 
   speichern.value = true
   fehler.value = ''
+
+  if (bearbeitenId.value && KALENDER_DATUM_EDITIERBAR.includes(form.value.typ)) {
+    const endDatum = form.value.nurEinTag || !form.value.end_datum
+      ? form.value.start_datum || null
+      : form.value.end_datum || null
+    const { error } = await supabase.rpc('lager_termin_oeffentlich_speichern', {
+      p_termin_id: bearbeitenId.value,
+      p_start_datum: form.value.start_datum,
+      p_end_datum: endDatum,
+      p_ort: form.value.ort || null,
+      p_nur_ein_tag: form.value.nurEinTag,
+    })
+    speichern.value = false
+    if (error) {
+      fehler.value = error.message
+      return
+    }
+    resetForm()
+    await laden()
+    return
+  }
 
   let zielId = bearbeitenId.value
   if (!zielId && KALENDER_SINGLETON_TYPEN.includes(form.value.typ)) {
@@ -293,7 +327,7 @@ async function linkKopieren(typ: 'https' | 'webcal') {
     </p>
 
     <ul v-if="termine.length" class="termin-liste">
-      <li v-for="t in termine" :key="t.id" class="termin-zeile" :class="{ readonly: istReadonly(t) }">
+      <li v-for="t in termine" :key="t.id" class="termin-zeile" :class="{ readonly: istNurEinstellungen(t) }">
         <span class="typ">{{ TERMIN_TYP_LABELS[t.typ] }}</span>
         <strong>{{ t.titel }}</strong>
         <span>{{ formatTerminDatum(t) }}</span>
@@ -301,8 +335,8 @@ async function linkKopieren(typ: 'https' | 'webcal') {
         <span v-if="t.ort" class="ort">{{ t.ort }}</span>
         <span v-if="t.oeffentlich" class="badge">öffentlich</span>
         <span v-if="readonlyHinweis(t)" class="readonly-hint">{{ readonlyHinweis(t) }}</span>
-        <div v-if="isLeitung && (!istReadonly(t) || kannKalenderTerminLoeschen(t.typ))" class="inline">
-          <button v-if="!istReadonly(t)" type="button" class="secondary klein" @click="bearbeitenStart(t)">Bearbeiten</button>
+        <div v-if="isLeitung && (kannKalenderTerminBearbeiten(t.typ) || kannKalenderTerminLoeschen(t.typ))" class="inline">
+          <button v-if="kannKalenderTerminBearbeiten(t.typ)" type="button" class="secondary klein" @click="bearbeitenStart(t)">Bearbeiten</button>
           <button v-if="kannKalenderTerminLoeschen(t.typ)" type="button" class="secondary klein" title="Löschen" @click="loeschen(t.id)">×</button>
         </div>
       </li>
@@ -310,19 +344,42 @@ async function linkKopieren(typ: 'https' | 'webcal') {
     <p v-else class="hint">Noch keine Termine – werden aus Lagerdaten synchronisiert.</p>
 
     <form v-if="isLeitung" class="termin-form" @submit.prevent="speichernHandler">
-      <h4>{{ bearbeitenId ? 'Termin bearbeiten' : 'Termin hinzufügen' }}</h4>
-      <label>Typ
-        <select v-model="form.typ">
-          <option v-for="typ in KALENDER_FORM_TYPEN" :key="typ" :value="typ">{{ TERMIN_TYP_LABELS[typ] }}</option>
-        </select>
-      </label>
-      <label>Titel <input v-model="form.titel" /></label>
-      <label>Start <input v-model="form.start_datum" type="date" /></label>
-      <label>Ende <input v-model="form.end_datum" type="date" /></label>
-      <label>Von <input v-model="form.start_zeit" type="time" /></label>
-      <label>Bis <input v-model="form.end_zeit" type="time" /></label>
-      <label>Ort <input v-model="form.ort" /></label>
-      <label>Beschreibung <input v-model="form.beschreibung" /></label>
+      <h4 v-if="bearbeitenIstOeffentlich">Termin-Datum anpassen</h4>
+      <h4 v-else>{{ bearbeitenId ? 'Termin bearbeiten' : 'Termin hinzufügen' }}</h4>
+      <template v-if="bearbeitenIstOeffentlich">
+        <p class="hint grid-full">{{ TERMIN_TYP_LABELS[form.typ] }} – nicht löschbar, Datum/Ort hier anpassbar</p>
+        <label>Start <input v-model="form.start_datum" type="date" required /></label>
+        <label class="checkbox grid-full">
+          <input v-model="form.nurEinTag" type="checkbox" />
+          Nur an einem Tag
+        </label>
+        <label v-if="!form.nurEinTag">Ende <input v-model="form.end_datum" type="date" /></label>
+        <label>Ort <input v-model="form.ort" /></label>
+      </template>
+      <template v-else-if="!bearbeitenId">
+        <label>Typ
+          <select v-model="form.typ">
+            <option v-for="typ in KALENDER_FORM_TYPEN" :key="typ" :value="typ">{{ TERMIN_TYP_LABELS[typ] }}</option>
+          </select>
+        </label>
+        <label>Titel <input v-model="form.titel" /></label>
+        <label>Start <input v-model="form.start_datum" type="date" /></label>
+        <label>Ende <input v-model="form.end_datum" type="date" /></label>
+        <label>Von <input v-model="form.start_zeit" type="time" /></label>
+        <label>Bis <input v-model="form.end_zeit" type="time" /></label>
+        <label>Ort <input v-model="form.ort" /></label>
+        <label>Beschreibung <input v-model="form.beschreibung" /></label>
+      </template>
+      <template v-else>
+        <label>Typ <input :value="TERMIN_TYP_LABELS[form.typ]" disabled /></label>
+        <label>Titel <input v-model="form.titel" /></label>
+        <label>Start <input v-model="form.start_datum" type="date" /></label>
+        <label>Ende <input v-model="form.end_datum" type="date" /></label>
+        <label>Von <input v-model="form.start_zeit" type="time" /></label>
+        <label>Bis <input v-model="form.end_zeit" type="time" /></label>
+        <label>Ort <input v-model="form.ort" /></label>
+        <label>Beschreibung <input v-model="form.beschreibung" /></label>
+      </template>
       <div class="inline">
         <button type="submit" :disabled="speichern">{{ speichern ? 'Speichere…' : 'Speichern' }}</button>
         <button v-if="bearbeitenId" type="button" class="secondary" @click="resetForm">Abbrechen</button>
@@ -362,6 +419,6 @@ button.klein { font-size: 0.78rem; padding: 0.2rem 0.45rem; }
 .anleitung summary { cursor: pointer; font-weight: 600; }
 .anleitung-inhalt { margin-top: 0.65rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .anleitung-inhalt ol { margin: 0.25rem 0 0.75rem 1.2rem; padding: 0; }
-.kalender-hinweis { margin-top: -0.5rem; }
+.grid-full { grid-column: 1 / -1; }
 .kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 </style>

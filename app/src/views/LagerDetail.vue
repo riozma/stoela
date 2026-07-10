@@ -13,6 +13,7 @@ import ProgrammTag from '../components/lager/ProgrammTag.vue'
 import ProgrammBlockEdit from '../components/lager/ProgrammBlockEdit.vue'
 import ProgrammImportPanel from '../components/lager/ProgrammImportPanel.vue'
 import { heuteIso, tageZwischen } from '../lib/programmUtils'
+import { pruefeTnAnmeldungAktivierung } from '../lib/tnAnmeldung'
 import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
@@ -942,6 +943,8 @@ async function teamRolleAendern(teamId: string, rolle: string) {
 
 // --- Einstellungen / ICS ---
 const statusSpeichern = ref(false)
+const statusFehler = ref('')
+const statusFehlendLinks = ref<{ label: string; tab: string }[]>([])
 
 async function vorLagerSpeichern() {
   if (!lager.value) return
@@ -950,10 +953,28 @@ async function vorLagerSpeichern() {
 }
 
 async function statusAendern(neuerStatus: string) {
+  statusFehler.value = ''
+  statusFehlendLinks.value = []
+  if (neuerStatus === 'anmeldung_offen' && lager.value) {
+    const check = pruefeTnAnmeldungAktivierung(lager.value)
+    if (!check.ok) {
+      statusFehler.value = `TN-Anmeldung kann erst aktiviert werden, wenn alle Pflichtangaben gesetzt sind.`
+      statusFehlendLinks.value = check.fehlend
+      return
+    }
+  }
   statusSpeichern.value = true
-  await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId.value)
-  if (lager.value) lager.value.status = neuerStatus
+  const { error } = await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId.value)
   statusSpeichern.value = false
+  if (error) {
+    statusFehler.value = error.message
+    return
+  }
+  if (lager.value) lager.value.status = neuerStatus
+}
+
+function zuPflichtTab(tab: string) {
+  void router.push(`/lager/${lagerId.value}/${tab}`)
 }
 
 async function lagerSpeichernFn() {
@@ -1845,6 +1866,18 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <option value="abgeschlossen">Abgeschlossen</option>
           <option value="archiviert">Archiviert</option>
         </select>
+        <p v-if="statusFehler" class="error">{{ statusFehler }}</p>
+        <ul v-if="statusFehlendLinks.length" class="status-fehlend">
+          <li v-for="f in statusFehlendLinks" :key="f.label">
+            <strong>{{ f.label }}</strong> fehlt –
+            <button type="button" class="link-like" @click="zuPflichtTab(f.tab)">
+              {{ f.tab === 'einstellungen' ? 'Zu Einstellungen' : f.tab }}
+            </button>
+          </li>
+        </ul>
+        <p v-if="lager.status === 'planung'" class="hint">
+          «Anmeldung offen» erst möglich, wenn Name, Start, Ende und Ort unter Einstellungen gesetzt sind.
+        </p>
 
         <h3>Willkommens-Link für TN</h3>
         <p class="hint">Teilnehmer/innen sehen nur diese Seite – kein Programm:</p>
@@ -1954,6 +1987,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .link-box { display: block; background: var(--color-surface-muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; word-break: break-all; margin: 0.5rem 0 1.5rem; }
 .error { color: var(--color-danger); }
+.link-like { border: none; background: transparent; color: var(--color-accent); padding: 0; cursor: pointer; text-decoration: underline; }
+.status-fehlend { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 0.88rem; }
 .danger-zone {
   margin-top: 1.5rem;
   padding: 1rem;
