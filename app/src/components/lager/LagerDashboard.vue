@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { supabase } from '../../supabaseClient'
 import LagerMap from './LagerMap.vue'
 
 interface Block {
@@ -14,6 +15,7 @@ interface Block {
 }
 
 interface Lager {
+  id?: string
   name: string
   ort: string | null
   ort_lat?: number | null
@@ -27,6 +29,15 @@ interface LagerAenderung {
   zeit: string
   beschreibung: string
   kategorie: string | null
+}
+
+interface JahresTodo {
+  id: string
+  titel: string
+  faellig_am: string | null
+  erledigt: boolean
+  kategorie: string | null
+  zustaendig: string | null
 }
 
 const props = defineProps<{
@@ -48,6 +59,53 @@ const emit = defineEmits<{
   hoeck: []
   block: [id: string]
 }>()
+
+const jahresTodos = ref<JahresTodo[]>([])
+const todosGeladen = ref(false)
+
+onMounted(async () => {
+  if (!props.lager.id) return
+  const { data } = await supabase
+    .from('lager_todos')
+    .select('id, titel, faellig_am, erledigt, kategorie, zustaendig')
+    .eq('lager_id', props.lager.id)
+    .order('faellig_am', { ascending: true, nullsFirst: false })
+    .limit(10)
+  jahresTodos.value = (data ?? []) as JahresTodo[]
+  todosGeladen.value = true
+})
+
+const faelligeFahrplanTodos = computed(() =>
+  jahresTodos.value.filter((t) => !t.erledigt && t.faellig_am && new Date(t.faellig_am) <= new Date()),
+)
+
+const naechsteFahrplanTodos = computed(() =>
+  jahresTodos.value
+    .filter((t) => !t.erledigt && (!t.faellig_am || new Date(t.faellig_am) > new Date()))
+    .slice(0, 5),
+)
+
+const fahrplanFortschritt = computed(() => {
+  const total = jahresTodos.value.length
+  if (!total) return 0
+  return Math.round((jahresTodos.value.filter((t) => t.erledigt).length / total) * 100)
+})
+
+function formatFaellig(iso: string | null) {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date(iso))
+}
+
+function zustaendigLabel(z: string | null) {
+  const labels: Record<string, string> = {
+    lagerleitung: 'Lagerleitung',
+    kueche: 'Küche',
+    finanzen: 'Finanzen',
+    programm: 'Programm',
+    alle: 'Alle',
+  }
+  return z ? labels[z] ?? z : ''
+}
 
 const jetzt = computed(() => new Date())
 
@@ -221,6 +279,30 @@ function formatAenderungZeit(iso: string) {
       <span aria-hidden="true">→</span>
     </a>
 
+    <div v-if="todosGeladen && jahresTodos.length > 0" class="fahrplan-uebersicht">
+      <div class="fahrplan-kopf">
+        <span class="links-label">Jahresfahrplan</span>
+        <button class="link-btn" @click="emit('tab', 'fahrplan')">Alle →</button>
+      </div>
+      <div class="fortschritt">
+        <div class="balken"><div class="fill" :style="{ width: fahrplanFortschritt + '%' }" /></div>
+        <span class="prozent">{{ fahrplanFortschritt }}%</span>
+      </div>
+      <ul v-if="faelligeFahrplanTodos.length" class="todo-liste">
+        <li v-for="t in faelligeFahrplanTodos.slice(0, 4)" :key="t.id" class="faellig">
+          <span class="todo-titel">{{ t.titel }}</span>
+          <span class="todo-meta">Fällig: {{ formatFaellig(t.faellig_am) }}</span>
+        </li>
+      </ul>
+      <ul v-if="naechsteFahrplanTodos.length" class="todo-liste">
+        <li v-for="t in naechsteFahrplanTodos" :key="t.id" class="optional">
+          <span class="todo-titel">{{ t.titel }}</span>
+          <span v-if="t.faellig_am" class="todo-meta">Bis {{ formatFaellig(t.faellig_am) }}</span>
+          <span v-else class="todo-meta">{{ zustaendigLabel(t.zustaendig) }}</span>
+        </li>
+      </ul>
+    </div>
+
     <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
       <span class="links-label">Letzte Änderungen</span>
       <ul>
@@ -276,4 +358,19 @@ function formatAenderungZeit(iso: string) {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+.fahrplan-uebersicht { margin-top: 0.5rem; padding: 0.75rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.fahrplan-kopf { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.link-btn { font-size: 0.78rem; color: var(--color-accent); background: none; border: none; cursor: pointer; padding: 0; }
+.link-btn:hover { text-decoration: underline; }
+.fortschritt { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.fortschritt .balken { flex: 1; height: 6px; background: var(--color-surface-muted); border-radius: var(--radius-pill); overflow: hidden; }
+.fortschritt .fill { height: 100%; background: var(--color-accent); transition: width 0.3s; }
+.fortschritt .prozent { font-size: 0.75rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.fahrplan-uebersicht .todo-liste { list-style: none; padding: 0; margin: 0; }
+.fahrplan-uebersicht .todo-liste li { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; }
+.fahrplan-uebersicht .todo-liste li:last-child { border-bottom: none; }
+.fahrplan-uebersicht .todo-liste li.faellig .todo-titel { color: var(--color-danger); font-weight: 600; }
+.fahrplan-uebersicht .todo-titel { width: 100%; }
+.fahrplan-uebersicht .todo-meta { font-size: 0.75rem; color: var(--color-text-muted); }
 </style>
