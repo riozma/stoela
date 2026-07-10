@@ -444,13 +444,28 @@ async function ladeOrgPersonenPool() {
     orgPersonenPool.value = []
     return
   }
-  const { data } = await supabase
-    .from('org_personen')
-    .select('id, profile_id, vorname, nachname, email')
-    .eq('organisation_id', orgId)
-    .eq('aktiv', true)
-    .order('nachname')
-  orgPersonenPool.value = (data ?? []) as OrgPersonPool[]
+  const { data, error } = await supabase.rpc('list_verein_personen_fuer_lager', {
+    p_organisation_id: orgId,
+  })
+  if (error) {
+    leiterFehler.value = error.message
+    orgPersonenPool.value = []
+    return
+  }
+  orgPersonenPool.value = (data ?? []).map((row: {
+    id: string
+    profile_id: string | null
+    vorname: string
+    nachname: string
+    email: string | null
+    quelle: string
+  }) => ({
+    id: row.id,
+    profile_id: row.profile_id,
+    vorname: row.vorname,
+    nachname: row.nachname,
+    email: row.email,
+  }))
 }
 
 async function ladeLeiterRollen() {
@@ -1431,8 +1446,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <p v-else class="hint">Noch keine Leiter.</p>
         <h3>Leiter hinzufügen (aus Verein)</h3>
         <p class="hint">
-          Neue Leiter zuerst im <router-link :to="`/organisation?org=${lager.organisation_id ?? ''}`">Verein erfassen</router-link>,
-          danach hier auswählen.
+          Alle bestätigten Vereinsmitglieder (mit und ohne Login) sowie manuelle Einträge aus dem
+          <router-link :to="`/organisation?org=${lager.organisation_id ?? ''}`">Verein</router-link>.
         </p>
         <form @submit.prevent="leiterHinzufuegen" class="inline-form">
           <select v-model="orgPersonAuswahl" required>

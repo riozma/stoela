@@ -15,6 +15,20 @@ supabase.auth.onAuthStateChange((_event, newSession) => {
 })
 
 export function useAuth() {
+  async function signUpWithPassword(email: string, password: string, vorname: string, nachname: string) {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          given_name: vorname.trim(),
+          family_name: nachname.trim(),
+        },
+      },
+    })
+    if (error) throw error
+  }
+
   async function signInWithPassword(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
@@ -41,6 +55,7 @@ export function useAuth() {
     session,
     ready,
     signInWithPassword,
+    signUpWithPassword,
     signInWithGoogle,
     setPassword,
     signOut,
