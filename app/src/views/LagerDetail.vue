@@ -145,6 +145,11 @@ interface TeamMitglied {
   status: string
   profiles: { email: string; vorname: string | null; nachname: string | null }
 }
+interface LeiterZeile {
+  leiter: LeiterAnmeldung
+  team: TeamMitglied | null
+  nurTeam: boolean
+}
 const navOffen = ref(false)
 const programmStatistik = ref<{ name: string; bloecke_absolut: number; bloecke_total: number; anteil_prozent: number; anwesend_tage: number | null }[]>([])
 const moerderliAktiv = ref(false)
@@ -257,6 +262,49 @@ const leiterProvisorisch = computed(() =>
   leiterListe.value.filter((l) => l.status === 'angemeldet'),
 )
 const leiterBestaetigt = computed(() => leiterListe.value.filter((l) => l.status === 'bestaetigt'))
+
+const leiterZeilen = computed<LeiterZeile[]>(() => {
+  const teamByProfile = new Map<string, TeamMitglied>()
+  for (const t of teamListe.value) teamByProfile.set(t.profile_id, t)
+
+  const zeilen: LeiterZeile[] = leiterBestaetigt.value.map((leiter) => ({
+    leiter,
+    team: leiter.profile_id ? (teamByProfile.get(leiter.profile_id) ?? null) : null,
+    nurTeam: false,
+  }))
+
+  const leiterProfileIds = new Set(
+    leiterBestaetigt.value.map((l) => l.profile_id).filter((id): id is string => !!id),
+  )
+  for (const t of teamListe.value) {
+    if (leiterProfileIds.has(t.profile_id)) continue
+    zeilen.push({
+      leiter: {
+        id: `team-only-${t.id}`,
+        profile_id: t.profile_id,
+        vorname: t.profiles?.vorname ?? '',
+        nachname: t.profiles?.nachname ?? '',
+        email: t.profiles?.email,
+        telefon: null,
+        geburtsdatum: null,
+        geschlecht: null,
+        ahv_nr: null,
+        anwesend_von: null,
+        anwesend_bis: null,
+        status: 'bestaetigt',
+      },
+      team: t,
+      nurTeam: true,
+    })
+  }
+
+  return zeilen.sort((a, b) =>
+    `${a.leiter.nachname} ${a.leiter.vorname}`.localeCompare(
+      `${b.leiter.nachname} ${b.leiter.vorname}`,
+      'de',
+    ),
+  )
+})
 
 // --- Programm ---
 const tage = computed(() => {
@@ -608,6 +656,11 @@ function darfLeiterBearbeiten(l: LeiterAnmeldung) {
 }
 
 function leiterBearbeitenStart(l: LeiterAnmeldung) {
+  if (l.id.startsWith('team-only-')) return
+  if (leiterBearbeitenId.value === l.id) {
+    leiterBearbeitenId.value = null
+    return
+  }
   leiterBearbeitenId.value = l.id
   leiterEditForm.value = {
     vorname: l.vorname,
@@ -619,6 +672,10 @@ function leiterBearbeitenStart(l: LeiterAnmeldung) {
     anwesend_von: l.anwesend_von ?? '',
     anwesend_bis: l.anwesend_bis ?? '',
   }
+}
+
+function leiterBearbeitenAbbrechen() {
+  leiterBearbeitenId.value = null
 }
 
 async function leiterBearbeitenSpeichern() {
@@ -1571,120 +1628,189 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           </div>
         </div>
 
-        <table v-if="leiterBestaetigt.length" class="liste">
+        <h3>Leiter &amp; Team</h3>
+        <p class="hint">
+          Stammdaten, Ämtli und App-Berechtigungen in einer Tabelle. Lagerleitung (Lalei) steuert das Lager –
+          mindestens eine Person muss Lalei bleiben.
+        </p>
+
+        <table v-if="leiterZeilen.length" class="liste leiter-team-tabelle">
           <thead>
             <tr>
-              <th>Name</th><th>Login</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Status</th><th>Ämtli</th>
-              <th v-if="isLeitung || leiterBestaetigt.some((l) => darfLeiterBearbeiten(l))">Aktionen</th>
+              <th>Name</th>
+              <th>E-Mail</th>
+              <th>Login</th>
+              <th>Alter</th>
+              <th>Gruppe</th>
+              <th>Anwesend</th>
+              <th>Anmeldung</th>
+              <th>App-Rolle</th>
+              <th>Zugang</th>
+              <th>Ämtli</th>
+              <th>Aktionen</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="l in leiterBestaetigt" :key="l.id">
-              <td>{{ l.vorname }} {{ l.nachname }} <span v-if="l.von_vorjahr" class="badge prov">VJ</span></td>
-              <td>
-                <span v-if="l.profile_id" class="hint">✓</span>
-                <span v-else class="login-offen">ohne Login</span>
-              </td>
-              <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
-              <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
-              <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
-              <td>{{ l.anmeldung_art === 'provisorisch' ? 'provisorisch' : 'fix' }}</td>
-              <td class="aemtli-zelle">
-                <div class="rollen-zeile">
-                  <span v-for="r in leiterRollenMap[l.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
-                    {{ r.name }}
-                    <button
-                      v-if="isLeitung"
-                      type="button"
-                      class="rollen-entfernen"
-                      title="Rolle entfernen"
-                      @click="rolleEntfernen(r.zuweisungId)"
-                    >×</button>
-                  </span>
-                  <span v-if="!(leiterRollenMap[l.id] ?? []).length" class="hint rollen-leer">–</span>
-                </div>
-                <div v-if="isLeitung" class="rollen-zuweisen">
+            <template v-for="z in leiterZeilen" :key="z.leiter.id">
+              <tr :class="{ 'zeile-bearbeiten': leiterBearbeitenId === z.leiter.id }">
+                <td>
+                  <template v-if="leiterBearbeitenId === z.leiter.id">
+                    <div class="inline-edit-gruppe">
+                      <input v-model="leiterEditForm.vorname" class="inline-inp" placeholder="Vorname" required />
+                      <input v-model="leiterEditForm.nachname" class="inline-inp" placeholder="Nachname" required />
+                    </div>
+                  </template>
+                  <template v-else>
+                    {{ z.leiter.vorname }} {{ z.leiter.nachname }}
+                    <span v-if="z.leiter.von_vorjahr" class="badge prov">VJ</span>
+                  </template>
+                </td>
+                <td>
+                  <template v-if="leiterBearbeitenId === z.leiter.id">
+                    <input v-model="leiterEditForm.telefon" class="inline-inp breit" placeholder="Telefon" />
+                  </template>
+                  <template v-else>
+                    {{ z.team?.profiles?.email ?? z.leiter.email ?? '–' }}
+                  </template>
+                </td>
+                <td>
+                  <span v-if="z.leiter.profile_id" class="hint">✓</span>
+                  <span v-else class="login-offen">ohne Login</span>
+                </td>
+                <td>
+                  <template v-if="leiterBearbeitenId === z.leiter.id">
+                    <input v-model="leiterEditForm.geburtsdatum" type="date" class="inline-inp" />
+                  </template>
+                  <template v-else>
+                    {{ berechneAlter(z.leiter.geburtsdatum) ?? '–' }}
+                  </template>
+                </td>
+                <td>
+                  <span v-if="!z.nurTeam && gruppeTagLeiter[z.leiter.id]" class="gruppen-tag">{{ gruppeTagLeiter[z.leiter.id] }}</span>
+                  <span v-else>–</span>
+                </td>
+                <td>
+                  <template v-if="leiterBearbeitenId === z.leiter.id">
+                    <div class="inline-edit-gruppe">
+                      <input v-model="leiterEditForm.anwesend_von" type="date" class="inline-inp" title="Anwesend von" />
+                      <span class="hint">–</span>
+                      <input v-model="leiterEditForm.anwesend_bis" type="date" class="inline-inp" title="Anwesend bis" />
+                    </div>
+                  </template>
+                  <template v-else>
+                    {{ z.leiter.anwesend_von ?? '–' }} – {{ z.leiter.anwesend_bis ?? '–' }}
+                  </template>
+                </td>
+                <td>
+                  <span v-if="z.nurTeam" class="hint">nur App</span>
+                  <span v-else>{{ z.leiter.anmeldung_art === 'provisorisch' ? 'provisorisch' : 'fix' }}</span>
+                </td>
+                <td>
                   <select
-                    v-if="zuweisbareAemtli(l.id).length"
-                    @change="rolleZuweisen(l.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
+                    v-if="isLeitung && z.team"
+                    :value="z.team.rolle"
+                    @change="teamRolleAendern(z.team!.id, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option value="">+ Ämtli</option>
-                    <option v-for="a in zuweisbareAemtli(l.id)" :key="a.id" :value="a.id">{{ a.name }}</option>
+                    <option value="leiter">Leiter</option>
+                    <option value="lagerleitung">Lagerleitung (Lalei)</option>
                   </select>
-                  <input
-                    v-model="neueRolleName[l.id]"
-                    placeholder="neues Ämtli..."
-                    class="neue-rolle-input"
-                    @keyup.enter="neueRolleErstellen(l.id)"
-                  />
-                </div>
-              </td>
-              <td v-if="isLeitung || darfLeiterBearbeiten(l)">
-                <div class="inline-aktionen">
-                  <button type="button" class="secondary klein" @click="leiterBearbeitenStart(l)">Bearbeiten</button>
-                  <button v-if="isLeitung" type="button" class="secondary klein" @click="leiterLoeschen(l)">Entfernen</button>
-                </div>
-              </td>
-            </tr>
+                  <span v-else-if="z.team">{{ z.team.rolle === 'lagerleitung' ? 'Lagerleitung' : 'Leiter' }}</span>
+                  <span v-else class="hint">–</span>
+                </td>
+                <td>{{ z.team?.status ?? '–' }}</td>
+                <td class="aemtli-zelle">
+                  <template v-if="!z.nurTeam">
+                    <div class="rollen-zeile">
+                      <span v-for="r in leiterRollenMap[z.leiter.id] ?? []" :key="r.zuweisungId" class="rollen-pill">
+                        {{ r.name }}
+                        <button
+                          v-if="isLeitung"
+                          type="button"
+                          class="rollen-entfernen"
+                          title="Rolle entfernen"
+                          @click="rolleEntfernen(r.zuweisungId)"
+                        >×</button>
+                      </span>
+                      <span v-if="!(leiterRollenMap[z.leiter.id] ?? []).length" class="hint rollen-leer">–</span>
+                    </div>
+                    <div v-if="isLeitung" class="rollen-zuweisen">
+                      <select
+                        v-if="zuweisbareAemtli(z.leiter.id).length"
+                        @change="rolleZuweisen(z.leiter.id, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
+                      >
+                        <option value="">+ Ämtli</option>
+                        <option v-for="a in zuweisbareAemtli(z.leiter.id)" :key="a.id" :value="a.id">{{ a.name }}</option>
+                      </select>
+                      <input
+                        v-model="neueRolleName[z.leiter.id]"
+                        placeholder="neues Ämtli..."
+                        class="neue-rolle-input"
+                        @keyup.enter="neueRolleErstellen(z.leiter.id)"
+                      />
+                    </div>
+                  </template>
+                  <span v-else class="hint">–</span>
+                </td>
+                <td>
+                  <div class="inline-aktionen">
+                    <template v-if="leiterBearbeitenId === z.leiter.id">
+                      <button type="button" class="klein" @click="leiterBearbeitenSpeichern">Speichern</button>
+                      <button type="button" class="secondary klein" @click="leiterBearbeitenAbbrechen">Abbrechen</button>
+                    </template>
+                    <template v-else-if="isLeitung || darfLeiterBearbeiten(z.leiter)">
+                      <button
+                        v-if="!z.nurTeam && darfLeiterBearbeiten(z.leiter)"
+                        type="button"
+                        class="secondary klein"
+                        @click="leiterBearbeitenStart(z.leiter)"
+                      >
+                        Bearbeiten
+                      </button>
+                      <button
+                        v-if="isLeitung && !z.nurTeam"
+                        type="button"
+                        class="secondary klein"
+                        @click="leiterLoeschen(z.leiter)"
+                      >
+                        Entfernen
+                      </button>
+                      <button
+                        v-if="isLeitung && z.team && z.team.profile_id !== session?.user.id"
+                        type="button"
+                        class="secondary klein"
+                        @click="teamEntfernen(z.team!.id)"
+                      >
+                        App entfernen
+                      </button>
+                    </template>
+                    <span v-else class="hint">–</span>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="leiterBearbeitenId === z.leiter.id" class="zeile-bearbeiten-extra">
+                <td colspan="11">
+                  <div class="inline-edit-extra">
+                    <label>
+                      Geschlecht
+                      <select v-model="leiterEditForm.geschlecht">
+                        <option value="">–</option>
+                        <option value="m">m</option>
+                        <option value="w">w</option>
+                        <option value="d">d</option>
+                      </select>
+                    </label>
+                    <label>
+                      AHV
+                      <input v-model="leiterEditForm.ahv_nr" placeholder="756.xxxx.xxxx.xx" />
+                    </label>
+                    <span class="hint">Stammdaten werden ins Profil übernommen und gelten vereinweit.</span>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
         <p v-else class="hint">Noch keine Leiter.</p>
-
-        <div v-if="leiterBearbeitenId" class="bearbeiten-box">
-          <h3>Angaben bearbeiten</h3>
-          <form class="inline-form" @submit.prevent="leiterBearbeitenSpeichern">
-            <input v-model="leiterEditForm.vorname" placeholder="Vorname" required />
-            <input v-model="leiterEditForm.nachname" placeholder="Nachname" required />
-            <input v-model="leiterEditForm.geburtsdatum" type="date" placeholder="Geburtsdatum" />
-            <select v-model="leiterEditForm.geschlecht">
-              <option value="">Geschlecht</option>
-              <option value="m">m</option>
-              <option value="w">w</option>
-              <option value="d">d</option>
-            </select>
-            <input v-model="leiterEditForm.ahv_nr" placeholder="AHV 756.xxxx.xxxx.xx" />
-            <input v-model="leiterEditForm.telefon" placeholder="Telefon" />
-            <input v-model="leiterEditForm.anwesend_von" type="date" placeholder="Anwesend von" />
-            <input v-model="leiterEditForm.anwesend_bis" type="date" placeholder="Anwesend bis" />
-            <button type="submit">Speichern</button>
-            <button type="button" class="secondary" @click="leiterBearbeitenId = null">Abbrechen</button>
-          </form>
-          <p class="hint">Stammdaten werden ins Profil übernommen und gelten vereinweit.</p>
-        </div>
-
-        <h3>Team &amp; Berechtigungen</h3>
-        <p class="hint">Lagerleitung (Lalei) steuert das Lager. Mindestens eine Person muss Lalei bleiben.</p>
-        <table v-if="teamListe.length" class="liste">
-          <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th v-if="isLeitung"></th></tr></thead>
-          <tbody>
-            <tr v-for="t in teamListe" :key="t.id">
-              <td>{{ t.profiles?.vorname ?? '' }} {{ t.profiles?.nachname ?? '' }}</td>
-              <td>{{ t.profiles?.email ?? '–' }}</td>
-              <td>
-                <select
-                  v-if="isLeitung"
-                  :value="t.rolle"
-                  @change="teamRolleAendern(t.id, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="leiter">Leiter</option>
-                  <option value="lagerleitung">Lagerleitung (Lalei)</option>
-                </select>
-                <span v-else>{{ t.rolle === 'lagerleitung' ? 'Lagerleitung' : t.rolle }}</span>
-              </td>
-              <td>{{ t.status }}</td>
-              <td v-if="isLeitung">
-                <button
-                  v-if="t.profile_id !== session?.user.id"
-                  class="secondary klein"
-                  @click="teamEntfernen(t.id)"
-                >
-                  Entfernen
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="hint">Noch niemand im Team freigeschaltet.</p>
 
         <h3>Leiter hinzufügen (aus Verein)</h3>
         <p class="hint">
@@ -1912,6 +2038,16 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
 <style scoped>
 .bearbeiten-box { margin: 1rem 0; padding: 0.85rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.leiter-team-tabelle { font-size: 0.82rem; }
+.leiter-team-tabelle th, .leiter-team-tabelle td { padding: 0.4rem 0.5rem; vertical-align: top; }
+.zeile-bearbeiten { background: var(--color-surface-muted); }
+.zeile-bearbeiten-extra td { padding-top: 0; border-bottom: 1px solid var(--color-border); }
+.inline-edit-gruppe { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.inline-inp { font-size: 0.82rem; padding: 0.2rem 0.35rem; max-width: 7.5rem; }
+.inline-inp.breit { max-width: 10rem; }
+.inline-edit-extra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.65rem 1rem; padding: 0.25rem 0 0.5rem; }
+.inline-edit-extra label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; color: var(--color-text-muted); }
+.inline-aktionen { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .geschuetzt-hinweis { padding: 0.6rem 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md); margin-bottom: 1rem; }
 .lager-page { min-height: 100vh; }
 .lager-top-full {
