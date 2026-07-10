@@ -8,6 +8,7 @@ import {
   KALENDER_READONLY_HINTS,
   KALENDER_FORM_TYPEN,
   KALENDER_SINGLETON_TYPEN,
+  kannKalenderTerminLoeschen,
   formatTerminDatum,
   formatTerminZeit,
   type LagerTermin,
@@ -191,7 +192,7 @@ async function speichernHandler() {
 async function loeschen(id: string) {
   if (!props.isLeitung || !window.confirm('Termin löschen?')) return
   const t = termine.value.find((x) => x.id === id)
-  if (t && istReadonly(t)) return
+  if (!t || !kannKalenderTerminLoeschen(t.typ)) return
   await supabase.from('lager_termine').delete().eq('id', id)
   await laden()
 }
@@ -228,7 +229,8 @@ async function linkKopieren(text: string) {
         <h3>Lager-Kalender</h3>
         <p class="hint">
           Termine dieses Lagers. Der Abo-Link gilt <strong>vereinsweit</strong> – alle Lager laden auf dieselbe URL.
-          Lager-Daten nur unter Einstellungen, Elternabend/Kennenlernabend/Diashow unter Elterninfo.
+          Der Lager-Termin ist mit den Einstellungen verknüpft (ein Eintrag, kein Duplikat).
+          Elternabend/Kennenlernabend/Diashow unter Elterninfo. Skiweekend, Höck und Sonstiges hier löschbar.
         </p>
       </div>
       <div class="aktionen">
@@ -279,9 +281,9 @@ async function linkKopieren(text: string) {
         <span v-if="t.ort" class="ort">{{ t.ort }}</span>
         <span v-if="t.oeffentlich" class="badge">öffentlich</span>
         <span v-if="readonlyHinweis(t)" class="readonly-hint">{{ readonlyHinweis(t) }}</span>
-        <div v-if="isLeitung && !istReadonly(t)" class="inline">
-          <button type="button" class="secondary klein" @click="bearbeitenStart(t)">Bearbeiten</button>
-          <button v-if="t.typ === 'sonstiges' || t.typ === 'hoeck'" type="button" class="secondary klein" @click="loeschen(t.id)">×</button>
+        <div v-if="isLeitung && (!istReadonly(t) || kannKalenderTerminLoeschen(t.typ))" class="inline">
+          <button v-if="!istReadonly(t)" type="button" class="secondary klein" @click="bearbeitenStart(t)">Bearbeiten</button>
+          <button v-if="kannKalenderTerminLoeschen(t.typ)" type="button" class="secondary klein" title="Löschen" @click="loeschen(t.id)">×</button>
         </div>
       </li>
     </ul>

@@ -32,8 +32,12 @@ export const KALENDER_READONLY_TYPEN: LagerTerminTyp[] = [
   'vorweekend',
 ]
 
-/** Im Kalender-Tab hinzufügbar/bearbeitbar (je Lager max. einer) */
+/** Im Kalender-Tab hinzufügbar/bearbeitbar/löschbar (je Lager max. einer) */
 export const KALENDER_FORM_TYPEN: LagerTerminTyp[] = ['skiweekend', 'hoeck', 'sonstiges']
+
+export function kannKalenderTerminLoeschen(typ: LagerTerminTyp) {
+  return KALENDER_FORM_TYPEN.includes(typ)
+}
 
 export const KALENDER_SINGLETON_TYPEN: LagerTerminTyp[] = [
   ...KALENDER_READONLY_TYPEN,
