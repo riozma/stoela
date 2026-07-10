@@ -12,6 +12,7 @@ const props = defineProps<{
 }>()
 
 const organisationId = ref<string | null>(null)
+const lagerJahr = ref(new Date().getFullYear())
 const feldKeys = ref<string[]>([])
 const feldWerte = ref<Record<string, string>>({})
 
@@ -47,18 +48,29 @@ async function laden() {
   const orgId = await ladeOrgId()
   organisationId.value = orgId
   if (!orgId) return
-  const { data: meta } = await supabase
-    .from('org_aemtli_meta')
-    .select('extra_felder')
-    .eq('organisation_id', orgId)
-    .eq('aemtli_id', props.aemtliId)
-    .maybeSingle()
+  const [{ data: meta }, { data: jahresDaten }, { data: lagerDaten }] = await Promise.all([
+    supabase
+      .from('org_aemtli_meta')
+      .select('extra_felder')
+      .eq('organisation_id', orgId)
+      .eq('aemtli_id', props.aemtliId)
+      .maybeSingle(),
+    supabase
+      .from('lager_aemtli_daten')
+      .select('werte, bezugsjahr')
+      .eq('lager_id', props.lagerId)
+      .eq('aemtli_id', props.aemtliId)
+      .maybeSingle(),
+    supabase.from('lager').select('jahr').eq('id', props.lagerId).single(),
+  ])
   if (!meta) return
   const raw = (meta.extra_felder as Record<string, unknown>) ?? {}
+  const jahresWerte = (jahresDaten?.werte as Record<string, unknown>) ?? {}
+  lagerJahr.value = jahresDaten?.bezugsjahr ?? lagerDaten?.jahr ?? lagerJahr.value
   feldKeys.value = Array.isArray(raw.felder) ? (raw.felder as string[]) : []
   const werte: Record<string, string> = {}
   for (const key of [...feldKeys.value, 'learnings']) {
-    werte[key] = typeof raw[key] === 'string' ? raw[key] : ''
+    werte[key] = typeof jahresWerte[key] === 'string' ? jahresWerte[key] : ''
   }
   feldWerte.value = werte
 }
@@ -68,15 +80,20 @@ onMounted(laden)
 async function speichernExtra() {
   const orgId = organisationId.value
   if (!orgId) return
-  const payload: Record<string, unknown> = { felder: feldKeys.value }
+  const payload: Record<string, unknown> = {}
   for (const key of sichtbareFelder.value) {
     payload[key] = feldWerte.value[key] ?? ''
   }
-  await supabase
-    .from('org_aemtli_meta')
-    .update({ extra_felder: payload })
-    .eq('organisation_id', orgId)
-    .eq('aemtli_id', props.aemtliId)
+  await supabase.from('lager_aemtli_daten').upsert(
+    {
+      lager_id: props.lagerId,
+      aemtli_id: props.aemtliId,
+      bezugsjahr: lagerJahr.value,
+      werte: payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'lager_id,aemtli_id' },
+  )
 }
 </script>
 
@@ -91,7 +108,8 @@ async function speichernExtra() {
     />
 
     <form class="extra-form" @submit.prevent="speichernExtra">
-      <h3>Notizen &amp; Planung</h3>
+      <h3>Notizen &amp; Planung {{ lagerJahr }}</h3>
+      <p class="jahres-hinweis">Diese Angaben gehören nur zum Lagerjahr {{ lagerJahr }}.</p>
       <label v-for="key in sichtbareFelder" :key="key">
         {{ FELD_LABELS[key] ?? key }}
         <textarea v-model="feldWerte[key]" rows="key === 'learnings' ? 4 : 3" />
@@ -104,5 +122,6 @@ async function speichernExtra() {
 <style scoped>
 .extra-form { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.65rem; }
 .extra-form h3 { margin: 0; font-size: 0.95rem; }
+.jahres-hinweis { margin: 0; color: var(--color-text-muted); font-size: 0.78rem; }
 .extra-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
 </style>

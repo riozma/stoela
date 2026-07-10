@@ -493,7 +493,7 @@ function leiterCsvHerunterladen() {
 
 async function ladeLeiter() {
   const { data } = await supabase
-    .from('anmeldungen_leiter')
+    .from('leiter_teilnahmen')
     .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr, essensgewohnheiten')
     .eq('lager_id', lagerId.value)
     .order('nachname')

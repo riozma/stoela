@@ -34,14 +34,21 @@ function istPlatzhalter(liste: AemtliTodo[]) {
 // aus der hartcodierten Fallback-Liste befüllt, ist danach aber frei
 // bearbeitbar und wirkt für alle künftigen Lagerjahre.
 async function ladeOrgUndVorlage(): Promise<AemtliTodo[]> {
-  const { data: org } = await supabase.from('organisation').select('id').eq('slug', 'stoeckli').maybeSingle()
-  organisationId.value = org?.id ?? null
+  const { data: lager } = await supabase
+    .from('lager')
+    .select('organisation_id')
+    .eq('id', props.lagerId)
+    .single()
+  organisationId.value = lager?.organisation_id ?? null
 
-  const { data: meta } = await supabase
-    .from('org_aemtli_meta')
-    .select('default_checkliste')
-    .eq('aemtli_id', props.aemtliId)
-    .maybeSingle()
+  const { data: meta } = organisationId.value
+    ? await supabase
+        .from('org_aemtli_meta')
+        .select('default_checkliste')
+        .eq('organisation_id', organisationId.value)
+        .eq('aemtli_id', props.aemtliId)
+        .maybeSingle()
+    : { data: null }
 
   const bestehende = (meta?.default_checkliste as AemtliTodo[]) ?? []
   if (bestehende.length) {

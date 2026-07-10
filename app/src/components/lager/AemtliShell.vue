@@ -47,7 +47,7 @@ const entwurf = ref({
 
 async function laden() {
   const orgId = await ladeOrgId()
-  const [{ data: meta }, { data: todos }] = await Promise.all([
+  const [{ data: meta }, { data: todosById }] = await Promise.all([
     supabase
       .from('org_aemtli_meta')
       .select('beschreibung, hinweise_md, links, dokumente_links, funktion_hinweis, funktion_position')
@@ -58,11 +58,24 @@ async function laden() {
       .from('lager_todos')
       .select('titel, faellig_am, erledigt')
       .eq('lager_id', props.lagerId)
-      .eq('aemtli_name', props.aemtliName)
+      .eq('aemtli_id', props.aemtliId)
       .eq('erledigt', false)
       .order('faellig_am', { ascending: true, nullsFirst: false })
       .limit(1),
   ])
+  let todos = todosById
+  if (!todos?.length) {
+    const { data: fallbackTodos } = await supabase
+      .from('lager_todos')
+      .select('titel, faellig_am, erledigt')
+      .eq('lager_id', props.lagerId)
+      .is('aemtli_id', null)
+      .eq('aemtli_name', props.aemtliName)
+      .eq('erledigt', false)
+      .order('faellig_am', { ascending: true, nullsFirst: false })
+      .limit(1)
+    todos = fallbackTodos
+  }
   organisationId.value = orgId
   if (meta) {
     beschreibung.value = meta.beschreibung ?? ''

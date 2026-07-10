@@ -46,9 +46,24 @@ const felder = ref({
 })
 
 async function laden() {
-  const [{ data: org }, { data: lagerCfg }] = await Promise.all([
-    supabase.from('org_elterninfo_vorlage').select('felder, packliste').maybeSingle(),
-    supabase.from('lager').select('elterninfo_config, telefon_zeiten').eq('id', props.lagerId).single(),
+  const { data: lagerCfg } = await supabase
+    .from('lager')
+    .select('organisation_id, elterninfo_config, telefon_zeiten')
+    .eq('id', props.lagerId)
+    .single()
+  const [{ data: org }, { data: termine }] = await Promise.all([
+    lagerCfg?.organisation_id
+      ? supabase
+          .from('org_elterninfo_vorlage')
+          .select('felder, packliste')
+          .eq('organisation_id', lagerCfg.organisation_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from('lager_termine')
+      .select('typ, start_datum, start_zeit, ort')
+      .eq('lager_id', props.lagerId)
+      .in('typ', ['elternabend', 'kennenlernabend', 'diashow']),
   ])
   vorlage.value = (org?.felder as Record<string, unknown>) ?? {}
   packliste.value = (org?.packliste as string[]) ?? []
@@ -60,12 +75,44 @@ async function laden() {
   if (!felder.value.lageradresse && props.ort) felder.value.lageradresse = props.ort
   if (!felder.value.lagerart && vorlage.value.lagerart) felder.value.lagerart = String(vorlage.value.lagerart)
   if (!felder.value.durchgefuehrt_von && vorlage.value.durchgefuehrt_von) felder.value.durchgefuehrt_von = String(vorlage.value.durchgefuehrt_von)
+
+  for (const termin of termine ?? []) {
+    const prefix = termin.typ === 'diashow' ? 'diashow' : termin.typ
+    const f = felder.value as Record<string, string | number>
+    f[`${prefix}_datum`] = termin.start_datum ?? ''
+    f[`${prefix}_zeit`] = termin.start_zeit?.slice(0, 5) ?? ''
+    f[`${prefix}_ort`] = termin.ort ?? ''
+  }
 }
 
 onMounted(laden)
 
 async function speichern() {
-  await supabase.from('lager').update({ elterninfo_config: felder.value }).eq('id', props.lagerId)
+  const config = { ...felder.value } as Record<string, string | number>
+  for (const key of [
+    'elternabend_datum', 'elternabend_zeit', 'elternabend_ort',
+    'kennenlernabend_datum', 'kennenlernabend_zeit', 'kennenlernabend_ort',
+    'diashow_datum', 'diashow_zeit', 'diashow_ort',
+  ]) {
+    delete config[key]
+  }
+  await supabase.from('lager').update({ elterninfo_config: config }).eq('id', props.lagerId)
+
+  for (const typ of ['elternabend', 'kennenlernabend', 'diashow'] as const) {
+    const datum = felder.value[`${typ}_datum`]
+    if (!datum) continue
+    await supabase.rpc('lager_termin_oeffentlich_upsert', {
+      p_lager_id: props.lagerId,
+      p_typ: typ,
+      p_start_datum: datum,
+      p_end_datum: datum,
+      p_start_zeit: felder.value[`${typ}_zeit`] || null,
+      p_end_zeit: null,
+      p_ort: felder.value[`${typ}_ort`] || null,
+      p_nur_ein_tag: true,
+      p_termin_id: null,
+    })
+  }
   await supabase.rpc('lager_termine_sync', { p_lager_id: props.lagerId })
 }
 
