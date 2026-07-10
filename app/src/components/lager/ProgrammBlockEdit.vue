@@ -3,18 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../../supabaseClient'
 import { CODE_LABELS, formatProgrammTag, type BlockCode } from '../../lib/programmUtils'
-import { ABREISE_FELDER, ANREISE_FELDER, BLOCK_TYP_LABELS } from '../../lib/workflowUtils'
-import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../../lib/nameMatching'
 
-interface AbschnittZeile {
-  zeit: string
-  programm: string
-  verantwortlich: string
-}
-
-interface MaterialZeile {
-  name: string
-  wer: string
+interface BlockForm {
+  code: BlockCode
+  nummer: string
+  titel: string
+  tag: string
+  startZeit: string
+  endZeit: string
+  ist_essen: boolean
 }
 
 const props = defineProps<{
@@ -28,30 +25,20 @@ const emit = defineEmits<{ saved: [] }>()
 const route = useRoute()
 const router = useRouter()
 const istNeu = computed(() => !props.blockId || route.name === 'programm-neu')
-const laden = ref(true)
+const laden = ref(!istNeu.value)
 const speichern = ref(false)
 const fehler = ref('')
 const loeschenLade = ref(false)
 
-const form = ref({
-  blockTyp: 'programm' as 'programm' | 'anreise' | 'abreise' | 'vorweekend',
-  code: 'LP' as BlockCode,
+const form = ref<BlockForm>({
+  code: 'LP',
   nummer: '',
   titel: '',
   tag: '',
   startZeit: '09:00',
   endZeit: '10:00',
-  ort: '',
-  verantwortlich: '',
-  geschichte: '',
-  sicherheitsueberlegungen: '',
-  notizen: '',
+  ist_essen: false,
 })
-
-const sonderfelder = ref<Record<string, string>>({})
-
-const abschnitte = ref<AbschnittZeile[]>([])
-const material = ref<MaterialZeile[]>([])
 
 function tagAusRoute(): string {
   const q = route.query.tag
@@ -59,250 +46,191 @@ function tagAusRoute(): string {
   return props.defaultTag ?? ''
 }
 
-function isoZuTimeInput(iso: string | null): string {
-  if (!iso) return '09:00'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) {
-    const m = iso.match(/(\d{1,2}):(\d{2})/)
-    if (m) return `${m[1].padStart(2, '0')}:${m[2]}`
-    return '09:00'
-  }
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+onMounted(async () => {
+  if (tagAusRoute()) form.value.tag = tagAusRoute()
 
-function tagUndZeitZuIso(tag: string, zeit: string): string | null {
-  if (!tag || !zeit) return null
-  return `${tag}T${zeit}:00`
-}
-
-function abschnitteAusJson(rows: ProgrammabschnittMitZuordnung[]): AbschnittZeile[] {
-  return rows.map((a) => ({
-    zeit: a.zeit ?? '',
-    programm: a.programm ?? '',
-    verantwortlich: a.verantwortlich ?? '',
-  }))
-}
-
-function materialAusJson(rows: MaterialMitZuordnung[]): MaterialZeile[] {
-  return rows.map((m) => ({ name: m.name ?? '', wer: m.wer ?? '' }))
-}
-
-async function ladenBlock() {
-  laden.value = true
-  fehler.value = ''
-  if (istNeu.value) {
-    form.value.tag = tagAusRoute()
-    const qTyp = route.query.typ
-    if (qTyp === 'anreise' || qTyp === 'abreise') {
-      form.value.blockTyp = qTyp
-      form.value.titel = qTyp === 'anreise' ? 'Anreise' : 'Abreise'
-      form.value.code = 'ES'
+  if (props.blockId && !istNeu.value) {
+    const { data } = await supabase
+      .from('programm_bloecke')
+      .select('*')
+      .eq('id', props.blockId)
+      .single()
+    if (data) {
+      form.value = {
+        code: data.code,
+        nummer: data.nummer ?? '',
+        titel: data.titel ?? '',
+        tag: data.tag ?? '',
+        startZeit: data.start_zeit ? data.start_zeit.slice(11, 16) : '09:00',
+        endZeit: data.end_zeit ? data.end_zeit.slice(11, 16) : '10:00',
+        ist_essen: data.ist_essen ?? false,
+      }
     }
-    abschnitte.value = [{ zeit: '', programm: '', verantwortlich: '' }]
-    material.value = [{ name: '', wer: '' }]
-    laden.value = false
-    return
   }
-  const { data, error } = await supabase
-    .from('programmbloecke')
-    .select('*')
-    .eq('id', props.blockId!)
-    .eq('lager_id', props.lagerId)
-    .single()
-  if (error || !data) {
-    fehler.value = error?.message ?? 'Block nicht gefunden.'
-    laden.value = false
-    return
-  }
-  form.value = {
-    blockTyp: (data.block_typ as typeof form.value.blockTyp) ?? 'programm',
-    code: data.code as BlockCode,
-    nummer: data.nummer ?? '',
-    titel: data.titel ?? '',
-    tag: data.tag ?? '',
-    startZeit: isoZuTimeInput(data.start_zeit),
-    endZeit: isoZuTimeInput(data.end_zeit),
-    ort: data.ort ?? '',
-    verantwortlich: data.verantwortlich ?? '',
-    geschichte: data.geschichte ?? '',
-    sicherheitsueberlegungen: data.sicherheitsueberlegungen ?? '',
-    notizen: data.notizen ?? '',
-  }
-  sonderfelder.value = { ...((data.sonderfelder as Record<string, string>) ?? {}) }
-  abschnitte.value = abschnitteAusJson((data.programmabschnitt as ProgrammabschnittMitZuordnung[]) ?? [])
-  if (!abschnitte.value.length) abschnitte.value = [{ zeit: '', programm: '', verantwortlich: '' }]
-  material.value = materialAusJson((data.material as MaterialMitZuordnung[]) ?? [])
-  if (!material.value.length) material.value = [{ name: '', wer: '' }]
   laden.value = false
+})
+
+function codeClass(code: BlockCode) {
+  return `code-${code}`
 }
 
-onMounted(ladenBlock)
-
-function abschnittHinzufuegen() {
-  abschnitte.value.push({ zeit: '', programm: '', verantwortlich: '' })
-}
-
-function materialHinzufuegen() {
-  material.value.push({ name: '', wer: '' })
+function zurueck() {
+  if (form.value.tag) {
+    router.push(`/lager/${props.lagerId}/programm/tag/${form.value.tag}`)
+  } else {
+    router.push(`/lager/${props.lagerId}/programm`)
+  }
 }
 
 async function speichernBlock() {
   fehler.value = ''
-  if (!form.value.titel.trim()) {
-    fehler.value = 'Titel ist Pflicht.'
-    return
-  }
   speichern.value = true
+
+  const tag = form.value.tag
+  const startIso = tag ? `${tag}T${form.value.startZeit}:00` : null
+  const endIso = tag ? `${tag}T${form.value.endZeit}:00` : null
+
   const payload = {
-    lager_id: props.lagerId,
-    block_typ: form.value.blockTyp,
     code: form.value.code,
     nummer: form.value.nummer || null,
-    titel: form.value.titel.trim(),
-    tag: form.value.tag || null,
-    start_zeit: tagUndZeitZuIso(form.value.tag, form.value.startZeit),
-    end_zeit: tagUndZeitZuIso(form.value.tag, form.value.endZeit),
-    ort: form.value.ort || null,
-    verantwortlich: form.value.verantwortlich || null,
-    geschichte: form.value.geschichte || null,
-    sicherheitsueberlegungen: form.value.sicherheitsueberlegungen || null,
-    notizen: form.value.notizen || null,
-    sonderfelder: sonderfelder.value,
-    programmabschnitt: abschnitte.value
-      .filter((a) => a.programm.trim())
-      .map((a) => ({ zeit: a.zeit || null, programm: a.programm, verantwortlich: a.verantwortlich || null })),
-    material: material.value
-      .filter((m) => m.name.trim())
-      .map((m) => ({ name: m.name, wer: m.wer || null })),
-    quelle: 'manuell' as const,
+    titel: form.value.titel,
+    tag: tag || null,
+    start_zeit: startIso,
+    end_zeit: endIso,
+    ist_essen: form.value.ist_essen,
   }
 
+  let err: any = null
   if (istNeu.value) {
-    const { data, error } = await supabase.from('programmbloecke').insert(payload).select('id').single()
-    speichern.value = false
-    if (error) { fehler.value = error.message; return }
-    emit('saved')
-    await router.push(`/lager/${props.lagerId}/programm/block/${data.id}`)
-    return
+    const { error } = await supabase.from('programm_bloecke').insert({ ...payload, lager_id: props.lagerId })
+    err = error
+  } else if (props.blockId) {
+    const { error } = await supabase.from('programm_bloecke').update(payload).eq('id', props.blockId)
+    err = error
   }
 
-  const { error } = await supabase.from('programmbloecke').update(payload).eq('id', props.blockId!)
   speichern.value = false
-  if (error) { fehler.value = error.message; return }
+  if (err) { fehler.value = err.message; return }
   emit('saved')
+  zurueck()
 }
 
-async function blockLoeschen() {
-  if (istNeu.value || !props.blockId) return
-  if (!confirm('Programmblock wirklich löschen?')) return
+async function loeschen() {
+  if (!props.blockId || istNeu.value) return
+  if (!window.confirm('Diesen Block wirklich löschen?')) return
   loeschenLade.value = true
-  const tag = form.value.tag
-  await supabase.from('programmbloecke').delete().eq('id', props.blockId)
-  loeschenLade.value = false
+  await supabase.from('programm_bloecke').delete().eq('id', props.blockId)
   emit('saved')
-  if (tag) await router.push(`/lager/${props.lagerId}/programm/tag/${tag}`)
-  else await router.push(`/lager/${props.lagerId}/programm`)
+  zurueck()
 }
 
-function zurueck() {
-  if (form.value.tag) router.push(`/lager/${props.lagerId}/programm/tag/${form.value.tag}`)
-  else router.push(`/lager/${props.lagerId}/programm`)
-}
+const CODE_OPTIONS: { value: BlockCode; label: string; color: string }[] = [
+  { value: 'LP', label: 'LP – Lagerprogramm', color: 'var(--lp-color, #6b7fa8)' },
+  { value: 'LS', label: 'LS – Lagersport', color: 'var(--ls-color, #6bb87f)' },
+  { value: 'LA', label: 'LA – Lageraktivität', color: 'var(--la-color, #c98a3f)' },
+  { value: 'ES', label: 'ES – Essen', color: 'var(--es-color, #8a7f68)' },
+]
 </script>
 
 <template>
   <div class="block-edit">
-    <button type="button" class="secondary klein zurueck-btn" @click="zurueck">← Zurück</button>
+    <div class="edit-kopf">
+      <button type="button" class="secondary" @click="zurueck">← Zurück</button>
+      <h3>{{ istNeu ? 'Neuer Programmblock' : 'Programmblock bearbeiten' }}</h3>
+      <button v-if="!istNeu" type="button" class="secondary loeschen" :disabled="loeschenLade" @click="loeschen">
+        {{ loeschenLade ? 'Lösche...' : 'Löschen' }}
+      </button>
+    </div>
 
-    <h3>{{ istNeu ? 'Neues Programm' : 'Programm bearbeiten' }}</h3>
-    <p v-if="form.tag" class="hint">{{ formatProgrammTag(form.tag) }}</p>
+    <p v-if="fehler" class="error">{{ fehler }}</p>
 
-    <p v-if="laden">Lade...</p>
-    <template v-else>
-      <p v-if="fehler" class="error">{{ fehler }}</p>
+    <div v-if="laden" class="hint">Lade...</div>
 
-      <form class="edit-form" @submit.prevent="speichernBlock">
-        <label>Block-Art
-          <select v-model="form.blockTyp">
-            <option v-for="(label, key) in BLOCK_TYP_LABELS" :key="key" :value="key">{{ label }}</option>
-          </select>
-        </label>
-        <label>Typ
-          <select v-model="form.code">
-            <option v-for="(label, code) in CODE_LABELS" :key="code" :value="code">{{ code }} – {{ label }}</option>
-          </select>
-        </label>
-        <label>Nummer <input v-model="form.nummer" placeholder="z.B. 1.2" /></label>
-        <label class="full">Titel <input v-model="form.titel" required /></label>
-        <label>Tag <input v-model="form.tag" type="date" required /></label>
-        <label>Start <input v-model="form.startZeit" type="time" required /></label>
-        <label>Ende <input v-model="form.endZeit" type="time" required /></label>
-        <label>Ort <input v-model="form.ort" /></label>
-        <label class="full">Verantwortlich <input v-model="form.verantwortlich" /></label>
-
-        <template v-if="form.blockTyp === 'anreise'">
-          <div v-for="f in ANREISE_FELDER" :key="f.key" class="full">
-            <label>{{ f.label }}
-              <input v-model="sonderfelder[f.key]" />
-            </label>
-          </div>
-        </template>
-        <template v-if="form.blockTyp === 'abreise'">
-          <div v-for="f in ABREISE_FELDER" :key="f.key" class="full">
-            <label>{{ f.label }}
-              <input v-model="sonderfelder[f.key]" />
-            </label>
-          </div>
-        </template>
-
-        <label class="full">Geschichte <textarea v-model="form.geschichte" rows="3" /></label>
-        <label class="full">Sicherheitsüberlegungen <textarea v-model="form.sicherheitsueberlegungen" rows="3" /></label>
-        <label class="full">Notizen <textarea v-model="form.notizen" rows="2" /></label>
-
-        <div class="full abschnitt-block">
-          <strong>Programmabschnitte</strong>
-          <div v-for="(a, i) in abschnitte" :key="'a-' + i" class="zeile-grid">
-            <input v-model="a.zeit" placeholder="Zeit" />
-            <input v-model="a.programm" placeholder="Programm" />
-            <input v-model="a.verantwortlich" placeholder="Verantwortlich" />
-            <button type="button" class="secondary klein" @click="abschnitte.splice(i, 1)">×</button>
-          </div>
-          <button type="button" class="secondary klein" @click="abschnittHinzufuegen">+ Abschnitt</button>
-        </div>
-
-        <div class="full abschnitt-block">
-          <strong>Material</strong>
-          <div v-for="(m, i) in material" :key="'m-' + i" class="zeile-grid material-grid">
-            <input v-model="m.name" placeholder="Material" />
-            <input v-model="m.wer" placeholder="Wer bringt mit" />
-            <button type="button" class="secondary klein" @click="material.splice(i, 1)">×</button>
-          </div>
-          <button type="button" class="secondary klein" @click="materialHinzufuegen">+ Material</button>
-        </div>
-
-        <div class="form-aktionen full">
-          <button type="submit" :disabled="speichern">{{ speichern ? 'Speichere...' : 'Speichern' }}</button>
-          <button v-if="!istNeu" type="button" class="secondary" :disabled="loeschenLade" @click="blockLoeschen">
-            Löschen
+    <form v-else class="block-form" @submit.prevent="speichernBlock">
+      <div class="form-row">
+        <label>Code / Art</label>
+        <div class="code-options">
+          <button
+            v-for="opt in CODE_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="code-btn"
+            :class="{ aktiv: form.code === opt.value }"
+            :style="{ '--code-color': opt.color }"
+            @click="form.code = opt.value"
+          >
+            {{ opt.label }}
           </button>
         </div>
-      </form>
-    </template>
+      </div>
+
+      <div class="form-row">
+        <label>Titel</label>
+        <input v-model="form.titel" placeholder="z.B. Geländespiel" required />
+      </div>
+
+      <div class="form-row">
+        <label>Nummer (optional)</label>
+        <input v-model="form.nummer" placeholder="z.B. 1.2" />
+      </div>
+
+      <div class="form-row">
+        <label>Tag</label>
+        <input v-model="form.tag" type="date" required />
+      </div>
+
+      <div class="form-row form-row-double">
+        <label>
+          Start
+          <input v-model="form.startZeit" type="time" required />
+        </label>
+        <label>
+          Ende
+          <input v-model="form.endZeit" type="time" required />
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-label">
+          <input v-model="form.ist_essen" type="checkbox" />
+          Dieser Block ist eine Mahlzeit (🍽️)
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" :disabled="speichern">
+          {{ speichern ? 'Speichere...' : 'Speichern' }}
+        </button>
+      </div>
+    </form>
   </div>
 </template>
 
 <style scoped>
-.block-edit { margin-bottom: 2rem; }
-.zurueck-btn { margin-bottom: 0.75rem; }
-.block-edit h3 { margin: 0 0 0.25rem; }
-.edit-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
-.edit-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
-.edit-form .full { grid-column: 1 / -1; }
-.abschnitt-block { padding: 0.75rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
-.zeile-grid { display: grid; grid-template-columns: 5rem 1fr 1fr auto; gap: 0.4rem; margin: 0.4rem 0; align-items: center; }
-.material-grid { grid-template-columns: 1fr 1fr auto; }
-.form-aktionen { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.edit-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+.edit-kopf h3 { margin: 0; flex: 1; }
+.block-form { max-width: 500px; }
+.form-row { margin-bottom: 1rem; }
+.form-row label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.3rem; }
+.form-row input[type="text"],
+.form-row input[type="date"],
+.form-row input[type="time"] {
+  width: 100%; padding: 0.5rem 0.7rem; border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); font-size: 0.9rem; background: var(--color-surface); color: var(--color-text);
+  box-sizing: border-box;
+}
+.form-row-double { display: flex; gap: 1rem; }
+.form-row-double label { flex: 1; }
+.code-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.code-btn {
+  padding: 0.4rem 0.7rem; font-size: 0.78rem; border: 2px solid var(--code-color);
+  border-radius: var(--radius-pill); background: transparent; color: var(--color-text);
+  cursor: pointer; opacity: 0.6;
+}
+.code-btn.aktiv { opacity: 1; background: var(--code-color); color: #fdfbf3; }
+.checkbox-label { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; font-size: 0.9rem; cursor: pointer; }
+.form-actions { margin-top: 1.25rem; }
+.loeschen { color: var(--color-danger); border-color: var(--color-danger); }
+.error { color: var(--color-danger); font-size: 0.88rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
-.error { color: var(--color-danger); }
-button.klein { font-size: 0.75rem; padding: 0.25rem 0.55rem; }
 </style>

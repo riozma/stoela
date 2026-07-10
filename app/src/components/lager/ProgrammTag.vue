@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import ProgrammHoeck from './ProgrammHoeck.vue'
-import KioskTagBanner from './KioskTagBanner.vue'
 import {
   bloeckeFuerTag,
   formatProgrammTag,
@@ -46,6 +44,13 @@ function neuBlock() {
 function codeClass(code: BlockCode) {
   return `code-${code}`
 }
+
+const CODE_LABELS: Record<BlockCode, string> = {
+  LP: 'Lagerprogramm',
+  LS: 'Lagersport',
+  LA: 'Lageraktivität',
+  ES: 'Essen',
+}
 </script>
 
 <template>
@@ -70,22 +75,6 @@ function codeClass(code: BlockCode) {
       </button>
     </nav>
 
-    <KioskTagBanner
-      v-if="startDatum"
-      :lager-id="lagerId"
-      :tag="tag"
-      :start-datum="startDatum"
-      :end-datum="endDatum ?? null"
-    />
-
-    <ProgrammHoeck
-      :lager-id="lagerId"
-      :tag="tag"
-      :bloecke="bloecke"
-      :user-id="sessionUserId"
-      :user-name="userName"
-    />
-
     <p v-if="!blocksFuerTag.length" class="hint">Noch keine Programmblöcke an diesem Tag.</p>
 
     <div v-else class="timetable">
@@ -94,13 +83,14 @@ function codeClass(code: BlockCode) {
         :key="b.id"
         type="button"
         class="block-zeile"
+        :class="{ 'ist-essen': (b as any).ist_essen }"
         @click="zuBlock(b.id)"
       >
         <span class="zeit">{{ formatProgrammZeit(b.start_zeit) }}–{{ formatProgrammZeit(b.end_zeit) }}</span>
         <span class="code" :class="codeClass(b.code)">{{ b.code }}</span>
         <span class="titel">{{ b.nummer ? b.nummer + ' ' : '' }}{{ b.titel }}</span>
-        <span class="verantwortlich">{{ b.verantwortlich ?? '–' }}</span>
-        <span class="bearbeiten-hinweis">Bearbeiten →</span>
+        <span v-if="(b as any).ist_essen" class="essen-badge">🍽️</span>
+        <span class="bearbeiten-hinweis">→</span>
       </button>
     </div>
   </div>
@@ -117,16 +107,17 @@ function codeClass(code: BlockCode) {
 .tage-nav button.heute:not(.aktiv) { border-color: var(--color-accent); }
 .timetable { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
 .block-zeile {
-  display: grid; grid-template-columns: 100px 40px 1fr 140px auto; gap: 0.75rem; align-items: center;
+  display: grid; grid-template-columns: 100px 40px 1fr 30px 30px; gap: 0.75rem; align-items: center;
   width: 100%; padding: 0.6rem 0.9rem; border: none; border-bottom: 1px solid var(--color-border);
   background: transparent; color: var(--color-text); text-align: left; cursor: pointer; border-radius: 0;
 }
 .block-zeile:hover { background: var(--color-surface-muted); }
+.block-zeile.ist-essen { border-left: 3px solid #8a7f68; }
 .zeit { font-size: 0.85rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .code { font-size: 0.7rem; font-weight: 700; text-align: center; padding: 0.2rem 0; border-radius: var(--radius-pill); color: #fdfbf3; }
 .code-LP { background: #6b7fa8; } .code-LS { background: var(--color-accent); } .code-LA { background: #c98a3f; } .code-ES { background: #8a7f68; }
 .titel { font-size: 0.95rem; }
-.verantwortlich { font-size: 0.8rem; color: var(--color-text-muted); text-align: right; }
+.essen-badge { font-size: 0.85rem; text-align: center; }
 .bearbeiten-hinweis { font-size: 0.75rem; color: var(--color-accent); white-space: nowrap; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
 </style>
