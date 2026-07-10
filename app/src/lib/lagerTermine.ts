@@ -23,6 +23,32 @@ export interface LagerTermin {
   sortierung: number
 }
 
+/** Nur in Einstellungen / Elterninfo / Vorweekend – nicht im Kalender-Tab bearbeitbar */
+export const KALENDER_READONLY_TYPEN: LagerTerminTyp[] = [
+  'lager',
+  'elternabend',
+  'kennenlernabend',
+  'diashow',
+  'vorweekend',
+]
+
+/** Im Kalender-Tab hinzufügbar/bearbeitbar (je Lager max. einer) */
+export const KALENDER_FORM_TYPEN: LagerTerminTyp[] = ['skiweekend', 'hoeck', 'sonstiges']
+
+export const KALENDER_SINGLETON_TYPEN: LagerTerminTyp[] = [
+  ...KALENDER_READONLY_TYPEN,
+  'skiweekend',
+  'hoeck',
+]
+
+export const KALENDER_READONLY_HINTS: Partial<Record<LagerTerminTyp, string>> = {
+  lager: 'Unter Einstellungen (Start/Ende/Ort)',
+  elternabend: 'Unter Elterninfo',
+  kennenlernabend: 'Unter Elterninfo',
+  diashow: 'Unter Elterninfo',
+  vorweekend: 'Unter Vorweekend',
+}
+
 export const TERMIN_TYP_LABELS: Record<LagerTerminTyp, string> = {
   lager: 'Lager',
   elternabend: 'Elternabend',
