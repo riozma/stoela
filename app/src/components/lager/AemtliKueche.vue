@@ -2,10 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
-import AemtliTodos from './AemtliTodos.vue'
+import AemtliShell from './AemtliShell.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
-type DashboardTab = 'uebersicht' | 'menuplaner' | 'gewohnheiten' | 'einkauf' | 'aufgaben'
+type DashboardTab = 'uebersicht' | 'menuplaner' | 'gewohnheiten' | 'einkauf'
 
 interface MaterialZeile {
   name: string
@@ -62,6 +62,7 @@ interface KuecheNotiz {
 const props = defineProps<{
   lagerId: string
   aemtliId: string
+  aemtliName: string
   lagerName: string
   userId: string
   startDatum: string | null
@@ -408,6 +409,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 </script>
 
 <template>
+  <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
   <section class="kueche-dashboard">
     <header class="dash-kopf">
       <div>
@@ -424,7 +426,6 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
         <span v-if="personenMitHinweis.length" class="badge">{{ personenMitHinweis.length }}</span>
       </button>
       <button :class="{ aktiv: ansicht === 'einkauf' }" @click="ansicht = 'einkauf'">Einkauf</button>
-      <button :class="{ aktiv: ansicht === 'aufgaben' }" @click="ansicht = 'aufgaben'">Aufgaben</button>
     </nav>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -700,11 +701,8 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
       />
     </div>
 
-    <!-- Aufgaben -->
-    <div v-if="ansicht === 'aufgaben'">
-      <AemtliTodos :lager-id="lagerId" :aemtli-id="aemtliId" aemtli-name="Küche" />
-    </div>
   </section>
+  </AemtliShell>
 </template>
 
 <style scoped>

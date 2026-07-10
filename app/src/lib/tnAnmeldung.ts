@@ -26,6 +26,7 @@ export interface KindDaten {
   nachname: string
   geburtsdatum: string
   geschlecht: '' | 'm' | 'w' | 'd'
+  allergien: string
   essensgewohnheiten: EssensOptionId[]
   essensgewohnheiten_keine: boolean
   essensgewohnheiten_sonstiges: string
@@ -119,6 +120,7 @@ export function leerKind(): KindDaten {
     nachname: '',
     geburtsdatum: '',
     geschlecht: '',
+    allergien: '',
     essensgewohnheiten: [],
     essensgewohnheiten_keine: false,
     essensgewohnheiten_sonstiges: '',
