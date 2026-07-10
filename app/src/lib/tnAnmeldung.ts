@@ -57,9 +57,19 @@ export interface LagerTnInfo {
     kontakt_name: string
     kontakt_email: string
     kontakt_telefon: string
+    kontakt_adresse: string
+    lageradresse: string
+    lagertelefon: string
     elternabend_datum: string | null
+    elternabend_ort: string | null
     kennenlernabend_datum: string | null
+    kennenlernabend_ort: string | null
     lagerrueckblick_datum: string | null
+    lagerrueckblick_ort: string | null
+    reise_besammlung: string | null
+    reise_abfahrt: string | null
+    reise_rueckkehr: string | null
+    einzahlungsfrist: string | null
     versicherung_hinweis: string
   }
 }

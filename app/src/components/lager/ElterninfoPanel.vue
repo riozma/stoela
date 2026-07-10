@@ -15,6 +15,12 @@ const props = defineProps<{
 const vorlage = ref<Record<string, unknown>>({})
 const packliste = ref<string[]>([])
 const felder = ref({
+  beschreibung: '',
+  lagerart: '',
+  durchgefuehrt_von: '',
+  anmeldeschluss: '',
+  mindestalter: '',
+  max_teilnehmer: '',
   lagerleiter_name: '',
   lagerleiter_adresse: '',
   lagerleiter_telefon: '',
@@ -48,6 +54,9 @@ async function laden() {
   if (lagerCfg?.telefon_zeiten && !felder.value.telefon_zeiten) felder.value.telefon_zeiten = lagerCfg.telefon_zeiten
   if (vorlage.value.lagerbeitrag_tn) felder.value.lagerbeitrag = Number(vorlage.value.lagerbeitrag_tn)
   if (vorlage.value.lagerbeitrag_geschwister) felder.value.lagerbeitrag_geschwister = Number(vorlage.value.lagerbeitrag_geschwister)
+  if (!felder.value.lageradresse && props.ort) felder.value.lageradresse = props.ort
+  if (!felder.value.lagerart && vorlage.value.lagerart) felder.value.lagerart = String(vorlage.value.lagerart)
+  if (!felder.value.durchgefuehrt_von && vorlage.value.durchgefuehrt_von) felder.value.durchgefuehrt_von = String(vorlage.value.durchgefuehrt_von)
 }
 
 onMounted(laden)
@@ -125,6 +134,17 @@ function downloadBrief() {
     </header>
 
     <form class="felder-grid" @submit.prevent="speichern">
+      <h4>TN-Anmeldung (öffentliches Formular)</h4>
+      <p class="hint grid-full">Diese Felder erscheinen automatisch in der Teilnehmer-Anmeldung für dieses Lager. Ort und Datum kommen aus den Lagereinstellungen.</p>
+      <label class="grid-full">Beschreibung
+        <textarea v-model="felder.beschreibung" rows="3" placeholder="Kurzbeschreibung fürs Lager" />
+      </label>
+      <label>Lagerart <input v-model="felder.lagerart" placeholder="Sommerlager im Haus, J+S-Lager" /></label>
+      <label>Durchgeführt von <input v-model="felder.durchgefuehrt_von" /></label>
+      <label>Anmeldeschluss <input v-model="felder.anmeldeschluss" placeholder="z. B. 15. Mai 2026" /></label>
+      <label>Mindestalter <input v-model="felder.mindestalter" placeholder="z. B. 7 Jahre" /></label>
+      <label>Max. Teilnehmende <input v-model="felder.max_teilnehmer" type="number" min="1" /></label>
+
       <h4>Lagerleitung</h4>
       <label>Name <input v-model="felder.lagerleiter_name" /></label>
       <label>Adresse <input v-model="felder.lagerleiter_adresse" /></label>
@@ -164,6 +184,8 @@ function downloadBrief() {
 .kopf h3 { margin: 0 0 0.25rem; }
 .felder-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.65rem; margin-bottom: 1.5rem; }
 .felder-grid h4 { grid-column: 1 / -1; margin: 0.75rem 0 0.15rem; font-size: 0.9rem; color: var(--color-text-muted); }
+.grid-full { grid-column: 1 / -1; }
+.felder-grid textarea { min-height: 4rem; resize: vertical; }
 .felder-grid label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .vorschau {
   background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md);

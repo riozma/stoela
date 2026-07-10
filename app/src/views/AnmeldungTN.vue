@@ -253,12 +253,16 @@ async function anmeldungAbsenden() {
         <dt>Wann</dt>
         <dd>{{ formatDatumSpanne(lager.start_datum, lager.end_datum) }}</dd>
         <dt>Wo</dt>
-        <dd>{{ lager.ort ?? '–' }}</dd>
+        <dd>{{ lager.info.lageradresse || lager.ort || '–' }}</dd>
+        <dt v-if="lager.info.lagertelefon">Lagertelefon</dt>
+        <dd v-if="lager.info.lagertelefon">{{ lager.info.lagertelefon }}</dd>
         <dt>Kosten</dt>
         <dd>
           erstes Kind {{ lager.info.kosten_erstes_kind }}.–, jedes weitere {{ lager.info.kosten_weiteres_kind }}.—
           <span class="klein">(Bei finanziellen Schwierigkeiten bitte Kontakt aufnehmen)</span>
         </dd>
+        <dt v-if="lager.info.einzahlungsfrist">Einzahlungsfrist</dt>
+        <dd v-if="lager.info.einzahlungsfrist">{{ lager.info.einzahlungsfrist }}</dd>
         <dt>Lagerart</dt>
         <dd>{{ lager.info.lagerart }}</dd>
         <dt v-if="lager.info.anmeldeschluss">Anmeldeschluss</dt>
@@ -273,11 +277,36 @@ async function anmeldungAbsenden() {
       <p v-if="lager.info.beschreibung" class="beschreibung">{{ lager.info.beschreibung }}</p>
       <p class="hint">{{ lager.info.versicherung_hinweis }}</p>
 
-      <h3>Kontakt</h3>
+      <template v-if="lager.info.reise_besammlung || lager.info.reise_abfahrt || lager.info.reise_rueckkehr">
+        <h3>Reise</h3>
+        <ul class="termine">
+          <li v-if="lager.info.reise_besammlung">Besammlung: {{ lager.info.reise_besammlung }}</li>
+          <li v-if="lager.info.reise_abfahrt">Abfahrt: {{ lager.info.reise_abfahrt }}</li>
+          <li v-if="lager.info.reise_rueckkehr">Rückkehr: {{ lager.info.reise_rueckkehr }}</li>
+        </ul>
+      </template>
+
+      <template v-if="lager.info.elternabend_datum || lager.info.kennenlernabend_datum">
+        <h3>Termine</h3>
+        <ul class="termine">
+          <li v-if="lager.info.elternabend_datum">
+            Elternabend: {{ lager.info.elternabend_datum }}<span v-if="lager.info.elternabend_ort"> · {{ lager.info.elternabend_ort }}</span>
+          </li>
+          <li v-if="lager.info.kennenlernabend_datum">
+            Kennenlernabend: {{ lager.info.kennenlernabend_datum }}<span v-if="lager.info.kennenlernabend_ort"> · {{ lager.info.kennenlernabend_ort }}</span>
+          </li>
+          <li v-if="lager.info.lagerrueckblick_datum">
+            Lagerrückblick: {{ lager.info.lagerrueckblick_datum }}<span v-if="lager.info.lagerrueckblick_ort"> · {{ lager.info.lagerrueckblick_ort }}</span>
+          </li>
+        </ul>
+      </template>
+
+      <h3>Kontakt Lagerleitung</h3>
       <p>
         {{ lager.info.kontakt_name }}<br />
-        <a :href="`mailto:${lager.info.kontakt_email}`">{{ lager.info.kontakt_email }}</a><br />
-        <span v-if="lager.info.kontakt_telefon">{{ lager.info.kontakt_telefon }}</span>
+        <a v-if="lager.info.kontakt_email" :href="`mailto:${lager.info.kontakt_email}`">{{ lager.info.kontakt_email }}</a><br />
+        <span v-if="lager.info.kontakt_telefon">{{ lager.info.kontakt_telefon }}</span><br />
+        <span v-if="lager.info.kontakt_adresse">{{ lager.info.kontakt_adresse }}</span>
       </p>
 
       <h3>Elterninfo</h3>
@@ -415,15 +444,21 @@ async function anmeldungAbsenden() {
 
       <h3>Termine</h3>
       <ul class="termine">
-        <li v-if="lager.info.elternabend_datum">Elternabend (nur Eltern): {{ lager.info.elternabend_datum }}</li>
-        <li v-if="lager.info.kennenlernabend_datum">Kennenlernabend (nur Kinder): {{ lager.info.kennenlernabend_datum }}</li>
-        <li>Lagerrückblick: {{ lager.info.lagerrueckblick_datum ?? 'wird noch angekündigt' }}</li>
+        <li v-if="lager.info.elternabend_datum">
+          Elternabend: {{ lager.info.elternabend_datum }}<span v-if="lager.info.elternabend_ort"> · {{ lager.info.elternabend_ort }}</span>
+        </li>
+        <li v-if="lager.info.kennenlernabend_datum">
+          Kennenlernabend: {{ lager.info.kennenlernabend_datum }}<span v-if="lager.info.kennenlernabend_ort"> · {{ lager.info.kennenlernabend_ort }}</span>
+        </li>
+        <li>
+          Lagerrückblick: {{ lager.info.lagerrueckblick_datum ?? 'wird noch angekündigt' }}<span v-if="lager.info.lagerrueckblick_ort"> · {{ lager.info.lagerrueckblick_ort }}</span>
+        </li>
       </ul>
 
       <h3>Kontakt bei Fragen</h3>
       <p>
         {{ lager.info.kontakt_name }}<br />
-        {{ lager.info.kontakt_email }} · {{ lager.info.kontakt_telefon }}
+        {{ lager.info.kontakt_email }}<span v-if="lager.info.kontakt_telefon"> · {{ lager.info.kontakt_telefon }}</span>
       </p>
       <p class="hint">{{ lager.info.versicherung_hinweis }}</p>
 

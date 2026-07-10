@@ -6,6 +6,12 @@ import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
 import { ECAMP_URL } from '../lib/constants'
+import {
+  leerRessourceForm,
+  SICHTBARKEIT_LABELS,
+  type OrgRessource,
+  type OrgRessourceForm,
+} from '../lib/orgRessourcen'
 
 interface VereinMitgliedschaft {
   organisation_id: string
@@ -115,6 +121,12 @@ const lagerForm = ref({
 })
 const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: string; nachname: string; email: string | null }[]>([])
 const lagerSpeichern = ref(false)
+
+const orgRessourcen = ref<OrgRessource[]>([])
+const ressourceForm = ref<OrgRessourceForm>(leerRessourceForm())
+const ressourceBearbeiten = ref(false)
+const ressourceSpeichern = ref(false)
+const sichtbarePasswoerter = ref<Record<string, boolean>>({})
 
 const ortInput = ref<HTMLInputElement | null>(null)
 
@@ -293,6 +305,102 @@ async function ladeVereinDaten() {
   vorLagerListe.value = (vor ?? []) as { id: string; name: string; jahr: number }[]
 
   await ladeLagerPersonenPool()
+  await ladeOrgRessourcen()
+}
+
+async function ladeOrgRessourcen() {
+  if (!orgAuswahl.value) {
+    orgRessourcen.value = []
+    return
+  }
+  const { data, error } = await supabase.rpc('list_org_ressourcen', { p_organisation_id: orgAuswahl.value })
+  if (error) {
+    fehler.value = error.message
+    orgRessourcen.value = []
+    return
+  }
+  orgRessourcen.value = (data ?? []) as OrgRessource[]
+}
+
+function ressourceNeu() {
+  ressourceForm.value = { ...leerRessourceForm(), sortierung: orgRessourcen.value.length }
+  ressourceBearbeiten.value = true
+}
+
+function ressourceEditStart(r: OrgRessource) {
+  ressourceForm.value = {
+    id: r.id,
+    typ: r.typ,
+    titel: r.titel,
+    url: r.url ?? '',
+    benutzername: r.benutzername ?? '',
+    passwort: '',
+    notiz: r.notiz ?? '',
+    sichtbarkeit: r.sichtbarkeit,
+    sortierung: r.sortierung,
+    zugewiesene_profile_ids: [...r.zugewiesene_profile_ids],
+  }
+  ressourceBearbeiten.value = true
+}
+
+function ressourceAbbrechen() {
+  ressourceBearbeiten.value = false
+  ressourceForm.value = leerRessourceForm()
+}
+
+async function ressourceSpeichernHandler() {
+  if (!orgAuswahl.value || !istOrgAdmin.value) return
+  ressourceSpeichern.value = true
+  fehler.value = ''
+  info.value = ''
+  const f = ressourceForm.value
+  const { error } = await supabase.rpc('org_ressource_speichern', {
+    p_organisation_id: orgAuswahl.value,
+    p_id: f.id,
+    p_typ: f.typ,
+    p_titel: f.titel,
+    p_url: f.typ === 'link' ? f.url : null,
+    p_benutzername: f.typ === 'zugang' ? f.benutzername : null,
+    p_passwort: f.typ === 'zugang' && f.passwort.trim() ? f.passwort : null,
+    p_notiz: f.notiz || null,
+    p_sichtbarkeit: f.sichtbarkeit,
+    p_sortierung: f.sortierung,
+    p_zugewiesene_profile_ids: f.sichtbarkeit === 'ausgewaehlt' ? f.zugewiesene_profile_ids : [],
+  })
+  ressourceSpeichern.value = false
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = f.id ? 'Eintrag aktualisiert.' : 'Eintrag hinzugefügt.'
+  ressourceAbbrechen()
+  await ladeOrgRessourcen()
+}
+
+async function ressourceLoeschen(id: string) {
+  if (!orgAuswahl.value || !istOrgAdmin.value) return
+  if (!window.confirm('Eintrag wirklich löschen?')) return
+  const { error } = await supabase.rpc('org_ressource_loeschen', {
+    p_organisation_id: orgAuswahl.value,
+    p_id: id,
+  })
+  if (error) {
+    fehler.value = error.message
+    return
+  }
+  info.value = 'Eintrag gelöscht.'
+  await ladeOrgRessourcen()
+}
+
+function togglePasswortSichtbar(id: string) {
+  sichtbarePasswoerter.value[id] = !sichtbarePasswoerter.value[id]
+}
+
+function toggleRessourceMitglied(profileId: string) {
+  const ids = ressourceForm.value.zugewiesene_profile_ids
+  const idx = ids.indexOf(profileId)
+  if (idx >= 0) ids.splice(idx, 1)
+  else ids.push(profileId)
 }
 
 async function ladeLagerPersonenPool() {
@@ -645,6 +753,85 @@ onMounted(async () => {
 
       <template v-if="orgAuswahl">
         <section class="karte">
+          <h2>Links &amp; Zugänge</h2>
+          <p class="hint">
+            Wichtige Links (z.&nbsp;B. Google Drive) und geteilte Logins für den Verein.
+            Zugänge sind nur über diese Seite sichtbar – nicht in der öffentlichen TN-Anmeldung.
+            {{ istOrgAdmin ? 'Als Admin kannst du Einträge verwalten und die Sichtbarkeit festlegen.' : 'Du siehst nur Einträge, für die du berechtigt bist.' }}
+          </p>
+
+          <div v-if="orgRessourcen.length" class="ressourcen-liste">
+            <article v-for="r in orgRessourcen" :key="r.id" class="ressource-karte">
+              <div class="ressource-kopf">
+                <strong>{{ r.titel }}</strong>
+                <span class="badge">{{ r.typ === 'link' ? 'Link' : 'Zugang' }}</span>
+                <span class="klein">{{ SICHTBARKEIT_LABELS[r.sichtbarkeit] }}</span>
+              </div>
+              <template v-if="r.typ === 'link' && r.url">
+                <a :href="r.url" target="_blank" rel="noopener noreferrer">{{ r.url }}</a>
+              </template>
+              <template v-else-if="r.typ === 'zugang'">
+                <p v-if="r.benutzername" class="zugang-zeile"><span>Benutzer:</span> {{ r.benutzername }}</p>
+                <p v-if="r.passwort" class="zugang-zeile">
+                  <span>Passwort:</span>
+                  <code>{{ sichtbarePasswoerter[r.id] ? r.passwort : '••••••••' }}</code>
+                  <button type="button" class="klein-btn" @click="togglePasswortSichtbar(r.id)">
+                    {{ sichtbarePasswoerter[r.id] ? 'Verbergen' : 'Anzeigen' }}
+                  </button>
+                </p>
+              </template>
+              <p v-if="r.notiz" class="klein">{{ r.notiz }}</p>
+              <div v-if="istOrgAdmin" class="inline-aktionen">
+                <button type="button" class="secondary klein-btn" @click="ressourceEditStart(r)">Bearbeiten</button>
+                <button type="button" class="secondary klein-btn" @click="ressourceLoeschen(r.id)">Löschen</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="hint">Noch keine Links oder Zugänge hinterlegt.</p>
+
+          <div v-if="istOrgAdmin" class="ressource-admin">
+            <button v-if="!ressourceBearbeiten" type="button" @click="ressourceNeu">+ Link oder Zugang hinzufügen</button>
+            <form v-else class="ressource-form" @submit.prevent="ressourceSpeichernHandler">
+              <label>Typ
+                <select v-model="ressourceForm.typ">
+                  <option value="link">Link (URL)</option>
+                  <option value="zugang">Zugang (Login)</option>
+                </select>
+              </label>
+              <label>Titel <input v-model="ressourceForm.titel" required /></label>
+              <label v-if="ressourceForm.typ === 'link'">URL <input v-model="ressourceForm.url" type="url" required placeholder="https://drive.google.com/..." /></label>
+              <template v-else>
+                <label>Benutzername <input v-model="ressourceForm.benutzername" autocomplete="off" /></label>
+                <label>Passwort
+                  <input v-model="ressourceForm.passwort" type="password" autocomplete="new-password" :placeholder="ressourceForm.id ? 'Leer lassen = unverändert' : ''" />
+                </label>
+              </template>
+              <label>Notiz <input v-model="ressourceForm.notiz" placeholder="Optional" /></label>
+              <label>Sichtbarkeit
+                <select v-model="ressourceForm.sichtbarkeit">
+                  <option v-for="(label, key) in SICHTBARKEIT_LABELS" :key="key" :value="key">{{ label }}</option>
+                </select>
+              </label>
+              <fieldset v-if="ressourceForm.sichtbarkeit === 'ausgewaehlt'" class="mitglieder-auswahl">
+                <legend>Berechtigte Mitglieder</legend>
+                <label v-for="m in mitgliederAktiv" :key="m.profile_id" class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    :checked="ressourceForm.zugewiesene_profile_ids.includes(m.profile_id)"
+                    @change="toggleRessourceMitglied(m.profile_id)"
+                  />
+                  {{ profilName(m) }}
+                </label>
+              </fieldset>
+              <div class="inline-aktionen">
+                <button type="submit" :disabled="ressourceSpeichern">{{ ressourceSpeichern ? 'Speichere…' : 'Speichern' }}</button>
+                <button type="button" class="secondary" @click="ressourceAbbrechen">Abbrechen</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="karte">
           <h2>Lager im Verein</h2>
           <p class="hint">
             Kommende/laufende Lager: als Leiter beitreten oder als Gast ansehen.
@@ -983,4 +1170,15 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .error { color: var(--color-danger); }
 .lalei-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
+.ressourcen-liste { display: grid; gap: 0.65rem; margin: 0.75rem 0; }
+.ressource-karte { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem 0.85rem; }
+.ressource-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+.badge { font-size: 0.72rem; background: var(--color-surface-muted); padding: 0.1rem 0.45rem; border-radius: 999px; }
+.zugang-zeile { margin: 0.25rem 0; font-size: 0.88rem; }
+.zugang-zeile span { color: var(--color-text-muted); margin-right: 0.35rem; }
+.ressource-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.65rem; margin-top: 0.75rem; align-items: end; }
+.mitglieder-auswahl { grid-column: 1 / -1; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.65rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.mitglieder-auswahl legend { font-weight: 600; width: 100%; }
+.checkbox-label { flex-direction: row !important; align-items: center; gap: 0.4rem; color: var(--color-text) !important; font-size: 0.85rem !important; }
+.ressource-admin { margin-top: 0.5rem; }
 </style>
