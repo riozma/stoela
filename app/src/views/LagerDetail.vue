@@ -47,6 +47,7 @@ import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnu
 import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
 import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
 import { isNavSectionAllowed } from '../lib/lagerNavConfig'
+import { leiterAlsCsv, leiterCsvDownload, type LeiterExportZeile } from '../lib/leiterCsv'
 import LagerBearbeitung from '../components/lager/LagerBearbeitung.vue'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
@@ -110,6 +111,7 @@ interface LeiterAnmeldung {
   anmeldung_art?: string
   bestaetigen_bis?: string | null
   von_vorjahr?: boolean
+  essensgewohnheiten?: string | null
 }
 interface Aemtli {
   id: string
@@ -431,6 +433,7 @@ const neueRolleName = ref<Record<string, string>>({})
 const orgPersonenPool = ref<OrgPersonPool[]>([])
 const orgPersonAuswahl = ref('')
 const leiterBearbeitenId = ref<string | null>(null)
+const leiterListenAnsicht = ref<'grob' | 'detail' | 'verwaltung'>('grob')
 const leiterEditForm = ref({
   vorname: '',
   nachname: '',
@@ -453,10 +456,43 @@ const verfuegbareOrgPersonen = computed(() =>
   }),
 )
 
+const istBestaetigterLeiter = computed(() =>
+  !!teamListe.value.find((t) => t.profile_id === session.value?.user.id && t.status === 'bestaetigt'),
+)
+
+const leiterExportZeilen = computed<LeiterExportZeile[]>(() =>
+  leiterBestaetigt.value.map((l) => {
+    const team = teamListe.value.find((t) => t.profile_id === l.profile_id)
+    const aemtli = (leiterRollenMap.value[l.id] ?? []).map((r) => r.name).join(', ')
+    return {
+      vorname: l.vorname,
+      nachname: l.nachname,
+      email: team?.profiles?.email ?? l.email,
+      telefon: l.telefon,
+      geburtsdatum: l.geburtsdatum,
+      geschlecht: l.geschlecht,
+      ahv_nr: l.ahv_nr,
+      anwesend_von: l.anwesend_von,
+      anwesend_bis: l.anwesend_bis,
+      status: l.status,
+      anmeldung_art: l.anmeldung_art,
+      essensgewohnheiten: l.essensgewohnheiten,
+      profile_id: l.profile_id,
+      aemtli: aemtli || undefined,
+      app_rolle: team?.rolle,
+    }
+  }),
+)
+
+function leiterCsvHerunterladen() {
+  const name = (lager.value?.name ?? 'lager').replace(/\s+/g, '_')
+  leiterCsvDownload(`${name}_leiter.csv`, leiterAlsCsv(leiterExportZeilen.value))
+}
+
 async function ladeLeiter() {
   const { data } = await supabase
     .from('anmeldungen_leiter')
-    .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr')
+    .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr, essensgewohnheiten')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
@@ -1671,6 +1707,55 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           </div>
         </div>
 
+        <nav class="leiter-ansicht-nav">
+          <button type="button" :class="{ aktiv: leiterListenAnsicht === 'grob' }" @click="leiterListenAnsicht = 'grob'">Übersicht</button>
+          <button type="button" :class="{ aktiv: leiterListenAnsicht === 'detail' }" @click="leiterListenAnsicht = 'detail'">Detailansicht</button>
+          <button type="button" :class="{ aktiv: leiterListenAnsicht === 'verwaltung' }" @click="leiterListenAnsicht = 'verwaltung'">Team &amp; Ämtli</button>
+          <button v-if="leiterBestaetigt.length" type="button" class="secondary" @click="leiterCsvHerunterladen">CSV herunterladen</button>
+        </nav>
+
+        <table v-if="leiterListenAnsicht === 'grob' && leiterBestaetigt.length" class="liste">
+          <thead>
+            <tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Anwesend</th><th>Essen</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="l in leiterBestaetigt" :key="l.id">
+              <td>{{ l.vorname }} {{ l.nachname }}</td>
+              <td>{{ berechneAlter(l.geburtsdatum) ?? '–' }}</td>
+              <td><span v-if="gruppeTagLeiter[l.id]" class="gruppen-tag">{{ gruppeTagLeiter[l.id] }}</span><span v-else>–</span></td>
+              <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
+              <td>{{ l.essensgewohnheiten?.trim() || '–' }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="leiterListenAnsicht === 'detail' && leiterBestaetigt.length" class="detail-scroll">
+          <table class="liste leiter-detail-tabelle">
+            <thead>
+              <tr>
+                <th>Name</th><th>E-Mail</th><th>Telefon</th><th>Geburtsdatum</th><th>Geschlecht</th>
+                <th>AHV</th><th>Anwesend</th><th>Status</th><th>Essen</th><th>Ämtli</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="l in leiterBestaetigt" :key="l.id">
+                <td>{{ l.vorname }} {{ l.nachname }}</td>
+                <td>{{ l.email ?? '–' }}</td>
+                <td>{{ l.telefon ?? '–' }}</td>
+                <td>{{ l.geburtsdatum ?? '–' }}</td>
+                <td>{{ l.geschlecht ?? '–' }}</td>
+                <td>{{ l.ahv_nr ?? '–' }}</td>
+                <td>{{ l.anwesend_von ?? '–' }} – {{ l.anwesend_bis ?? '–' }}</td>
+                <td>{{ l.anmeldung_art === 'provisorisch' ? 'provisorisch' : 'fix' }}</td>
+                <td>{{ l.essensgewohnheiten?.trim() || '–' }}</td>
+                <td>{{ (leiterRollenMap[l.id] ?? []).map((r) => r.name).join(', ') || '–' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else-if="leiterListenAnsicht !== 'verwaltung' && !leiterBestaetigt.length" class="hint">Noch keine bestätigten Leiter.</p>
+
+        <template v-if="leiterListenAnsicht === 'verwaltung'">
         <h3>Leiter &amp; Team</h3>
         <p class="hint">
           Stammdaten, Ämtli und App-Berechtigungen in einer Tabelle. Lagerleitung (Lalei) steuert das Lager –
@@ -1874,6 +1959,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <button type="submit" :disabled="leiterSpeichern">{{ leiterSpeichern ? 'Speichere...' : 'Hinzufügen' }}</button>
         </form>
         <p v-if="leiterFehler" class="error">{{ leiterFehler }}</p>
+        </template>
       </section>
 
       <!-- Gruppen -->
@@ -1943,6 +2029,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :lager-name="lager.name"
           :user-id="session.user.id"
           :ist-kueche="istKueche"
+          :kann-melden="istBestaetigterLeiter || isLeitung"
           :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
       </section>
@@ -1953,6 +2040,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           v-if="aemtliKomponente(a.name) === 'kueche' && session"
           :lager-id="lagerId" :aemtli-id="a.id" :lager-name="lager.name"
           :user-id="session.user.id" :start-datum="lager.start_datum" :end-datum="lager.end_datum"
+          :kann-einkauf-melden="istBestaetigterLeiter || isLeitung"
           :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
         <AemtliFinanzen
@@ -2065,6 +2153,11 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 </template>
 
 <style scoped>
+.leiter-ansicht-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.75rem 0 1rem; }
+.leiter-ansicht-nav button { background: var(--color-surface); border: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-text); }
+.leiter-ansicht-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
+.detail-scroll { overflow-x: auto; margin-bottom: 1rem; }
+.leiter-detail-tabelle { font-size: 0.8rem; min-width: 900px; }
 .anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }
 .leiter-team-tabelle { font-size: 0.82rem; }

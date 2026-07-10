@@ -27,8 +27,11 @@ const props = defineProps<{
   lagerName: string
   userId: string
   istKueche: boolean
+  kannMelden?: boolean
   bloecke: { id: string; titel: string; code: string }[]
 }>()
+
+const darfEintragen = computed(() => props.istKueche || props.kannMelden)
 
 const items = ref<EinkaufItem[]>([])
 const termine = ref<EinkaufTermin[]>([])
@@ -70,7 +73,7 @@ async function laden() {
 
 async function hinzufuegen() {
   fehler.value = ''
-  if (!eintragOffen.value && !props.istKueche) {
+  if (!eintragOffen.value && !darfEintragen.value) {
     fehler.value = 'Die Deadline für Einträge ist vorbei.'
     return
   }
@@ -164,6 +167,10 @@ onMounted(laden)
       </div>
     </div>
 
+    <p v-if="!istKueche && kannMelden" class="hint meld-hinweis">
+      Als Leiter/in kannst du jederzeit Artikel für den nächsten Einkauf melden.
+    </p>
+
     <table v-if="items.length" class="liste">
       <thead>
         <tr><th></th><th>Artikel</th><th>Bereich</th><th>Mahlzeit</th><th>Notiz</th></tr>
@@ -199,8 +206,8 @@ onMounted(laden)
       </tbody>
     </table>
 
-    <h3 v-if="eintragOffen || istKueche">Eintrag hinzufügen</h3>
-    <form v-if="eintragOffen || istKueche" @submit.prevent="hinzufuegen" class="inline-form">
+    <h3 v-if="eintragOffen || darfEintragen">Eintrag hinzufügen</h3>
+    <form v-if="eintragOffen || darfEintragen" @submit.prevent="hinzufuegen" class="inline-form">
       <input v-model="form.name" placeholder="Artikel" required />
       <input v-model="form.menge" type="number" step="any" placeholder="Menge" class="klein" />
       <input v-model="form.einheit" placeholder="Einheit" class="klein" />
@@ -234,6 +241,6 @@ onMounted(laden)
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }
 .klein { width: 80px; }
 .hint { font-size: 0.8rem; color: var(--color-text-muted); }
-.error { color: var(--color-danger); }
+.meld-hinweis { margin-bottom: 0.75rem; padding: 0.5rem 0.65rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 </style>

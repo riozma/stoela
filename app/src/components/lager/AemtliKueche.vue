@@ -47,6 +47,9 @@ interface PersonEssen {
   rolle: string
   allergien: string | null
   essensgewohnheiten: string | null
+  essensgewohnheiten_sonstiges: string | null
+  anwesend_von: string | null
+  anwesend_bis: string | null
 }
 
 interface KuecheNotiz {
@@ -64,6 +67,7 @@ const props = defineProps<{
   startDatum: string | null
   endDatum: string | null
   bloecke: { id: string; titel: string; code: string }[]
+  kannEinkaufMelden?: boolean
 }>()
 
 const ansicht = ref<DashboardTab>('uebersicht')
@@ -127,8 +131,36 @@ const tage = computed(() => {
 })
 
 const personenMitHinweis = computed(() =>
-  personen.value.filter((p) => p.allergien?.trim() || p.essensgewohnheiten?.trim()),
+  personen.value.filter(
+    (p) =>
+      p.allergien?.trim()
+      || p.essensgewohnheiten?.trim()
+      || p.essensgewohnheiten_sonstiges?.trim(),
+  ),
 )
+
+const koepfeHeute = computed(() => koepfeAmTag(heute.value))
+
+function istAnwesendAmTag(p: PersonEssen, tag: string) {
+  if (p.typ === 'tn') return true
+  const von = p.anwesend_von
+  const bis = p.anwesend_bis
+  if (!von && !bis) return true
+  if (von && tag < von) return false
+  if (bis && tag > bis) return false
+  return true
+}
+
+function koepfeAmTag(tag: string) {
+  const tn = personen.value.filter((p) => p.typ === 'tn' && istAnwesendAmTag(p, tag)).length
+  const leiter = personen.value.filter((p) => p.typ === 'leiter' && istAnwesendAmTag(p, tag)).length
+  return { tn, leiter, total: tn + leiter }
+}
+
+function essensText(p: PersonEssen) {
+  const teile = [p.essensgewohnheiten?.trim(), p.essensgewohnheiten_sonstiges?.trim()].filter(Boolean)
+  return teile.length ? teile.join(' · ') : '–'
+}
 
 function parseMaterial(text: string): MaterialZeile[] {
   return text
@@ -230,8 +262,8 @@ async function laden() {
     supabase.from('mahlzeit_vorlagen').select('*').eq('lager_id', props.lagerId).order('name'),
     supabase.from('mahlzeiten').select('*').eq('lager_id', props.lagerId).order('tag'),
     supabase.from('mahlzeit_ausnahmen').select('*').eq('lager_id', props.lagerId),
-    supabase.from('anmeldungen_tn').select('id, vorname, nachname, rolle, allergien, essensgewohnheiten').eq('lager_id', props.lagerId).neq('status', 'abgesagt').order('nachname'),
-    supabase.from('anmeldungen_leiter').select('id, vorname, nachname, essensgewohnheiten').eq('lager_id', props.lagerId).in('status', ['bestaetigt', 'angemeldet']).order('nachname'),
+    supabase.from('anmeldungen_tn').select('id, vorname, nachname, rolle, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges').eq('lager_id', props.lagerId).neq('status', 'abgesagt').order('nachname'),
+    supabase.from('anmeldungen_leiter').select('id, vorname, nachname, essensgewohnheiten, anwesend_von, anwesend_bis').eq('lager_id', props.lagerId).in('status', ['bestaetigt', 'angemeldet']).order('nachname'),
     supabase.from('kueche_notizen').select('*').eq('lager_id', props.lagerId).order('created_at', { ascending: false }),
   ])
   vorlagen.value = (v ?? []).map((row) => ({ ...row, material: (row.material as MaterialZeile[]) ?? [] }))
@@ -245,6 +277,9 @@ async function laden() {
       rolle: p.rolle,
       allergien: p.allergien,
       essensgewohnheiten: p.essensgewohnheiten,
+      essensgewohnheiten_sonstiges: p.essensgewohnheiten_sonstiges,
+      anwesend_von: null,
+      anwesend_bis: null,
     })),
     ...(leiter ?? []).map((p) => ({
       id: p.id,
@@ -253,6 +288,9 @@ async function laden() {
       rolle: 'Leiter',
       allergien: null,
       essensgewohnheiten: p.essensgewohnheiten,
+      essensgewohnheiten_sonstiges: null,
+      anwesend_von: p.anwesend_von,
+      anwesend_bis: p.anwesend_bis,
     })),
   ]
   notizen.value = n ?? []
@@ -409,13 +447,20 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
       </article>
 
       <article class="dash-karte">
+        <h3>Personen im Lager</h3>
+        <p class="stat">{{ koepfeHeute.total }} heute</p>
+        <p class="hint">{{ koepfeHeute.tn }} TN · {{ koepfeHeute.leiter }} Leiter</p>
+        <p v-if="personenMitHinweis.length" class="hint">{{ personenMitHinweis.length }} mit Allergien/Essen-Hinweisen</p>
+      </article>
+
+      <article class="dash-karte">
         <h3>Essensgewohnheiten</h3>
         <p class="stat">{{ personenMitHinweis.length }} Personen mit Hinweisen</p>
         <ul v-if="personenMitHinweis.length" class="kurz-liste">
           <li v-for="p in personenMitHinweis.slice(0, 5)" :key="p.id">
             <strong>{{ p.name }}</strong>
             <span v-if="p.allergien"> · Allergien: {{ p.allergien }}</span>
-            <span v-if="p.essensgewohnheiten"> · {{ p.essensgewohnheiten }}</span>
+            <span v-if="essensText(p) !== '–'"> · {{ essensText(p) }}</span>
           </li>
         </ul>
         <button class="secondary klein" @click="ansicht = 'gewohnheiten'">Alle anzeigen</button>
@@ -574,14 +619,21 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     <!-- Essensgewohnheiten -->
     <div v-if="ansicht === 'gewohnheiten'">
       <h3>Essensgewohnheiten &amp; Allergien</h3>
-      <p class="hint">Angaben von Teilnehmer/innen und Leiter/innen. Die Küche kann sie hier ergänzen und pflegen.</p>
+      <p class="hint">Alle TN und Leiter – Angaben aus der Anmeldung. Die Küche kann sie hier ergänzen.</p>
+
+      <div v-if="tage.length" class="koepfe-zeile">
+        <span class="hint">Köpfe pro Tag:</span>
+        <span v-for="tag in tage" :key="tag" class="kopf-badge" :class="{ heute: tag === heute }">
+          {{ formatTag(tag) }}: {{ koepfeAmTag(tag).total }}
+        </span>
+      </div>
 
       <table v-if="personen.length" class="liste">
         <thead>
           <tr><th>Name</th><th>Typ</th><th>Allergien</th><th>Essensgewohnheiten</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="p in personen" :key="p.id">
+          <tr v-for="p in personen" :key="p.id" :class="{ warn: p.allergien?.trim() || p.essensgewohnheiten?.trim() }">
             <td>{{ p.name }}</td>
             <td>{{ p.rolle }}</td>
             <td>
@@ -592,7 +644,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
                 placeholder="z.B. Nüsse, Laktose"
                 class="zellen-input"
               />
-              <span v-else class="hint">—</span>
+              <span v-else class="hint">–</span>
             </td>
             <td>
               <input
@@ -601,6 +653,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
                 placeholder="z.B. vegetarisch, kein Schwein"
                 class="zellen-input"
               />
+              <span v-if="p.essensgewohnheiten_sonstiges" class="klein-hinweis">{{ p.essensgewohnheiten_sonstiges }}</span>
             </td>
             <td><button class="secondary klein" @click="personSpeichern(p)">Speichern</button></td>
           </tr>
@@ -636,11 +689,13 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 
     <!-- Einkauf -->
     <div v-if="ansicht === 'einkauf'">
+      <p class="hint">Leiter/innen können Artikel melden – die Küche plant den Einkaufstermin und schliesst die Liste.</p>
       <LagerEinkauf
         :lager-id="lagerId"
         :lager-name="lagerName"
         :user-id="userId"
         :ist-kueche="true"
+        :kann-melden="kannEinkaufMelden ?? true"
         :bloecke="bloecke"
       />
     </div>
@@ -725,6 +780,11 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 .liste th, .liste td { text-align: left; padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 .liste th { color: var(--color-text-muted); font-weight: 700; font-size: 0.78rem; }
 .zellen-input { width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
+tr.warn { background: #fdf8f0; }
+.koepfe-zeile { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.75rem; }
+.kopf-badge { font-size: 0.78rem; padding: 0.15rem 0.45rem; border-radius: var(--radius-pill); background: var(--color-surface-muted); border: 1px solid var(--color-border); }
+.kopf-badge.heute { border-color: var(--color-accent); font-weight: 600; }
+.klein-hinweis { display: block; font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.15rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
 .error { color: var(--color-danger); }
 button.klein { font-size: 0.75rem; padding: 0.25rem 0.55rem; }
