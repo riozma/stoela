@@ -505,6 +505,12 @@ create index if not exists lager_aemtli_daten_jahr_idx
 -- ---------------------------------------------------------------------
 -- 6. Öffentliche Termine: eine kanonische Quelle = lager_termine
 -- ---------------------------------------------------------------------
+-- Eine ältere 8-Parameter-Überladung kollidiert mit der neueren Funktion,
+-- deren Zeitparameter Defaults haben. Nur die aktuelle Signatur behalten.
+drop function if exists public.lager_termin_upsert_cfg(
+  uuid, text, text, date, date, text, boolean, integer
+);
+
 -- Einmalig bestehende JSON-Termine in die kanonische Tabelle übernehmen.
 do $$
 declare
