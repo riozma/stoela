@@ -98,6 +98,10 @@ interface TN {
   ahv_nr: string | null
   rolle: 'TN' | 'HL'
   status: string
+  anwesend_von: string | null
+  anwesend_bis: string | null
+  notfallkontakt: string
+  eltern_email: string
 }
 interface LeiterAnmeldung {
   id: string
@@ -382,10 +386,10 @@ const tnFehler = ref('')
 async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status')
+    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis')
     .eq('lager_id', lagerId.value)
     .order('nachname')
-  tnListe.value = data ?? []
+  tnListe.value = (data ?? []) as TN[]
 }
 
 async function tnHinzufuegen() {
@@ -425,6 +429,21 @@ async function tnLoeschen(tnId: string) {
   await Promise.all([ladeTeilnehmer(), ladeGruppen()])
 }
 
+async function tnAnwesenheitSpeichern(tn: TN) {
+  if (!isLeitung.value) return
+  const { error } = await supabase.rpc('tn_anwesenheit_speichern', {
+    p_tn_id: tn.id,
+    p_anwesend_von: tn.anwesend_von || null,
+    p_anwesend_bis: tn.anwesend_bis || null,
+  })
+  if (error) {
+    tnFehler.value = error.message
+    return
+  }
+  void logLagerAktivitaet(lagerId.value, `TN-Anwesenheit geändert: ${tn.vorname} ${tn.nachname}`, 'teilnehmer')
+  await ladeLetzteAenderungenListe()
+}
+
 // --- Leiter ---
 const leiterListe = ref<LeiterAnmeldung[]>([])
 const leiterSpeichern = ref(false)
@@ -437,6 +456,7 @@ const orgPersonenPool = ref<OrgPersonPool[]>([])
 const orgPersonAuswahl = ref('')
 const leiterBearbeitenId = ref<string | null>(null)
 const leiterListenAnsicht = ref<'grob' | 'detail' | 'verwaltung'>('grob')
+const tnListenAnsicht = ref<'uebersicht' | 'detail' | 'verwaltung'>('uebersicht')
 const leiterEditForm = ref({
   vorname: '',
   nachname: '',
@@ -1620,31 +1640,90 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-tn`">/anmelden-tn</router-link> ·
           Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
         </p>
-        <table v-if="tnListe.length" class="liste">
+
+        <nav class="leiter-ansicht-nav">
+          <button type="button" :class="{ aktiv: tnListenAnsicht === 'uebersicht' }" @click="tnListenAnsicht = 'uebersicht'">Übersicht</button>
+          <button type="button" :class="{ aktiv: tnListenAnsicht === 'detail' }" @click="tnListenAnsicht = 'detail'">Detailansicht</button>
+          <button type="button" :class="{ aktiv: tnListenAnsicht === 'verwaltung' }" @click="tnListenAnsicht = 'verwaltung'">Verwaltung</button>
+        </nav>
+
+        <!-- Übersicht -->
+        <table v-if="tnListenAnsicht === 'uebersicht' && tnListe.length" class="liste">
           <thead>
-            <tr>
-              <th>Name</th><th>Alter</th><th>Gruppe</th><th>Rolle</th><th>Status</th>
-              <th v-if="isLeitung"></th>
-            </tr>
+            <tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Rolle</th><th>Status</th><th v-if="isLeitung">Anwesend</th></tr>
           </thead>
           <tbody>
             <tr v-for="tn in tnListe" :key="tn.id">
               <td>{{ tn.vorname }} {{ tn.nachname }}</td>
               <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
               <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
-              <td>
-                <select :value="tn.rolle" @change="tnRolleAendern(tn, ($event.target as HTMLSelectElement).value as 'TN' | 'HL')">
-                  <option value="TN">TN</option><option value="HL">HL</option>
-                </select>
-              </td>
+              <td>{{ tn.rolle }}</td>
               <td>{{ tn.status }}</td>
-              <td v-if="isLeitung">
-                <button type="button" class="secondary klein" @click="tnLoeschen(tn.id)">Entfernen</button>
-              </td>
+              <td v-if="isLeitung">{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
             </tr>
           </tbody>
         </table>
-        <p v-else class="hint">Noch keine Teilnehmer.</p>
+
+        <!-- Detailansicht -->
+        <div v-if="tnListenAnsicht === 'detail' && tnListe.length" class="detail-scroll">
+          <table class="liste tn-detail-tabelle">
+            <thead>
+              <tr>
+                <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>Gruppe</th><th>Rolle</th>
+                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="tn in tnListe" :key="tn.id">
+                <td>{{ tn.vorname }} {{ tn.nachname }}</td>
+                <td>{{ tn.geburtsdatum ?? '–' }}</td>
+                <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
+                <td>{{ tn.geschlecht ?? '–' }}</td>
+                <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
+                <td>{{ tn.rolle }}</td>
+                <td>{{ tn.status }}</td>
+                <td>{{ tn.notfallkontakt ?? '–' }}</td>
+                <td>{{ tn.eltern_email ?? '–' }}</td>
+                <td>{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Verwaltung -->
+        <template v-if="tnListenAnsicht === 'verwaltung'">
+          <p class="hint">
+            Standard-Anwesenheit: Alle TN sind standardmässig das ganze Lager anwesend.
+            Die Lalei kann die Anwesenheitsdauer pro Person anpassen.
+          </p>
+          <table v-if="tnListe.length" class="liste tn-verwaltung-tabelle">
+            <thead>
+              <tr>
+                <th>Name</th><th>Alter</th><th>Gruppe</th><th>Anwesend von</th><th>Anwesend bis</th><th>Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="tn in tnListe" :key="tn.id">
+                <td>{{ tn.vorname }} {{ tn.nachname }}</td>
+                <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
+                <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
+                <td>
+                  <input v-if="isLeitung" v-model="tn.anwesend_von" type="date" class="inline-inp" title="Anwesend von" />
+                  <span v-else>{{ tn.anwesend_von ?? '–' }}</span>
+                </td>
+                <td>
+                  <input v-if="isLeitung" v-model="tn.anwesend_bis" type="date" class="inline-inp" title="Anwesend bis" />
+                  <span v-else>{{ tn.anwesend_bis ?? '–' }}</span>
+                </td>
+                <td v-if="isLeitung">
+                  <button type="button" class="secondary klein" @click="tnAnwesenheitSpeichern(tn)">Speichern</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+
+        <p v-if="!tnListe.length" class="hint">Noch keine Teilnehmer.</p>
         <h3>Manuell erfassen</h3>
         <form @submit.prevent="tnHinzufuegen" class="inline-form">
           <input v-model="tnForm.vorname" placeholder="Vorname" required />
