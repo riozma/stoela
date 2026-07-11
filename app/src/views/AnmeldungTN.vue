@@ -7,6 +7,7 @@ import {
   ahvBeimTippen,
   ahvGueltig,
   berechneLagerbeitrag,
+  berechneTnRolle,
   essensLabel,
   formatDatumSpanne,
   leerEltern,
@@ -43,6 +44,11 @@ const beitragGesamt = computed(() => {
 const fortschritt = computed(() => {
   const map: Record<Schritt, number> = { info: 1, eltern: 2, kind: 3, uebersicht: 4, fertig: 5 }
   return map[schritt.value]
+})
+
+const kindRolleVorschau = computed(() => {
+  if (!lager.value || kind.value.geburtsdatum.length < 10) return null
+  return berechneTnRolle(kind.value.geburtsdatum, lager.value.jahr, lager.value.tn_min_alter_jahre, lager.value.tn_hl_ab_jahre)
 })
 
 onMounted(async () => {
@@ -117,6 +123,10 @@ function validiereKind() {
   }
   if (!kind.value.ahv_nr.trim() || !ahvGueltig(kind.value.ahv_nr)) {
     fehler.value = 'Bitte gültige AHV-Nr. im Format 756.xxxx.xxxx.xx eingeben.'
+    return false
+  }
+  if (kindRolleVorschau.value && kindRolleVorschau.value.rolle === null) {
+    fehler.value = `Mindestalter nicht erfüllt: frühester zulässiger Jahrgang ist ${kindRolleVorschau.value.minJahrgang}.`
     return false
   }
   fehler.value = ''
@@ -326,6 +336,12 @@ async function anmeldungAbsenden() {
         <label>Vorname <input v-model="kind.vorname" required /></label>
         <label>Nachname <input v-model="kind.nachname" required /></label>
         <label>Geburtsdatum <input v-model="kind.geburtsdatum" type="date" required /></label>
+        <p v-if="kindRolleVorschau?.rolle === 'HL'" class="rolle-hinweis hl">
+          Jahrgang {{ kindRolleVorschau.jahrgang }} → wird als <strong>HL</strong> (Hilfsleiter/in) angemeldet.
+        </p>
+        <p v-else-if="kindRolleVorschau?.rolle === null" class="rolle-hinweis error">
+          Mindestalter nicht erfüllt – frühester zulässiger Jahrgang ist {{ kindRolleVorschau.minJahrgang }}.
+        </p>
         <label>Biologisches Geschlecht
           <select v-model="kind.geschlecht" required>
             <option value="">– wählen –</option>
@@ -406,7 +422,10 @@ async function anmeldungAbsenden() {
       <h3>Angemeldete Kinder ({{ kinder.length }})</h3>
       <ul class="kinder-liste">
         <li v-for="(k, i) in kinder" :key="i">
-          <strong>{{ k.vorname }} {{ k.nachname }}</strong>
+          <strong>
+            {{ k.vorname }} {{ k.nachname }}
+            <span v-if="lager && berechneTnRolle(k.geburtsdatum, lager.jahr, lager.tn_min_alter_jahre, lager.tn_hl_ab_jahre).rolle === 'HL'" class="hl-tag">HL</span>
+          </strong>
           <span>Geb. {{ k.geburtsdatum }} · AHV {{ k.ahv_nr }}</span>
           <span v-if="k.allergien">Allergien: {{ k.allergien }}</span>
           <span>{{ essensLabel(k.essensgewohnheiten, k.essensgewohnheiten_sonstiges, k.essensgewohnheiten_keine) }}</span>
@@ -495,4 +514,8 @@ legend { font-weight: 600; padding: 0 0.25rem; }
 .datei-liste { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
 .link-btn { border: none; background: none; color: var(--color-accent); cursor: pointer; padding: 0; margin-left: 0.5rem; }
 .error { color: var(--color-danger); margin-top: 1rem; }
+.rolle-hinweis { margin: -0.4rem 0 0; padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.82rem; }
+.rolle-hinweis.hl { background: #eef3fb; color: #3a5a8c; }
+.rolle-hinweis.error { background: #fdf6f4; color: var(--color-danger); }
+.hl-tag { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: var(--radius-pill); background: #eef3fb; color: #3a5a8c; font-weight: 700; }
 </style>

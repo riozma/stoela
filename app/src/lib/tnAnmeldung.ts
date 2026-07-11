@@ -46,6 +46,8 @@ export interface LagerTnInfo {
   ort: string | null
   start_datum: string | null
   end_datum: string | null
+  tn_min_alter_jahre: number
+  tn_hl_ab_jahre: number
   info: {
     beschreibung: string
     lagerart: string
@@ -156,6 +158,20 @@ export function pruefeTnAnmeldungAktivierung(lager: {
   if (!lager.end_datum?.trim()) fehlend.push({ label: 'Enddatum', tab: 'einstellungen' })
   if (!lager.ort?.trim()) fehlend.push({ label: 'Ort', tab: 'einstellungen' })
   return { ok: fehlend.length === 0, fehlend }
+}
+
+/** Jahrgang-basierte TN/HL-Einteilung. rolle=null bedeutet: zu jung fürs Lager. */
+export function berechneTnRolle(
+  geburtsdatum: string,
+  lagerjahr: number,
+  minAlterJahre: number,
+  hlAbJahre: number,
+): { jahrgang: number; rolle: 'TN' | 'HL' | null; minJahrgang: number; hlJahrgang: number } {
+  const jahrgang = Number(geburtsdatum.slice(0, 4))
+  const minJahrgang = lagerjahr - minAlterJahre
+  const hlJahrgang = lagerjahr - hlAbJahre
+  if (!jahrgang || jahrgang > minJahrgang) return { jahrgang, rolle: null, minJahrgang, hlJahrgang }
+  return { jahrgang, rolle: jahrgang <= hlJahrgang ? 'HL' : 'TN', minJahrgang, hlJahrgang }
 }
 
 export function essensLabel(ids: readonly EssensOptionId[], sonstiges: string, keine: boolean) {

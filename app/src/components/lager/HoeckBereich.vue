@@ -79,6 +79,13 @@ const laden = ref(true)
 const aktiverTag = ref('')
 const ansicht = ref<'tag' | 'feedback'>('tag')
 const eigeneRolleNeu = ref('')
+const neueRolleAbschnitt = ref<ZeitabschnittKey>('morgen')
+const ABSCHNITT_STANDARDZEIT: Record<ZeitabschnittKey, string | null> = {
+  morgen: '08:00',
+  nachmittag: '14:00',
+  abend: '19:00',
+  sonstiges: null,
+}
 const rolleBearbeitenId = ref<string | null>(null)
 const bearbeitenForm = ref({ bedarf_anzahl: '', uhrzeit: '', programm_block_id: '' })
 const tagBloecke = ref<ProgrammBlock[]>([])
@@ -330,6 +337,7 @@ async function toggleLeiterRolle(rolleId: string, leiterId: string) {
 
 async function eigeneRolleHinzufuegen() {
   if (!eigeneRolleNeu.value.trim() || !aktiverTag.value) return
+  const uhrzeit = ABSCHNITT_STANDARDZEIT[neueRolleAbschnitt.value]
   const { data } = await supabase
     .from('hoeck_rollen')
     .insert({
@@ -338,6 +346,7 @@ async function eigeneRolleHinzufuegen() {
       rolle: eigeneRolleNeu.value.trim(),
       ist_eigene: true,
       sortierung: 10 + rollen.value.length,
+      uhrzeit,
     })
     .select()
     .single()
@@ -348,7 +357,7 @@ async function eigeneRolleHinzufuegen() {
       ist_eigene: true,
       sortierung: data.sortierung,
       bedarf_anzahl: null,
-      uhrzeit: null,
+      uhrzeit: data.uhrzeit ?? uhrzeit,
       programm_block_id: null,
       leute: [],
     })
@@ -488,6 +497,9 @@ onMounted(ladeDaten)
         </div>
 
         <div v-if="isLeitung" class="eigene-rolle-form">
+          <select v-model="neueRolleAbschnitt" class="abschnitt-select">
+            <option v-for="a in ZEITABSCHNITTE" :key="a.key" :value="a.key">{{ a.label }}</option>
+          </select>
           <input v-model="eigeneRolleNeu" placeholder="Neue Rolle..." @keyup.enter="eigeneRolleHinzufuegen" />
           <button type="button" class="sekundaer klein" @click="eigeneRolleHinzufuegen">+</button>
         </div>
@@ -578,6 +590,7 @@ onMounted(ladeDaten)
 .leiter-chip.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .eigene-rolle-form { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
 .eigene-rolle-form input { flex: 1; padding: 0.35rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.85rem; }
+.abschnitt-select { padding: 0.35rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.85rem; }
 
 .dienst-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
 .dienst-row label { font-size: 0.85rem; font-weight: 600; min-width: 60px; }

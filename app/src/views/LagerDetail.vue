@@ -234,6 +234,8 @@ const hatAppAdminAemtli = computed(() =>
 const zuordnungLade = ref(false)
 const zuordnungNachricht = ref('')
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
+const altersregelForm = ref({ tn_min_alter_jahre: 8, tn_hl_ab_jahre: 14 })
+const altersregelSpeichernLaden = ref(false)
 const vorLagerIdForm = ref('')
 const andereLager = ref<{ id: string; name: string; jahr: number }[]>([])
 const lagerSpeichern = ref(false)
@@ -1060,6 +1062,20 @@ async function vorLagerSpeichern() {
   lager.value.vor_lager_id = vorLagerIdForm.value || null
 }
 
+async function altersregelSpeichern() {
+  if (!lager.value?.organisation_id) return
+  altersregelSpeichernLaden.value = true
+  const { error } = await supabase
+    .from('organisation')
+    .update({
+      tn_min_alter_jahre: altersregelForm.value.tn_min_alter_jahre,
+      tn_hl_ab_jahre: altersregelForm.value.tn_hl_ab_jahre,
+    })
+    .eq('id', lager.value.organisation_id)
+  if (error) window.alert('Speichern fehlgeschlagen – dafür braucht es Vereins-Leitung/Admin-Rechte.')
+  altersregelSpeichernLaden.value = false
+}
+
 async function statusAendern(neuerStatus: string) {
   statusFehler.value = ''
   statusFehlendLinks.value = []
@@ -1375,10 +1391,16 @@ async function ladeLagerSeite() {
   if (lagerData.organisation_id) {
     const { data: org } = await supabase
       .from('organisation')
-      .select('name')
+      .select('name, tn_min_alter_jahre, tn_hl_ab_jahre')
       .eq('id', lagerData.organisation_id)
       .single()
     organisationName.value = org?.name ?? ''
+    if (org) {
+      altersregelForm.value = {
+        tn_min_alter_jahre: org.tn_min_alter_jahre ?? 8,
+        tn_hl_ab_jahre: org.tn_hl_ab_jahre ?? 14,
+      }
+    }
   }
   lagerForm.value = {
     name: lagerData.name,
@@ -2215,6 +2237,22 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           TN-Anmeldung aktivieren unter <button type="button" class="link-like" @click="zuPflichtTab('teilnehmer')">Teilnehmer</button>.
         </p>
 
+        <h3>TN-Anmeldung: Altersregel (TN / HL)</h3>
+        <p class="hint">
+          Gilt vereinsweit für alle Lager. Aktuell (Lagerjahr {{ lager.jahr }}):
+          Anmeldung ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_min_alter_jahre }}</strong>,
+          HL ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_hl_ab_jahre }}</strong> oder älter.
+        </p>
+        <form class="inline-form" @submit.prevent="altersregelSpeichern">
+          <label>Mindestalter (Jahre)
+            <input v-model.number="altersregelForm.tn_min_alter_jahre" type="number" min="0" class="feld-klein" />
+          </label>
+          <label>HL ab (Jahre)
+            <input v-model.number="altersregelForm.tn_hl_ab_jahre" type="number" min="0" class="feld-klein" />
+          </label>
+          <button type="submit" :disabled="altersregelSpeichernLaden">{{ altersregelSpeichernLaden ? 'Speichere...' : 'Speichern' }}</button>
+        </form>
+
         <h3>Willkommens-Link für TN</h3>
         <p class="hint">Teilnehmer/innen sehen nur diese Seite – kein Programm:</p>
         <code class="link-box">{{ willkommenLink }}</code>
@@ -2358,5 +2396,6 @@ button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .anfrage-karte:last-child { border-bottom: none; }
 .badge.prov { display: inline-block; margin-left: 0.35rem; padding: 0.05rem 0.4rem; border-radius: var(--radius-pill); font-size: 0.7rem; background: #c98a3f; color: #fff; }
 .lager-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+.feld-klein { width: 5rem; }
 .lager-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
 </style>
