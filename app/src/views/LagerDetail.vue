@@ -1851,7 +1851,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           mindestens eine Person muss Lalei bleiben.
         </p>
 
-        <table v-if="leiterZeilen.length" class="liste leiter-team-tabelle">
+        <div v-if="leiterZeilen.length" class="detail-scroll">
+        <table class="liste leiter-team-tabelle">
           <thead>
             <tr>
               <th>Name</th>
@@ -2022,6 +2023,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             </template>
           </tbody>
         </table>
+        </div>
         <p v-else class="hint">Noch keine Leiter.</p>
 
         <h3>Leiter hinzufügen (aus Verein)</h3>
@@ -2252,7 +2254,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .leiter-detail-tabelle { font-size: 0.8rem; min-width: 900px; }
 .anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }
-.leiter-team-tabelle { font-size: 0.82rem; }
+.leiter-team-tabelle { font-size: 0.82rem; min-width: 900px; }
 .leiter-team-tabelle th, .leiter-team-tabelle td { padding: 0.4rem 0.5rem; vertical-align: top; }
 .zeile-bearbeiten { background: var(--color-surface-muted); }
 .zeile-bearbeiten-extra td { padding-top: 0; border-bottom: 1px solid var(--color-border); }

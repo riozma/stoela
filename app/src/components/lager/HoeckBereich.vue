@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import { useAuth } from '../../composables/useAuth'
 
 interface Leiter {
   id: string
   vorname: string
   nachname: string
+  anwesend_von: string | null
+  anwesend_bis: string | null
 }
 
 interface HoeckRolle {
@@ -13,6 +16,8 @@ interface HoeckRolle {
   rolle: string
   ist_eigene: boolean
   sortierung: number
+  bedarf_anzahl: number | null
+  uhrzeit: string | null
   leute: { id: string; leiter_id: string; vorname: string; nachname: string }[]
 }
 
@@ -28,6 +33,13 @@ interface Wiese {
   name: string
 }
 
+interface Feedback {
+  id: string
+  autor_name: string
+  text: string
+  created_at: string
+}
+
 const FIXE_ROLLEN = ['Tagwach', 'Zmorge', 'Nachtruhe']
 
 const props = defineProps<{
@@ -36,6 +48,8 @@ const props = defineProps<{
   endDatum: string | null
   isLeitung: boolean
 }>()
+
+const { session } = useAuth()
 
 const alleLeiter = ref<Leiter[]>([])
 const alleGruppen = ref<string[]>([])
@@ -46,8 +60,13 @@ const tagWieseId = ref<string | null>(null)
 const tagWieseZeilenId = ref<string | null>(null)
 const laden = ref(true)
 const aktiverTag = ref('')
+const ansicht = ref<'tag' | 'feedback'>('tag')
 const eigeneRolleNeu = ref('')
-const leiterFuerRolle = ref<Record<string, string>>({}) // hoeck_rolle_id -> leiter_id
+const rolleBearbeitenId = ref<string | null>(null)
+const bearbeitenForm = ref({ bedarf_anzahl: '', uhrzeit: '' })
+const feedback = ref<Feedback[]>([])
+const neuesFeedback = ref('')
+const feedbackSpeichern = ref(false)
 
 const tage = computed(() => {
   if (!props.startDatum || !props.endDatum) return []
@@ -61,23 +80,64 @@ const tage = computed(() => {
   return list
 })
 
+const leiterImLagerAmTag = computed(() => {
+  const tag = aktiverTag.value
+  if (!tag) return alleLeiter.value
+  return alleLeiter.value.filter((l) => {
+    if (l.anwesend_von && tag < l.anwesend_von) return false
+    if (l.anwesend_bis && tag > l.anwesend_bis) return false
+    return true
+  })
+})
+
 function formatTag(tag: string) {
   return new Intl.DateTimeFormat('de-CH', { weekday: 'short', day: 'numeric', month: 'numeric' }).format(new Date(tag + 'T00:00:00'))
+}
+
+function formatDatum(iso: string) {
+  return new Intl.DateTimeFormat('de-CH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+}
+
+/** Vor 21 Uhr: heutiger Tag. Ab 21 Uhr: nächster Tag. Vor Lagerbeginn: erster Tag.
+ *  Nach Lagerende (bzw. wenn der berechnete Zieltag nach dem Lager liegt): Feedback-Höck. */
+function autoAnsichtBestimmen(): { ansicht: 'tag' | 'feedback'; tag: string } {
+  if (!props.startDatum || !props.endDatum || !tage.value.length) {
+    return { ansicht: 'tag', tag: tage.value[0] ?? '' }
+  }
+  const jetzt = new Date()
+  const heuteIso = jetzt.toISOString().slice(0, 10)
+
+  if (heuteIso < props.startDatum) {
+    return { ansicht: 'tag', tag: tage.value[0] }
+  }
+
+  let zielIso = heuteIso
+  if (jetzt.getHours() >= 21) {
+    const naechster = new Date(heuteIso + 'T00:00:00')
+    naechster.setDate(naechster.getDate() + 1)
+    zielIso = naechster.toISOString().slice(0, 10)
+  }
+
+  if (zielIso > props.endDatum) {
+    return { ansicht: 'feedback', tag: tage.value[tage.value.length - 1] }
+  }
+  if (zielIso < props.startDatum) {
+    return { ansicht: 'tag', tag: tage.value[0] }
+  }
+  return { ansicht: 'tag', tag: zielIso }
 }
 
 async function ladeDaten() {
   laden.value = true
 
-  // Leiter laden
   const { data: leiterData } = await supabase
     .from('anmeldungen_leiter')
-    .select('id, vorname, nachname')
+    .select('id, vorname, nachname, anwesend_von, anwesend_bis')
     .eq('lager_id', props.lagerId)
     .eq('status', 'bestaetigt')
     .order('nachname')
   alleLeiter.value = leiterData ?? []
 
-  // Gruppen laden
   const { data: gruppenData } = await supabase
     .from('lagergruppen')
     .select('name')
@@ -85,7 +145,6 @@ async function ladeDaten() {
     .order('name')
   alleGruppen.value = gruppenData?.map((g: any) => g.name) ?? []
 
-  // Spielwiesen laden (optional, nur falls Geländespielwiese-Ämtli welche erfasst hat)
   const { data: wiesenData } = await supabase
     .from('gelaendespielwiesen')
     .select('id, name')
@@ -93,13 +152,16 @@ async function ladeDaten() {
     .order('name')
   alleWiesen.value = wiesenData ?? []
 
-  // Falls kein Tag aktiv ist, ersten nehmen
-  if (!aktiverTag.value && tage.value.length) {
-    aktiverTag.value = tage.value[0]
+  if (!aktiverTag.value) {
+    const auto = autoAnsichtBestimmen()
+    ansicht.value = auto.ansicht
+    aktiverTag.value = auto.tag
   }
 
-  if (aktiverTag.value) {
+  if (ansicht.value === 'tag' && aktiverTag.value) {
     await ladeFuerTag(aktiverTag.value)
+  } else if (ansicht.value === 'feedback') {
+    await ladeFeedback()
   }
 
   laden.value = false
@@ -107,45 +169,12 @@ async function ladeDaten() {
 
 async function ladeFuerTag(tag: string) {
   aktiverTag.value = tag
+  ansicht.value = 'tag'
 
-  // Rollen laden
   const { data: rollenData } = await supabase
     .rpc('get_hoeck_rollen_fuer_tag', { p_lager_id: props.lagerId, p_tag: tag })
+  rollen.value = (rollenData as HoeckRolle[]) ?? []
 
-  if (rollenData) {
-    rollen.value = rollenData as HoeckRolle[]
-  } else {
-    // Fallback: direkter Query
-    const { data } = await supabase
-      .from('hoeck_rollen')
-      .select('*')
-      .eq('lager_id', props.lagerId)
-      .eq('tag', tag)
-      .order('sortierung')
-    if (data) {
-      // Lade Zuweisungen separat
-      rollen.value = []
-      for (const r of data) {
-        const { data: zuw } = await supabase
-          .from('hoeck_zuweisungen')
-          .select('id, leiter_id')
-          .eq('hoeck_rolle_id', r.id)
-        const leute = (zuw ?? []).map((z: any) => {
-          const l = alleLeiter.value.find((l) => l.id === z.leiter_id)
-          return { id: z.id, leiter_id: z.leiter_id, vorname: l?.vorname ?? '', nachname: l?.nachname ?? '' }
-        })
-        rollen.value.push({
-          id: r.id,
-          rolle: r.rolle,
-          ist_eigene: r.ist_eigene,
-          sortierung: r.sortierung,
-          leute,
-        })
-      }
-    }
-  }
-
-  // Gruppen-Dienste laden
   const { data: diensteData } = await supabase
     .from('hoeck_gruppen_dienste')
     .select('*')
@@ -153,7 +182,6 @@ async function ladeFuerTag(tag: string) {
     .eq('tag', tag)
   gruppenDienste.value = diensteData ?? []
 
-  // Wiese des Tages laden (optional)
   const { data: wieseTag } = await supabase
     .from('hoeck_tag_wiese')
     .select('id, wiese_id')
@@ -162,6 +190,38 @@ async function ladeFuerTag(tag: string) {
     .maybeSingle()
   tagWieseZeilenId.value = wieseTag?.id ?? null
   tagWieseId.value = wieseTag?.wiese_id ?? null
+}
+
+async function ladeFeedback() {
+  ansicht.value = 'feedback'
+  const { data } = await supabase
+    .from('hoeck_feedback')
+    .select('id, autor_name, text, created_at')
+    .eq('lager_id', props.lagerId)
+    .order('created_at')
+  feedback.value = data ?? []
+}
+
+async function feedbackSenden() {
+  const text = neuesFeedback.value.trim()
+  if (!text || !session.value) return
+  feedbackSpeichern.value = true
+  const { data: profil } = await supabase
+    .from('profiles')
+    .select('vorname, nachname')
+    .eq('id', session.value.user.id)
+    .maybeSingle()
+  const autorName = profil?.vorname
+    ? `${profil.vorname} ${profil.nachname ?? ''}`.trim()
+    : session.value.user.email?.split('@')[0] ?? 'Unbekannt'
+  const { data } = await supabase
+    .from('hoeck_feedback')
+    .insert({ lager_id: props.lagerId, profile_id: session.value.user.id, autor_name: autorName, text })
+    .select('id, autor_name, text, created_at')
+    .single()
+  if (data) feedback.value.push(data as Feedback)
+  neuesFeedback.value = ''
+  feedbackSpeichern.value = false
 }
 
 async function setWiese(wieseId: string) {
@@ -186,10 +246,6 @@ async function setWiese(wieseId: string) {
   tagWieseId.value = wieseId
 }
 
-function tagWechseln(tag: string) {
-  ladeFuerTag(tag)
-}
-
 function leiterName(leiterId: string): string {
   const l = alleLeiter.value.find((l) => l.id === leiterId)
   return l ? `${l.vorname} ${l.nachname}` : leiterId
@@ -201,11 +257,9 @@ async function toggleLeiterRolle(rolleId: string, leiterId: string) {
 
   const existing = rolle.leute.find((l) => l.leiter_id === leiterId)
   if (existing) {
-    // Entfernen
     await supabase.from('hoeck_zuweisungen').delete().eq('id', existing.id)
     rolle.leute = rolle.leute.filter((l) => l.leiter_id !== leiterId)
   } else {
-    // Hinzufügen
     const { data } = await supabase
       .from('hoeck_zuweisungen')
       .insert({ hoeck_rolle_id: rolleId, leiter_id: leiterId })
@@ -237,6 +291,8 @@ async function eigeneRolleHinzufuegen() {
       rolle: data.rolle,
       ist_eigene: true,
       sortierung: data.sortierung,
+      bedarf_anzahl: null,
+      uhrzeit: null,
       leute: [],
     })
   }
@@ -246,6 +302,23 @@ async function eigeneRolleHinzufuegen() {
 async function eigeneRolleLoeschen(rolleId: string) {
   await supabase.from('hoeck_rollen').delete().eq('id', rolleId)
   rollen.value = rollen.value.filter((r) => r.id !== rolleId)
+}
+
+function bearbeitenStarten(rolle: HoeckRolle) {
+  rolleBearbeitenId.value = rolle.id
+  bearbeitenForm.value = {
+    bedarf_anzahl: rolle.bedarf_anzahl != null ? String(rolle.bedarf_anzahl) : '',
+    uhrzeit: rolle.uhrzeit ?? '',
+  }
+}
+
+async function bearbeitenSpeichern(rolle: HoeckRolle) {
+  const bedarf = bearbeitenForm.value.bedarf_anzahl ? Number(bearbeitenForm.value.bedarf_anzahl) : null
+  const uhrzeit = bearbeitenForm.value.uhrzeit || null
+  await supabase.from('hoeck_rollen').update({ bedarf_anzahl: bedarf, uhrzeit }).eq('id', rolle.id)
+  rolle.bedarf_anzahl = bedarf
+  rolle.uhrzeit = uhrzeit
+  rolleBearbeitenId.value = null
 }
 
 function getDienst(dienst: string): string {
@@ -278,7 +351,7 @@ onMounted(ladeDaten)
 
 <template>
   <section class="hoeck-bereich">
-    <h3>Höck – Tages-Rollen & Dienste</h3>
+    <h3>Höck – Tages-Rollen &amp; Dienste</h3>
     <p class="hint">Pro Tag Leiter für Rollen einteilen und Gruppen für Kiosk/Telefon zuweisen.</p>
 
     <nav v-if="tage.length" class="tage-nav">
@@ -286,27 +359,47 @@ onMounted(ladeDaten)
         v-for="t in tage"
         :key="t"
         type="button"
-        :class="{ aktiv: t === aktiverTag }"
-        @click="tagWechseln(t)"
+        :class="{ aktiv: ansicht === 'tag' && t === aktiverTag }"
+        @click="ladeFuerTag(t)"
       >
         {{ formatTag(t) }}
+      </button>
+      <button type="button" class="feedback-btn" :class="{ aktiv: ansicht === 'feedback' }" @click="ladeFeedback">
+        Feedback-Höck
       </button>
     </nav>
 
     <div v-if="laden" class="hint">Lade...</div>
 
-    <template v-if="!laden && aktiverTag">
-      <!-- Rollen -->
+    <!-- Tages-Höck -->
+    <template v-if="!laden && ansicht === 'tag' && aktiverTag">
       <div class="rollen-section">
         <h4>Rollen</h4>
         <div v-for="rolle in rollen" :key="rolle.id" class="rolle-card">
           <div class="rolle-kopf">
-            <strong>{{ rolle.rolle }}</strong>
-            <button v-if="rolle.ist_eigene" type="button" class="klein sekundaer" @click="eigeneRolleLoeschen(rolle.id)">✕</button>
+            <div class="rolle-titel">
+              <strong>{{ rolle.rolle }}</strong>
+              <span v-if="rolle.uhrzeit || rolle.bedarf_anzahl" class="rolle-meta">
+                <span v-if="rolle.uhrzeit">🕐 {{ rolle.uhrzeit.slice(0, 5) }}</span>
+                <span v-if="rolle.bedarf_anzahl">· {{ rolle.leute.length }}/{{ rolle.bedarf_anzahl }} Personen</span>
+              </span>
+            </div>
+            <div class="rolle-aktionen">
+              <button type="button" class="stift-btn" title="Bedarf & Uhrzeit bearbeiten" @click="bearbeitenStarten(rolle)">✏️</button>
+              <button v-if="rolle.ist_eigene" type="button" class="klein sekundaer" @click="eigeneRolleLoeschen(rolle.id)">✕</button>
+            </div>
           </div>
+
+          <div v-if="rolleBearbeitenId === rolle.id" class="bearbeiten-zeile">
+            <label>Personen gesucht <input v-model="bearbeitenForm.bedarf_anzahl" type="number" min="0" class="klein-inp" /></label>
+            <label>Uhrzeit <input v-model="bearbeitenForm.uhrzeit" type="time" class="klein-inp" /></label>
+            <button type="button" class="klein" @click="bearbeitenSpeichern(rolle)">Speichern</button>
+            <button type="button" class="klein sekundaer" @click="rolleBearbeitenId = null">Abbrechen</button>
+          </div>
+
           <div class="rolle-leute">
             <button
-              v-for="l in alleLeiter"
+              v-for="l in leiterImLagerAmTag"
               :key="l.id"
               type="button"
               class="leiter-chip"
@@ -315,6 +408,7 @@ onMounted(ladeDaten)
             >
               {{ l.vorname }}
             </button>
+            <span v-if="!leiterImLagerAmTag.length" class="hint klein">Niemand an diesem Tag im Lager erfasst.</span>
           </div>
         </div>
 
@@ -324,7 +418,6 @@ onMounted(ladeDaten)
         </div>
       </div>
 
-      <!-- Gruppen-Dienste -->
       <div class="dienste-section">
         <h4>Gruppen-Dienste</h4>
         <div class="dienst-row">
@@ -350,6 +443,27 @@ onMounted(ladeDaten)
         </div>
       </div>
     </template>
+
+    <!-- Feedback-Höck (nach dem Lager) -->
+    <template v-if="!laden && ansicht === 'feedback'">
+      <div class="feedback-section">
+        <h4>Feedback-Höck</h4>
+        <p class="hint">Rückblick: Was war gut, was können wir nächstes Jahr besser machen?</p>
+
+        <div class="feedback-liste">
+          <div v-for="f in feedback" :key="f.id" class="feedback-eintrag">
+            <span class="feedback-meta">{{ f.autor_name }} · {{ formatDatum(f.created_at) }}</span>
+            <p>{{ f.text }}</p>
+          </div>
+          <p v-if="!feedback.length" class="hint">Noch kein Feedback erfasst.</p>
+        </div>
+
+        <form class="feedback-form" @submit.prevent="feedbackSenden">
+          <textarea v-model="neuesFeedback" rows="3" placeholder="Dein Feedback zum Lager..." :disabled="feedbackSpeichern"></textarea>
+          <button type="submit" :disabled="feedbackSpeichern || !neuesFeedback.trim()">Feedback abschicken</button>
+        </form>
+      </div>
+    </template>
   </section>
 </template>
 
@@ -360,13 +474,21 @@ onMounted(ladeDaten)
 .tage-nav { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.75rem 0; }
 .tage-nav button { font-size: 0.8rem; padding: 0.35rem 0.6rem; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); border-radius: var(--radius-md); }
 .tage-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
+.feedback-btn { margin-left: 0.35rem; border-style: dashed; }
 
 .rollen-section { margin-bottom: 1.5rem; }
 .rolle-card {
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: var(--radius-md); padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
 }
-.rolle-kopf { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+.rolle-kopf { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.4rem; }
+.rolle-titel { display: flex; flex-direction: column; gap: 0.15rem; }
+.rolle-meta { font-size: 0.78rem; color: var(--color-text-muted); display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.rolle-aktionen { display: flex; gap: 0.3rem; align-items: center; }
+.stift-btn { background: none; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.1rem 0.2rem; }
+.bearbeiten-zeile { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--color-surface-muted); border-radius: var(--radius-sm); }
+.bearbeiten-zeile label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
+.klein-inp { width: 6rem; padding: 0.2rem 0.35rem; font-size: 0.82rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
 .rolle-leute { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .leiter-chip {
   padding: 0.2rem 0.5rem; font-size: 0.78rem; border: 1px solid var(--color-border);
@@ -380,7 +502,17 @@ onMounted(ladeDaten)
 .dienst-row label { font-size: 0.85rem; font-weight: 600; min-width: 60px; }
 .dienst-row select { flex: 1; padding: 0.35rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.85rem; max-width: 200px; }
 
+.feedback-section { margin-top: 0.5rem; }
+.feedback-liste { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.feedback-eintrag { border-left: 2px solid var(--color-border); padding-left: 0.6rem; }
+.feedback-eintrag p { margin: 0.1rem 0 0; font-size: 0.9rem; }
+.feedback-meta { font-size: 0.75rem; color: var(--color-text-muted); }
+.feedback-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.feedback-form textarea { width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: 0.88rem; }
+.feedback-form button { align-self: flex-end; }
+
 .klein { font-size: 0.75rem; padding: 0.15rem 0.4rem; }
 .sekundaer { background: transparent; border: 1px solid var(--color-border); color: var(--color-text); border-radius: var(--radius-md); cursor: pointer; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
+.hint.klein { font-size: 0.78rem; }
 </style>

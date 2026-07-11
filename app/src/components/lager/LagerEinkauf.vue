@@ -13,6 +13,7 @@ interface EinkaufItem {
   notiz: string | null
   erledigt: boolean
   erstellt_von: string | null
+  erstellt_von_name: string | null
   programm_block_id: string | null
 }
 
@@ -64,10 +65,17 @@ function formatTermin(iso: string) {
 
 async function laden() {
   const [{ data: itemData }, { data: terminData }] = await Promise.all([
-    supabase.from('einkaufsliste_items').select('*').eq('lager_id', props.lagerId).order('created_at'),
+    supabase
+      .from('einkaufsliste_items')
+      .select('*, ersteller:erstellt_von(vorname, nachname)')
+      .eq('lager_id', props.lagerId)
+      .order('created_at'),
     supabase.from('einkaufs_termine').select('id, einkauf_am, frueh_geschlossen').eq('lager_id', props.lagerId).order('einkauf_am', { ascending: false }),
   ])
-  items.value = (itemData ?? []) as EinkaufItem[]
+  items.value = ((itemData ?? []) as any[]).map((i) => ({
+    ...i,
+    erstellt_von_name: i.ersteller ? `${i.ersteller.vorname ?? ''} ${i.ersteller.nachname ?? ''}`.trim() || null : null,
+  })) as EinkaufItem[]
   termine.value = terminData ?? []
 }
 
@@ -171,9 +179,10 @@ onMounted(laden)
       Als Leiter/in kannst du jederzeit Artikel für den nächsten Einkauf melden.
     </p>
 
-    <table v-if="items.length" class="liste">
+    <div v-if="items.length" class="liste-scroll">
+    <table class="liste">
       <thead>
-        <tr><th></th><th>Artikel</th><th>Bereich</th><th>Mahlzeit</th><th>Notiz</th></tr>
+        <tr><th></th><th>Artikel</th><th>Bereich</th><th>Mahlzeit</th><th>Wofür / Notiz</th><th>Von</th></tr>
       </thead>
       <tbody>
         <tr v-for="item in items" :key="item.id" :class="{ erledigt: item.erledigt }">
@@ -201,10 +210,12 @@ onMounted(laden)
             </select>
             <span v-else>{{ item.mahlzeit ?? '–' }}</span>
           </td>
-          <td>{{ item.notiz ?? '' }}</td>
+          <td>{{ item.notiz ?? '–' }}</td>
+          <td class="hint">{{ item.erstellt_von_name ?? '–' }}</td>
         </tr>
       </tbody>
     </table>
+    </div>
 
     <h3 v-if="eintragOffen || darfEintragen">Eintrag hinzufügen</h3>
     <form v-if="eintragOffen || darfEintragen" @submit.prevent="hinzufuegen" class="inline-form">
@@ -220,7 +231,7 @@ onMounted(laden)
         <option value="">Programm wählen</option>
         <option v-for="b in bloecke" :key="b.id" :value="b.id">{{ b.code }} {{ b.titel }}</option>
       </select>
-      <input v-model="form.notiz" placeholder="Notiz" />
+      <input v-model="form.notiz" placeholder="Wofür? (z.B. für Freitag-Zvieri)" />
       <button type="submit">Hinzufügen</button>
     </form>
     <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -235,6 +246,7 @@ onMounted(laden)
 .termin-banner.geschlossen { opacity: 0.75; }
 .warn { color: var(--color-danger); font-size: 0.85rem; }
 .kueche-box { margin-bottom: 1rem; padding: 1rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
+.liste-scroll { overflow-x: auto; }
 .liste { width: 100%; border-collapse: collapse; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin: 1rem 0; font-size: 0.9rem; }
 .liste th, .liste td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--color-border); }
 .liste tr.erledigt td { text-decoration: line-through; color: var(--color-text-muted); }
