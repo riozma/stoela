@@ -23,6 +23,11 @@ interface GruppenDienst {
   gruppen_name: string
 }
 
+interface Wiese {
+  id: string
+  name: string
+}
+
 const FIXE_ROLLEN = ['Tagwach', 'Zmorge', 'Nachtruhe']
 
 const props = defineProps<{
@@ -36,6 +41,9 @@ const alleLeiter = ref<Leiter[]>([])
 const alleGruppen = ref<string[]>([])
 const rollen = ref<HoeckRolle[]>([])
 const gruppenDienste = ref<GruppenDienst[]>([])
+const alleWiesen = ref<Wiese[]>([])
+const tagWieseId = ref<string | null>(null)
+const tagWieseZeilenId = ref<string | null>(null)
 const laden = ref(true)
 const aktiverTag = ref('')
 const eigeneRolleNeu = ref('')
@@ -76,6 +84,14 @@ async function ladeDaten() {
     .eq('lager_id', props.lagerId)
     .order('name')
   alleGruppen.value = gruppenData?.map((g: any) => g.name) ?? []
+
+  // Spielwiesen laden (optional, nur falls Geländespielwiese-Ämtli welche erfasst hat)
+  const { data: wiesenData } = await supabase
+    .from('gelaendespielwiesen')
+    .select('id, name')
+    .eq('lager_id', props.lagerId)
+    .order('name')
+  alleWiesen.value = wiesenData ?? []
 
   // Falls kein Tag aktiv ist, ersten nehmen
   if (!aktiverTag.value && tage.value.length) {
@@ -136,6 +152,38 @@ async function ladeFuerTag(tag: string) {
     .eq('lager_id', props.lagerId)
     .eq('tag', tag)
   gruppenDienste.value = diensteData ?? []
+
+  // Wiese des Tages laden (optional)
+  const { data: wieseTag } = await supabase
+    .from('hoeck_tag_wiese')
+    .select('id, wiese_id')
+    .eq('lager_id', props.lagerId)
+    .eq('tag', tag)
+    .maybeSingle()
+  tagWieseZeilenId.value = wieseTag?.id ?? null
+  tagWieseId.value = wieseTag?.wiese_id ?? null
+}
+
+async function setWiese(wieseId: string) {
+  if (!aktiverTag.value) return
+  if (!wieseId) {
+    if (tagWieseZeilenId.value) {
+      await supabase.from('hoeck_tag_wiese').delete().eq('id', tagWieseZeilenId.value)
+      tagWieseZeilenId.value = null
+    }
+    tagWieseId.value = null
+    return
+  }
+  const { data } = await supabase
+    .from('hoeck_tag_wiese')
+    .upsert(
+      { lager_id: props.lagerId, tag: aktiverTag.value, wiese_id: wieseId },
+      { onConflict: 'lager_id,tag' },
+    )
+    .select('id')
+    .single()
+  tagWieseZeilenId.value = data?.id ?? tagWieseZeilenId.value
+  tagWieseId.value = wieseId
 }
 
 function tagWechseln(tag: string) {
@@ -291,6 +339,13 @@ onMounted(ladeDaten)
           <select :value="getDienst('telefon')" @change="setDienst('telefon', ($event.target as HTMLSelectElement).value)">
             <option value="">– Keine –</option>
             <option v-for="g in alleGruppen" :key="g" :value="g">{{ g }}</option>
+          </select>
+        </div>
+        <div v-if="alleWiesen.length" class="dienst-row">
+          <label>Spielwiese:</label>
+          <select :value="tagWieseId ?? ''" @change="setWiese(($event.target as HTMLSelectElement).value)">
+            <option value="">– Keine –</option>
+            <option v-for="w in alleWiesen" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </div>
       </div>

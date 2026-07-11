@@ -162,6 +162,7 @@ interface LeiterZeile {
 }
 const navOffen = ref(false)
 const moerderliAktiv = ref(false)
+const spielwiesenAktiv = ref(false)
 const letzteAenderungen = ref<LagerAenderung[]>([])
 const tnNavCount = ref(0)
 const bloeckeLaden = ref(false)
@@ -1194,6 +1195,14 @@ async function ladeMoerderliStatus() {
   moerderliAktiv.value = !!data?.oeffentlich
 }
 
+async function ladeSpielwiesenStatus() {
+  const { count } = await supabase
+    .from('gelaendespielwiesen')
+    .select('id', { count: 'exact', head: true })
+    .eq('lager_id', lagerId.value)
+  spielwiesenAktiv.value = !!count
+}
+
 function zuHoeckImProgramm() {
   const morgen = new Date()
   morgen.setDate(morgen.getDate() + 1)
@@ -1307,7 +1316,7 @@ async function ladeNavKontext() {
     )
   }
   await Promise.all(tasks)
-  await ladeMoerderliStatus()
+  await Promise.all([ladeMoerderliStatus(), ladeSpielwiesenStatus()])
 }
 
 async function ladeTabDaten(tab: Tab) {
@@ -1337,7 +1346,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'dashboard') {
-    await Promise.all([ladeLetzteAenderungenListe(), ladeMoerderliStatus()])
+    await Promise.all([ladeLetzteAenderungenListe(), ladeMoerderliStatus(), ladeSpielwiesenStatus()])
   }
 }
 
@@ -1424,6 +1433,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
         :mobile-open="navOffen"
         :moerderli-aktiv="moerderliAktiv"
+        :spielwiesen-aktiv="spielwiesenAktiv"
         @close="navOffen = false"
       />
     </div>

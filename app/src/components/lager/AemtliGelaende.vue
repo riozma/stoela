@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import AemtliShell from './AemtliShell.vue'
 import LagerMap from './LagerMap.vue'
+import WiesenKarte from './WiesenKarte.vue'
+import { useGooglePlaces, type OrtAuswahl } from '../../composables/useGooglePlaces'
 
 const props = defineProps<{
   lagerId: string
@@ -26,6 +28,10 @@ interface Wiese {
 
 const wiesen = ref<Wiese[]>([])
 const form = ref({ name: '', bauer_name: '', bauer_telefon: '', notiz: '' })
+const neueOrtAuswahl = ref<OrtAuswahl | null>(null)
+const neuerOrtInput = ref<HTMLInputElement | null>(null)
+const ortBearbeitenId = ref<string | null>(null)
+const { attachAutocomplete } = useGooglePlaces()
 
 const STATUS_LABELS: Record<string, string> = {
   offen: 'Noch anfragen',
@@ -51,7 +57,11 @@ async function laden() {
   wiesen.value = data ?? []
 }
 
-onMounted(laden)
+onMounted(async () => {
+  await laden()
+  await nextTick()
+  ortNeuAttach()
+})
 
 async function hinzufuegen() {
   await supabase.from('gelaendespielwiesen').insert({
@@ -61,9 +71,35 @@ async function hinzufuegen() {
     bauer_telefon: form.value.bauer_telefon || null,
     notiz: form.value.notiz || null,
     status: 'offen',
+    lat: neueOrtAuswahl.value?.lat ?? null,
+    lng: neueOrtAuswahl.value?.lng ?? null,
   })
   form.value = { name: '', bauer_name: '', bauer_telefon: '', notiz: '' }
+  neueOrtAuswahl.value = null
+  if (neuerOrtInput.value) neuerOrtInput.value.value = ''
   await laden()
+}
+
+async function ortBearbeitenStarten(id: string) {
+  ortBearbeitenId.value = id
+  await nextTick()
+  const input = document.getElementById(`ort-input-${id}`) as HTMLInputElement | null
+  if (input) {
+    await attachAutocomplete(input, async (ort) => {
+      await supabase.from('gelaendespielwiesen').update({ lat: ort.lat, lng: ort.lng }).eq('id', id)
+      const w = wiesen.value.find((x) => x.id === id)
+      if (w) { w.lat = ort.lat; w.lng = ort.lng }
+      ortBearbeitenId.value = null
+    })
+  }
+}
+
+function ortNeuAttach() {
+  if (neuerOrtInput.value) {
+    attachAutocomplete(neuerOrtInput.value, (ort) => {
+      neueOrtAuswahl.value = ort
+    })
+  }
 }
 
 async function statusSetzen(id: string, status: string) {
@@ -90,14 +126,18 @@ async function notizSpeichern(id: string, notiz: string) {
       🍷 Du hast Wiesen mit Zusage – nach dem Lager Dankeschön (Flasche Wein) persönlich vorbeibringen und Status auf «Bedankt» setzen!
     </p>
 
+    <WiesenKarte v-if="wiesenMitNr.length" :wiesen="wiesenMitNr" />
+
     <h3>Neue Wiese erfassen</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
       <input v-model="form.name" placeholder="Name / Ort der Wiese" required style="flex:2" />
+      <input ref="neuerOrtInput" placeholder="📍 Ort auf Karte suchen..." style="flex:2" />
       <input v-model="form.bauer_name" placeholder="Bauer/in" />
       <input v-model="form.bauer_telefon" placeholder="Telefon" />
       <input v-model="form.notiz" placeholder="Notiz" style="flex:1" />
       <button type="submit">+ Wiese</button>
     </form>
+    <p v-if="neueOrtAuswahl" class="hint">📍 {{ neueOrtAuswahl.adresse }}</p>
 
     <table v-if="wiesenMitNr.length" class="liste">
       <thead>
@@ -106,6 +146,7 @@ async function notizSpeichern(id: string, notiz: string) {
           <th>Wiese</th>
           <th>Bauer/in</th>
           <th>Kontakt</th>
+          <th>Pin</th>
           <th>Notiz</th>
           <th>Status</th>
           <th></th>
@@ -119,6 +160,17 @@ async function notizSpeichern(id: string, notiz: string) {
           <td>
             <a v-if="w.bauer_telefon" :href="`tel:${w.bauer_telefon}`" class="tel-link">{{ w.bauer_telefon }}</a>
             <span v-else>–</span>
+          </td>
+          <td>
+            <input
+              v-if="ortBearbeitenId === w.id"
+              :id="`ort-input-${w.id}`"
+              placeholder="Ort suchen..."
+              class="ort-input"
+            />
+            <button v-else class="secondary klein" @click="ortBearbeitenStarten(w.id)">
+              {{ w.lat && w.lng ? '📍 ändern' : '📍 setzen' }}
+            </button>
           </td>
           <td>
             <input
@@ -141,6 +193,7 @@ async function notizSpeichern(id: string, notiz: string) {
       </tbody>
     </table>
     <p v-else class="hint">Noch keine Wiesen erfasst. Bauern in der Lager-Umgebung persönlich anfragen.</p>
+    <p class="hint">Sobald eine Wiese erfasst ist, erscheint für alle Leiter/innen ein «Spielwiesen»-Tab (nur ansehen + kommentieren).</p>
 
     <p class="hint">Tipp: Nach dem Lager zu jeder Wiese mit Zusage eine Flasche Wein vorbeibringen (Dankeschön).</p>
   </AemtliShell>
@@ -157,6 +210,7 @@ h3 { margin: 0.75rem 0 0.4rem; font-size: 0.95rem; }
 .tel-link:hover { text-decoration: underline; }
 .notiz-input { width: 100%; min-width: 8rem; border: 1px solid transparent; background: transparent; padding: 0.2rem 0.3rem; font-size: 0.83rem; border-radius: var(--radius-sm); }
 .notiz-input:focus { border-color: var(--color-border); background: var(--color-surface); outline: none; }
+.ort-input { min-width: 12rem; font-size: 0.82rem; padding: 0.2rem 0.4rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
 .aktionen-zelle { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
 .loeschen-btn { color: var(--color-danger); }

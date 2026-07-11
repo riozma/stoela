@@ -21,6 +21,7 @@ const props = defineProps<{
   leiterCount: number
   mobileOpen?: boolean
   moerderliAktiv?: boolean
+  spielwiesenAktiv?: boolean
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -73,6 +74,10 @@ function navKlick() {
 
     <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link" @click="navKlick">
       Mörderli
+    </router-link>
+
+    <router-link v-if="spielwiesenAktiv" :to="`${base}/spielwiesen`" class="nav-link" @click="navKlick">
+      Spielwiesen
     </router-link>
 
     <div class="nav-dropdown" data-label="Leute" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">
