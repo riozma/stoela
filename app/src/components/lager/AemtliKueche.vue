@@ -6,7 +6,7 @@ import AemtliShell from './AemtliShell.vue'
 import KuecheMahlzeiten from './KuecheMahlzeiten.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
-type DashboardTab = 'uebersicht' | 'menuplaner' | 'gewohnheiten' | 'einkauf'
+type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'gewohnheiten' | 'einkauf'
 
 interface MaterialZeile {
   name: string
@@ -370,7 +370,7 @@ async function personSpeichern(person: PersonEssen) {
   fehler.value = ''
   const tabelle = person.typ === 'tn' ? 'anmeldungen_tn' : 'anmeldungen_leiter'
   const payload: Record<string, string | null> = { essensgewohnheiten: person.essensgewohnheiten || null }
-  if (person.typ === 'tn') payload.allergien = person.allergien || null
+  if (person.typ === 'tn' || person.typ === 'leiter') payload.allergien = person.allergien || null
   const { error } = await supabase.from(tabelle).update(payload).eq('id', person.id)
   if (error) fehler.value = error.message
 }
@@ -422,6 +422,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     <nav class="dash-tabs">
       <button :class="{ aktiv: ansicht === 'uebersicht' }" @click="ansicht = 'uebersicht'">Übersicht</button>
       <button :class="{ aktiv: ansicht === 'menuplaner' }" @click="ansicht = 'menuplaner'">Menüplaner</button>
+      <button :class="{ aktiv: ansicht === 'personen' }" @click="ansicht = 'personen'">Personen & Allergien</button>
       <button :class="{ aktiv: ansicht === 'gewohnheiten' }" @click="ansicht = 'gewohnheiten'">
         Essensgewohnheiten
         <span v-if="personenMitHinweis.length" class="badge">{{ personenMitHinweis.length }}</span>
@@ -623,6 +624,56 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
           <button type="submit">Einzelmahlzeit speichern</button>
         </form>
       </div>
+    </div>
+
+    <!-- Personen & Allergien -->
+    <div v-if="ansicht === 'personen'">
+      <h3>Personen, Allergien & Anwesenheit</h3>
+      <p class="hint">Alle Kinder und Leiter mit Allergien, Essensgewohnheiten und Anwesenheitsdauer.</p>
+
+      <table v-if="personen.length" class="liste">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Typ</th>
+            <th>Allergien</th>
+            <th>Essensgewohnheiten</th>
+            <th>Anwesend von</th>
+            <th>Anwesend bis</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in personen" :key="p.id" :class="{ warn: p.allergien?.trim() || p.essensgewohnheiten?.trim() }">
+            <td><strong>{{ p.name }}</strong></td>
+            <td>{{ p.typ === 'tn' ? 'TN' : 'Leiter' }}</td>
+            <td>
+              <input
+                v-if="p.typ === 'tn'"
+                v-model="p.allergien"
+                type="text"
+                placeholder="z.B. Nüsse, Laktose"
+                class="zellen-input"
+              />
+              <span v-else class="hint">–</span>
+            </td>
+            <td>
+              <input
+                v-model="p.essensgewohnheiten"
+                type="text"
+                placeholder="z.B. vegetarisch"
+                class="zellen-input"
+              />
+            </td>
+            <td>
+              <span class="hint">{{ p.anwesend_von ?? 'Ganztägig' }}</span>
+            </td>
+            <td>
+              <span class="hint">{{ p.anwesend_bis ?? 'Ganztägig' }}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="hint">Noch keine Personen erfasst.</p>
     </div>
 
     <!-- Essensgewohnheiten -->
