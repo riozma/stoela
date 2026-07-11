@@ -181,7 +181,14 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | 'hoeck' | string
+type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | 'hoeck' | 'kueche' | string
+
+const TEAM_ROLLE_LABELS: Record<string, string> = {
+  lagerleitung: 'Lagerleitung',
+  leiter: 'Leiter',
+  kueche: 'Küche',
+  aemtli_verantwortlich: 'Ämtli-Verantwortlich',
+}
 
 const activeTab = computed<Tab>(() => {
   if (route.name === 'lager-aemtli') return `aemtli:${route.params.aemtliSlug as string}`
@@ -226,9 +233,8 @@ const zugewieseneAemtli = ref<Aemtli[]>([])
 const hatFinanzenAemtli = computed(() =>
   zugewieseneAemtli.value.some((a) => aemtliSlug(a.name) === 'finanzen'),
 )
-const hatKuecheTab = computed(() =>
-  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kuche'),
-)
+/** Küche ist eine Team-Rolle (lager_leiter.rolle='kueche'), nicht mehr ein Ämtli. */
+const hatKuecheTab = computed(() => istKueche.value)
 /** App Admin über zugewiesenes Ämtli «App Admin» */
 const hatAppAdminAemtli = computed(() =>
   meineAemtli.value.some((a) => aemtliSlug(a.name) === 'app-admin'),
@@ -788,6 +794,7 @@ function zuweisbareAemtli(leiterId: string) {
   return aemtliListe.value.filter((a) => {
     if (zugewiesen.has(a.id)) return false
     if (istGeschuetztesAemtli(a.name) && !isLeitung.value) return false
+    if (aemtliSlug(a.name) === 'kuche') return false
     return true
   })
 }
@@ -1217,6 +1224,12 @@ async function pruefeKueche() {
   istKueche.value = !!kue
 }
 
+const kuecheAemtliId = ref<string | null>(null)
+async function ladeKuecheAemtliId() {
+  const { data } = await supabase.from('aemtli').select('id').eq('name', 'Küche').maybeSingle()
+  kuecheAemtliId.value = data?.id ?? null
+}
+
 async function ladeMeineAemtli() {
   if (!session.value) return
   const email = session.value.user.email ?? ''
@@ -1253,7 +1266,7 @@ async function ladeMeineAemtli() {
   }
 
   meineAemtli.value = [...set.values()]
-    .filter((a) => aemtliSlug(a.name) !== 'lagerleitung')
+    .filter((a) => aemtliSlug(a.name) !== 'lagerleitung' && aemtliSlug(a.name) !== 'kuche')
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -1403,6 +1416,7 @@ async function ladeNavKontext() {
         profil.value = p
       })(),
       pruefeKueche(),
+      ladeKuecheAemtliId(),
       ladeMeineAemtli(),
       ladeTeam(),
     )
@@ -1549,6 +1563,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
       <section v-if="activeTab === 'dashboard'">
         <LagerTimelinePanel
+          v-if="isLeitung"
           :lager-id="lagerId"
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
@@ -1586,6 +1601,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <section v-if="activeTab === 'fahrplan'">
         <LagerFahrplan
           :lager-id="lagerId"
+          :organisation-id="lager.organisation_id"
           :start-datum="lager.start_datum"
           :is-leitung="isLeitung"
           :vor-lager-id="lager.vor_lager_id"
@@ -2051,8 +2067,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                   >
                     <option value="leiter">Leiter</option>
                     <option value="lagerleitung">Lagerleitung (Lalei)</option>
+                    <option value="kueche">Küche</option>
                   </select>
-                  <span v-else-if="z.team">{{ z.team.rolle === 'lagerleitung' ? 'Lagerleitung' : 'Leiter' }}</span>
+                  <span v-else-if="z.team">{{ TEAM_ROLLE_LABELS[z.team.rolle] ?? z.team.rolle }}</span>
                   <span v-else class="hint">–</span>
                 </td>
                 <td>{{ z.team?.status ?? '–' }}</td>
@@ -2240,17 +2257,21 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         />
       </section>
 
-      <!-- Dynamische Ämtli-Tabs -->
-      <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
+      <!-- Küche (Team-Rolle, kein Ämtli mehr) -->
+      <section v-if="activeTab === 'kueche' && hatKuecheTab && session">
         <AemtliKueche
-          v-if="aemtliKomponente(a.name) === 'kueche' && session"
-          :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :lager-name="lager.name"
+          v-if="kuecheAemtliId"
+          :lager-id="lagerId" :aemtli-id="kuecheAemtliId" aemtli-name="Küche" :lager-name="lager.name"
           :user-id="session.user.id" :start-datum="lager.start_datum" :end-datum="lager.end_datum"
           :kann-einkauf-melden="istBestaetigterLeiter || isLeitung"
           :bloecke="bloecke.map((b) => ({ id: b.id, titel: b.titel, code: b.code }))"
         />
+      </section>
+
+      <!-- Dynamische Ämtli-Tabs -->
+      <section v-for="a in meineAemtli" :key="a.id" v-show="activeTab === tabIdForAemtli(a.name)">
         <AemtliFinanzen
-          v-else-if="aemtliKomponente(a.name) === 'finanzen'"
+          v-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :ist-kassier="hatFinanzenAemtli"
         />
         <AemtliFoto

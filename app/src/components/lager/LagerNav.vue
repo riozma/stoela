@@ -73,6 +73,10 @@ function navKlick() {
       Höck
     </router-link>
 
+    <router-link v-if="hatKuecheTab" :to="sectionPath('kueche')" class="nav-link" :class="{ aktiv: isActive('kueche') }" @click="navKlick">
+      Küche
+    </router-link>
+
     <router-link v-if="moerderliAktiv" :to="`${base}/moerderli`" class="nav-link" @click="navKlick">
       Mörderli
     </router-link>

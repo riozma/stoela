@@ -54,7 +54,7 @@ async function ladenTodos() {
   laden.value = true
   const { data } = await supabase
     .from('lager_todos')
-    .select('id, titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung')
+    .select('id, titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung, vorlage_id')
     .eq('lager_id', props.lagerId)
     .order('sortierung')
   todos.value = data ?? []
@@ -63,7 +63,7 @@ async function ladenTodos() {
     await supabase.rpc('lager_todos_generieren', { p_lager_id: props.lagerId })
     const { data: neu } = await supabase
       .from('lager_todos')
-      .select('id, titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung')
+      .select('id, titel, beschreibung, kategorie, zustaendig, aemtli_name, faellig_am, erledigt, sortierung, vorlage_id')
       .eq('lager_id', props.lagerId)
       .order('sortierung')
     todos.value = neu ?? []

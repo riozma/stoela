@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
+import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import { ECAMP_URL } from '../lib/constants'
 import { downloadIcs } from '../lib/ics'
 import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../lib/orgKalender'
@@ -164,6 +165,12 @@ const vergangeneLager = computed(() => {
   const heute = new Date().toISOString().slice(0, 10)
   return lager.value.filter((l) => !!l.end_datum && l.end_datum < heute).sort((a, b) => (b.start_datum ?? '').localeCompare(a.start_datum ?? ''))
 })
+
+/** Für den Jahresfahrplan-Tab: nächstes/laufendes Lager, sonst das zuletzt vergangene. */
+const relevantesLager = computed(() => kommendeOderLaufendeLager.value[0] ?? vergangeneLager.value[0] ?? null)
+
+type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'ressourcen'
+const aktivBereich = ref<VereinBereich>('lager')
 
 function profilVon(m: VereinsMitglied) {
   if (m.vorname !== undefined || m.nachname !== undefined || m.email !== undefined) {
@@ -852,7 +859,14 @@ onMounted(async () => {
           </article>
         </section>
 
-        <section class="karte">
+        <nav class="verein-tabs">
+          <button type="button" :class="{ aktiv: aktivBereich === 'lager' }" @click="aktivBereich = 'lager'">Lager</button>
+          <button type="button" :class="{ aktiv: aktivBereich === 'team' }" @click="aktivBereich = 'team'">Team</button>
+          <button type="button" :class="{ aktiv: aktivBereich === 'fahrplan' }" @click="aktivBereich = 'fahrplan'">Jahresfahrplan</button>
+          <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
+        </nav>
+
+        <section v-if="aktivBereich === 'lager'" class="karte">
           <h2>Lager im Verein</h2>
           <p class="hint">
             Kommende/laufende Lager: als Leiter beitreten oder als Gast ansehen.
@@ -882,7 +896,7 @@ onMounted(async () => {
           </details>
         </section>
 
-        <section class="karte">
+        <section v-if="aktivBereich === 'ressourcen'" class="karte">
           <h2>Links &amp; Zugänge</h2>
           <p class="hint">
             Wichtige <strong>Links</strong> (z.&nbsp;B. Google Drive) und geteilte <strong>Logindaten</strong> (Seite, E-Mail/Benutzername, Passwort).
@@ -985,7 +999,7 @@ onMounted(async () => {
           </div>
         </section>
 
-        <section v-if="orgKalenderBereit" class="karte">
+        <section v-if="aktivBereich === 'ressourcen' && orgKalenderBereit" class="karte">
           <h2>Vereinskalender</h2>
           <p class="hint">
             Ein Kalender für alle Lager im Verein. Name beim Abonnieren: <strong>{{ orgKalenderTitel }}</strong>.
@@ -1017,7 +1031,22 @@ onMounted(async () => {
           <button type="button" class="secondary klein-btn" @click="orgKalenderIcsDownload">ICS herunterladen</button>
         </section>
 
-        <section class="karte">
+        <section v-if="aktivBereich === 'fahrplan'" class="karte">
+          <h2>Jahresfahrplan</h2>
+          <p class="hint">
+            Fahrplan des nächsten/aktuellen Lagers – gilt vereinsweit als Vorlage für die Folgejahre (Aufgaben, die hier ergänzt oder bearbeitet werden, erscheinen automatisch auch nächstes Jahr wieder).
+          </p>
+          <LagerFahrplan
+            v-if="relevantesLager"
+            :lager-id="relevantesLager.id"
+            :organisation-id="orgAuswahl"
+            :start-datum="relevantesLager.start_datum"
+            :is-leitung="istVereinsleitung"
+          />
+          <p v-else class="hint">Noch kein Lager erfasst.</p>
+        </section>
+
+        <section v-if="aktivBereich === 'team'" class="karte">
           <h2>Mitglieder / Leiter im Verein</h2>
           <p v-if="istOrgAdmin" class="hint">
             Alle Leiter mit Login sowie manuell erfasste Personen. Als Admin kannst du Login-Leiter bearbeiten und aus dem Verein entfernen.
@@ -1233,6 +1262,17 @@ onMounted(async () => {
   border-bottom: 1px solid var(--color-border);
 }
 main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
+.verein-tabs {
+  display: flex; flex-wrap: wrap; gap: 0.3rem;
+  margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--color-border);
+}
+.verein-tabs button {
+  padding: 0.45rem 0.9rem; font-size: 0.88rem; font-weight: 600;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-md);
+  color: var(--color-text-muted); cursor: pointer;
+}
+.verein-tabs button:hover { background: var(--color-surface-muted); }
+.verein-tabs button.aktiv { background: var(--color-accent); color: #fdfbf3; }
 .kopf { margin-bottom: 1rem; }
 .kopf h1 { margin: 0 0 0.35rem; }
 .karte {

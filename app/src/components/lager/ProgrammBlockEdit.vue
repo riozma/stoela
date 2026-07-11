@@ -51,7 +51,7 @@ onMounted(async () => {
 
   if (props.blockId && !istNeu.value) {
     const { data } = await supabase
-      .from('programm_bloecke')
+      .from('programmbloecke')
       .select('*')
       .eq('id', props.blockId)
       .single()
@@ -102,10 +102,10 @@ async function speichernBlock() {
 
   let err: any = null
   if (istNeu.value) {
-    const { error } = await supabase.from('programm_bloecke').insert({ ...payload, lager_id: props.lagerId })
+    const { error } = await supabase.from('programmbloecke').insert({ ...payload, lager_id: props.lagerId })
     err = error
   } else if (props.blockId) {
-    const { error } = await supabase.from('programm_bloecke').update(payload).eq('id', props.blockId)
+    const { error } = await supabase.from('programmbloecke').update(payload).eq('id', props.blockId)
     err = error
   }
 
@@ -119,7 +119,7 @@ async function loeschen() {
   if (!props.blockId || istNeu.value) return
   if (!window.confirm('Diesen Block wirklich löschen?')) return
   loeschenLade.value = true
-  await supabase.from('programm_bloecke').delete().eq('id', props.blockId)
+  await supabase.from('programmbloecke').delete().eq('id', props.blockId)
   emit('saved')
   zurueck()
 }

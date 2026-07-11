@@ -8,6 +8,7 @@ export interface LagerTodo {
   faellig_am: string | null
   erledigt: boolean
   sortierung: number
+  vorlage_id: string | null
 }
 
 export const KATEGORIE_LABELS: Record<string, string> = {

@@ -46,7 +46,8 @@ const balkenBreite = computed(() =>
     ? Math.min(100, Math.round((fortschritt.value.aktuell / fortschritt.value.total) * 100))
     : 0,
 )
-const ERLAUBTE_CODES = new Set(['LP', 'LS', 'LA', 'ES'])
+// ES (Essen) bewusst ausgeschlossen – Mahlzeiten trägt die Küche selbst ein (Menüplaner).
+const ERLAUBTE_CODES = new Set(['LP', 'LS', 'LA'])
 
 function zeitSignatur(iso: string | null): string {
   if (!iso) return ''

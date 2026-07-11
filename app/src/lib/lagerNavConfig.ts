@@ -14,6 +14,7 @@ export const LAGER_NAV_SECTIONS = [
   'statistik',
   'gemini',
   'einkauf',
+  'kueche',
   'kalender',
   'hoeck',
   'leiter-zeitstrahl',
