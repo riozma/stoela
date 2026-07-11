@@ -224,7 +224,7 @@ const hatFinanzenAemtli = computed(() =>
   zugewieseneAemtli.value.some((a) => aemtliSlug(a.name) === 'finanzen'),
 )
 const hatKuecheTab = computed(() =>
-  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kueche'),
+  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kuche'),
 )
 /** App Admin über zugewiesenes Ämtli «App Admin» */
 const hatAppAdminAemtli = computed(() =>
@@ -1032,19 +1032,6 @@ async function ladeTeam() {
   })) as TeamMitglied[]
 }
 
-async function teamEntfernen(teamId: string) {
-  leiterFehler.value = ''
-  const { error } = await supabase.rpc('lager_leiter_sicher_entfernen', { p_lager_leiter_id: teamId })
-  if (error) {
-    leiterFehler.value = error.message
-    if (error.message.includes('letzte Lagerleitung')) {
-      window.alert('Es muss mindestens eine Person die Rolle Lagerleitung (Lalei) behalten.')
-    }
-    return
-  }
-  await Promise.all([ladeTeam(), ladeLeiter()])
-}
-
 async function teamRolleAendern(teamId: string, rolle: string) {
   leiterFehler.value = ''
   const { error } = await supabase.rpc('lager_leiter_rolle_setzen', {
@@ -1191,11 +1178,11 @@ async function ladeMeineAemtli() {
 function aemtliKomponente(name: string) {
   const slug = aemtliSlug(name)
   const map: Record<string, string> = {
-    kueche: 'kueche', finanzen: 'finanzen', kiosk: 'kiosk', telefon: 'telefon',
+    kuche: 'kueche', finanzen: 'finanzen', kiosk: 'kiosk', telefon: 'telefon',
     'gute-fee': 'gute_fee', 'hl-team': 'hl', krankenpflege: 'krankenpflege',
     'foto-diashow': 'foto', 'buro-bastelmat': 'bastel', disco: 'disco',
     skiweekend: 'skiweekend', material: 'material', werbung: 'werbung',
-    motto: 'motto', hauswart: 'hauswart', gelaendespielwiese: 'gelaende',
+    motto: 'motto', hauswart: 'hauswart', gelandespielwiese: 'gelaende',
     kuchenstand: 'kuchenstand', sponsoring: 'sponsoring', verkleidung: 'verkleidung',
     'social-media': 'werbung', publicity: 'werbung', 'app-admin': 'generic',
   }
@@ -1994,14 +1981,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                       >
                         Entfernen
                       </button>
-                      <button
-                        v-if="isLeitung && z.team && z.team.profile_id !== session?.user.id"
-                        type="button"
-                        class="secondary klein"
-                        @click="teamEntfernen(z.team!.id)"
-                      >
-                        App entfernen
-                      </button>
+                      <span v-if="isLeitung && z.team && z.team.profile_id !== session?.user.id" class="hint app-zugriff-hinweis">
+                        App-Zugriff entziehen: <router-link to="/organisation">im Verein</router-link>
+                      </span>
                     </template>
                     <span v-else class="hint">–</span>
                   </div>
