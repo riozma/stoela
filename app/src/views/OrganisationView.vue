@@ -808,6 +808,80 @@ onMounted(async () => {
       </section>
 
       <template v-if="orgAuswahl">
+        <section v-if="istVereinsleitung && anfragen.length" class="karte anfragen-box">
+          <h2>Beitrittsanfragen</h2>
+          <article v-for="a in anfragen" :key="a.profile_id" class="anfrage-karte">
+            <div class="anfrage-kopf">
+              <strong>{{ profilName(a) }}</strong>
+              <span class="anfrage-mail">{{ profilEmail(a) }}</span>
+            </div>
+            <div class="inline-aktionen anfrage-aktionen">
+              <button
+                :disabled="anfrageAktionLade[a.profile_id]"
+                @click="beitrittAnnehmen(a.profile_id)"
+              >
+                Neuer Leiter annehmen
+              </button>
+              <div class="verknuepf-zeile">
+                <select v-model="verknuepfOrgPerson[a.profile_id]">
+                  <option value="">Manuellen Leiter wählen…</option>
+                  <option
+                    v-for="p in manuelleLeiterOhneLogin"
+                    :key="p.id"
+                    :value="p.id"
+                  >
+                    {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                  </option>
+                </select>
+                <button
+                  class="secondary"
+                  :disabled="anfrageAktionLade[a.profile_id] || !verknuepfOrgPerson[a.profile_id]"
+                  @click="beitrittVerknuepfen(a.profile_id)"
+                >
+                  Leiter verknüpfen
+                </button>
+              </div>
+              <button
+                class="secondary"
+                :disabled="anfrageAktionLade[a.profile_id]"
+                @click="beitrittAblehnen(a.profile_id)"
+              >
+                Leiter ablehnen
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <section class="karte">
+          <h2>Lager im Verein</h2>
+          <p class="hint">
+            Kommende/laufende Lager: als Leiter beitreten oder als Gast ansehen.
+            <a :href="ECAMP_URL" target="_blank" rel="noopener">eCamp öffnen ↗</a>
+          </p>
+
+          <div v-if="kommendeOderLaufendeLager.length" class="lager-grid">
+            <article v-for="l in kommendeOderLaufendeLager" :key="l.id" class="lager-karte">
+              <strong>{{ l.name }}</strong>
+              <span class="meta">{{ l.jahr }} · {{ l.status }}</span>
+              <span v-if="l.start_datum" class="meta">{{ l.start_datum }} – {{ l.end_datum ?? '?' }}</span>
+              <div class="inline-aktionen">
+                <button @click="lagerOeffnen(l)">{{ l.can_edit ? 'Öffnen' : 'Als Gast ansehen' }}</button>
+                <button v-if="!l.can_edit" class="secondary" @click="leiterAnmeldung(l)">Als Leiter anmelden</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="hint">Keine kommenden/laufenden Lager.</p>
+
+          <details v-if="vergangeneLager.length" class="vergangen">
+            <summary>Vergangene Lager ({{ vergangeneLager.length }})</summary>
+            <ul>
+              <li v-for="l in vergangeneLager" :key="l.id">
+                <button class="link-like" @click="lagerOeffnen(l)">{{ l.name }} ({{ l.jahr }})</button>
+              </li>
+            </ul>
+          </details>
+        </section>
+
         <section class="karte">
           <h2>Links &amp; Zugänge</h2>
           <p class="hint">
@@ -944,42 +1018,12 @@ onMounted(async () => {
         </section>
 
         <section class="karte">
-          <h2>Lager im Verein</h2>
-          <p class="hint">
-            Kommende/laufende Lager: als Leiter beitreten oder als Gast ansehen.
-            <a :href="ECAMP_URL" target="_blank" rel="noopener">eCamp öffnen ↗</a>
-          </p>
-
-          <div v-if="kommendeOderLaufendeLager.length" class="lager-grid">
-            <article v-for="l in kommendeOderLaufendeLager" :key="l.id" class="lager-karte">
-              <strong>{{ l.name }}</strong>
-              <span class="meta">{{ l.jahr }} · {{ l.status }}</span>
-              <span v-if="l.start_datum" class="meta">{{ l.start_datum }} – {{ l.end_datum ?? '?' }}</span>
-              <div class="inline-aktionen">
-                <button @click="lagerOeffnen(l)">{{ l.can_edit ? 'Öffnen' : 'Als Gast ansehen' }}</button>
-                <button v-if="!l.can_edit" class="secondary" @click="leiterAnmeldung(l)">Als Leiter anmelden</button>
-              </div>
-            </article>
-          </div>
-          <p v-else class="hint">Keine kommenden/laufenden Lager.</p>
-
-          <details v-if="vergangeneLager.length" class="vergangen">
-            <summary>Vergangene Lager ({{ vergangeneLager.length }})</summary>
-            <ul>
-              <li v-for="l in vergangeneLager" :key="l.id">
-                <button class="link-like" @click="lagerOeffnen(l)">{{ l.name }} ({{ l.jahr }})</button>
-              </li>
-            </ul>
-          </details>
-        </section>
-
-        <section class="karte">
           <h2>Mitglieder / Leiter im Verein</h2>
           <p v-if="istOrgAdmin" class="hint">
             Alle Leiter mit Login sowie manuell erfasste Personen. Als Admin kannst du Login-Leiter bearbeiten und aus dem Verein entfernen.
           </p>
           <p v-else-if="istVereinsleitung" class="hint">
-            Alle Leiter mit Login sowie manuell erfasste Personen. Beitrittsanfragen und neue manuelle Einträge verwaltest du unten.
+            Alle Leiter mit Login sowie manuell erfasste Personen. Beitrittsanfragen findest du ganz oben, neue manuelle Einträge verwaltest du unten.
           </p>
           <p v-else class="hint">
             Übersicht aller Leiter und Kontaktdaten im Verein.
@@ -1104,50 +1148,6 @@ onMounted(async () => {
               </div>
             </dl>
           </details>
-
-          <div v-if="istVereinsleitung && anfragen.length" class="anfragen-box">
-            <h3>Beitrittsanfragen</h3>
-            <article v-for="a in anfragen" :key="a.profile_id" class="anfrage-karte">
-              <div class="anfrage-kopf">
-                <strong>{{ profilName(a) }}</strong>
-                <span class="anfrage-mail">{{ profilEmail(a) }}</span>
-              </div>
-              <div class="inline-aktionen anfrage-aktionen">
-                <button
-                  :disabled="anfrageAktionLade[a.profile_id]"
-                  @click="beitrittAnnehmen(a.profile_id)"
-                >
-                  Neuer Leiter annehmen
-                </button>
-                <div class="verknuepf-zeile">
-                  <select v-model="verknuepfOrgPerson[a.profile_id]">
-                    <option value="">Manuellen Leiter wählen…</option>
-                    <option
-                      v-for="p in manuelleLeiterOhneLogin"
-                      :key="p.id"
-                      :value="p.id"
-                    >
-                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
-                    </option>
-                  </select>
-                  <button
-                    class="secondary"
-                    :disabled="anfrageAktionLade[a.profile_id] || !verknuepfOrgPerson[a.profile_id]"
-                    @click="beitrittVerknuepfen(a.profile_id)"
-                  >
-                    Leiter verknüpfen
-                  </button>
-                </div>
-                <button
-                  class="secondary"
-                  :disabled="anfrageAktionLade[a.profile_id]"
-                  @click="beitrittAblehnen(a.profile_id)"
-                >
-                  Leiter ablehnen
-                </button>
-              </div>
-            </article>
-          </div>
 
           <h3 v-if="istVereinsleitung">Leiter manuell erfassen</h3>
           <p v-if="istVereinsleitung" class="hint">

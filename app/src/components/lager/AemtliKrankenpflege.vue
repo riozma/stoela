@@ -62,6 +62,7 @@ const mitBemerkungen = computed(() => tnListe.value.filter((t) => t.gesundheit_b
       <span>{{ mitAllergien.length }} mit Allergien</span>
       <span>{{ mitBemerkungen.length }} mit Gesundheitsbemerkungen</span>
     </div>
+    <p class="hint hinweis-oben">Apotheke/Arzt vor Lager informieren. Impfausweise am Elternabend einsammeln.</p>
     <label class="filter">
       <input v-model="nurMitAngaben" type="checkbox" />
       Nur TN mit Gesundheitsangaben anzeigen
@@ -94,7 +95,7 @@ const mitBemerkungen = computed(() => tnListe.value.filter((t) => t.gesundheit_b
       </tbody>
     </table>
     <p v-else class="hint">Noch keine Gesundheitsangaben aus der TN-Anmeldung.</p>
-    <p class="hint">Daten stammen aus der TN-Anmeldung. Apotheke/Arzt vor Lager informieren. Impfausweise am Elternabend einsammeln.</p>
+    <p class="hint">Daten stammen aus der TN-Anmeldung.</p>
   </AemtliShell>
 </template>
 
@@ -106,4 +107,5 @@ const mitBemerkungen = computed(() => tnListe.value.filter((t) => t.gesundheit_b
 tr.warn { background: #fdf8f0; }
 .klein { color: var(--color-text-muted); font-size: 0.78rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; margin-top: 0.75rem; }
+.hinweis-oben { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; margin-top: 0; }
 </style>
