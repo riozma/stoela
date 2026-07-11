@@ -19,8 +19,19 @@ interface HoeckRolle {
   bedarf_anzahl: number | null
   uhrzeit: string | null
   programm_block_id: string | null
+  ort_typ: OrtTyp
+  ort_text: string | null
+  wiese_id: string | null
   leute: { id: string; leiter_id: string; vorname: string; nachname: string }[]
 }
+
+const ORT_TYPEN = [
+  { key: 'lagerhaus_drinnen', label: 'Lagerhaus drinnen' },
+  { key: 'lagerhaus_draussen', label: 'Lagerhaus draussen' },
+  { key: 'sonstiges', label: 'Sonstiges' },
+  { key: 'wiese', label: 'Spielwiese' },
+] as const
+type OrtTyp = (typeof ORT_TYPEN)[number]['key']
 
 interface ProgrammBlock {
   id: string
@@ -87,7 +98,14 @@ const ABSCHNITT_STANDARDZEIT: Record<ZeitabschnittKey, string | null> = {
   sonstiges: null,
 }
 const rolleBearbeitenId = ref<string | null>(null)
-const bearbeitenForm = ref({ bedarf_anzahl: '', uhrzeit: '', programm_block_id: '' })
+const bearbeitenForm = ref({
+  bedarf_anzahl: '',
+  uhrzeit: '',
+  programm_block_id: '',
+  ort_typ: 'lagerhaus_draussen' as OrtTyp,
+  ort_text: '',
+  wiese_id: '',
+})
 const tagBloecke = ref<ProgrammBlock[]>([])
 const feedback = ref<Feedback[]>([])
 const neuesFeedback = ref('')
@@ -359,6 +377,9 @@ async function eigeneRolleHinzufuegen() {
       bedarf_anzahl: null,
       uhrzeit: data.uhrzeit ?? uhrzeit,
       programm_block_id: null,
+      ort_typ: (data.ort_typ as OrtTyp) ?? 'lagerhaus_draussen',
+      ort_text: data.ort_text ?? null,
+      wiese_id: data.wiese_id ?? null,
       leute: [],
     })
   }
@@ -376,6 +397,9 @@ function bearbeitenStarten(rolle: HoeckRolle) {
     bedarf_anzahl: rolle.bedarf_anzahl != null ? String(rolle.bedarf_anzahl) : '',
     uhrzeit: rolle.uhrzeit ?? '',
     programm_block_id: rolle.programm_block_id ?? '',
+    ort_typ: rolle.ort_typ ?? 'lagerhaus_draussen',
+    ort_text: rolle.ort_text ?? '',
+    wiese_id: rolle.wiese_id ?? '',
   }
 }
 
@@ -383,11 +407,30 @@ async function bearbeitenSpeichern(rolle: HoeckRolle) {
   const bedarf = bearbeitenForm.value.bedarf_anzahl ? Number(bearbeitenForm.value.bedarf_anzahl) : null
   const uhrzeit = bearbeitenForm.value.uhrzeit || null
   const blockId = bearbeitenForm.value.programm_block_id || null
-  await supabase.from('hoeck_rollen').update({ bedarf_anzahl: bedarf, uhrzeit, programm_block_id: blockId }).eq('id', rolle.id)
+  const ortTyp = bearbeitenForm.value.ort_typ
+  const ortText = ortTyp === 'sonstiges' ? (bearbeitenForm.value.ort_text.trim() || null) : null
+  const wieseId = ortTyp === 'wiese' ? (bearbeitenForm.value.wiese_id || null) : null
+  await supabase.from('hoeck_rollen').update({
+    bedarf_anzahl: bedarf,
+    uhrzeit,
+    programm_block_id: blockId,
+    ort_typ: ortTyp,
+    ort_text: ortText,
+    wiese_id: wieseId,
+  }).eq('id', rolle.id)
   rolle.bedarf_anzahl = bedarf
   rolle.uhrzeit = uhrzeit
   rolle.programm_block_id = blockId
+  rolle.ort_typ = ortTyp
+  rolle.ort_text = ortText
+  rolle.wiese_id = wieseId
   rolleBearbeitenId.value = null
+}
+
+function ortLabel(rolle: HoeckRolle): string {
+  if (rolle.ort_typ === 'sonstiges') return rolle.ort_text || 'Sonstiges'
+  if (rolle.ort_typ === 'wiese') return alleWiesen.value.find((w) => w.id === rolle.wiese_id)?.name ?? 'Spielwiese'
+  return ORT_TYPEN.find((o) => o.key === rolle.ort_typ)?.label ?? rolle.ort_typ
 }
 
 function getDienst(dienst: string): string {
@@ -453,13 +496,14 @@ onMounted(ladeDaten)
                 <div class="rolle-titel">
                   <strong>{{ rolle.rolle }}</strong>
                   <span v-if="blockVon(rolle)" class="rolle-block">{{ blockVon(rolle)!.code }} {{ blockVon(rolle)!.titel }} · {{ formatBlockZeit(blockVon(rolle)!) }}</span>
-                  <span v-if="rolle.uhrzeit || rolle.bedarf_anzahl" class="rolle-meta">
+                  <span class="rolle-meta">
                     <span v-if="rolle.uhrzeit && !blockVon(rolle)">🕐 {{ rolle.uhrzeit.slice(0, 5) }}</span>
                     <span v-if="rolle.bedarf_anzahl">{{ rolle.leute.length }}/{{ rolle.bedarf_anzahl }} Personen</span>
+                    <span>📍 {{ ortLabel(rolle) }}</span>
                   </span>
                 </div>
                 <div class="rolle-aktionen">
-                  <button type="button" class="stift-btn" title="Bedarf, Uhrzeit & Programmblock bearbeiten" @click="bearbeitenStarten(rolle)">✏️</button>
+                  <button type="button" class="stift-btn" title="Bedarf, Uhrzeit, Ort & Programmblock bearbeiten" @click="bearbeitenStarten(rolle)">✏️</button>
                   <button v-if="rolle.ist_eigene" type="button" class="klein sekundaer" @click="eigeneRolleLoeschen(rolle.id)">✕</button>
                 </div>
               </div>
@@ -471,6 +515,22 @@ onMounted(ladeDaten)
                   <select v-model="bearbeitenForm.programm_block_id" class="klein-inp breit">
                     <option value="">– Kein –</option>
                     <option v-for="b in tagBloecke" :key="b.id" :value="b.id">{{ b.code }} {{ b.titel }} ({{ formatBlockZeit(b) }})</option>
+                  </select>
+                </label>
+                <label>Ort
+                  <select v-model="bearbeitenForm.ort_typ" class="klein-inp breit">
+                    <option v-for="o in ORT_TYPEN" :key="o.key" :value="o.key" :disabled="o.key === 'wiese' && !alleWiesen.length">
+                      {{ o.label }}
+                    </option>
+                  </select>
+                </label>
+                <label v-if="bearbeitenForm.ort_typ === 'sonstiges'">Ort-Bezeichnung
+                  <input v-model="bearbeitenForm.ort_text" placeholder="z.B. Waldrand hinter dem Haus" class="klein-inp breit" />
+                </label>
+                <label v-if="bearbeitenForm.ort_typ === 'wiese'">Welche Wiese
+                  <select v-model="bearbeitenForm.wiese_id" class="klein-inp breit">
+                    <option value="">– wählen –</option>
+                    <option v-for="w in alleWiesen" :key="w.id" :value="w.id">{{ w.name }}</option>
                   </select>
                 </label>
                 <button type="button" class="klein" @click="bearbeitenSpeichern(rolle)">Speichern</button>

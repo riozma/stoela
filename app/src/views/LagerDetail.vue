@@ -1055,6 +1055,14 @@ async function teamRolleAendern(teamId: string, rolle: string) {
 const statusSpeichern = ref(false)
 const statusFehler = ref('')
 const statusFehlendLinks = ref<{ label: string; tab: string }[]>([])
+const aktivierungCheckOffen = ref(false)
+const aktivierungPreview = ref({
+  kosten_erstes_kind: 340,
+  kosten_weiteres_kind: 280,
+  kontakt_name: '',
+  kontakt_email: '',
+  anmeldeschluss: '',
+})
 
 async function vorLagerSpeichern() {
   if (!lager.value) return
@@ -1076,17 +1084,70 @@ async function altersregelSpeichern() {
   altersregelSpeichernLaden.value = false
 }
 
-async function statusAendern(neuerStatus: string) {
+async function ladeAktivierungPreview() {
+  if (!lager.value) return
+  const [{ data: lagerRow }, { data: orgVorlage }] = await Promise.all([
+    supabase.from('lager').select('elterninfo_config').eq('id', lagerId.value).single(),
+    lager.value.organisation_id
+      ? supabase.from('org_elterninfo_vorlage').select('felder').eq('organisation_id', lager.value.organisation_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  const merged: Record<string, any> = { ...(orgVorlage?.felder ?? {}), ...((lagerRow as any)?.elterninfo_config ?? {}) }
+
+  let kontaktName = merged.lagerleiter_name || merged.kontakt_name || ''
+  let kontaktEmail = merged.lagerleiter_email || merged.kontakt_email || ''
+  if (!kontaktName || !kontaktEmail) {
+    const { data: lalei } = await supabase
+      .from('lager_leiter')
+      .select('profiles:profile_id(vorname, nachname, email)')
+      .eq('lager_id', lagerId.value)
+      .eq('rolle', 'lagerleitung')
+      .eq('status', 'bestaetigt')
+      .limit(1)
+      .maybeSingle()
+    const p = (lalei as any)?.profiles
+    if (p) {
+      kontaktName = kontaktName || `${p.vorname ?? ''} ${p.nachname ?? ''}`.trim()
+      kontaktEmail = kontaktEmail || p.email || ''
+    }
+  }
+
+  aktivierungPreview.value = {
+    kosten_erstes_kind: Number(merged.lagerbeitrag_tn ?? merged.lagerbeitrag ?? 340),
+    kosten_weiteres_kind: Number(merged.lagerbeitrag_geschwister ?? 280),
+    kontakt_name: kontaktName,
+    kontakt_email: kontaktEmail,
+    anmeldeschluss: merged.anmeldeschluss ?? merged.anmeldeschluss_datum ?? '',
+  }
+}
+
+async function statusAendernAnfragen(neuerStatus: string) {
   statusFehler.value = ''
   statusFehlendLinks.value = []
-  if (neuerStatus === 'anmeldung_offen' && lager.value) {
+  aktivierungCheckOffen.value = false
+
+  const wirdNeuGeoeffnet = neuerStatus === 'anmeldung_offen' && lager.value?.status !== 'anmeldung_offen' && lager.value?.status !== 'laufend'
+  if (wirdNeuGeoeffnet && lager.value) {
     const check = pruefeTnAnmeldungAktivierung(lager.value)
     if (!check.ok) {
       statusFehler.value = `TN-Anmeldung kann erst aktiviert werden, wenn alle Pflichtangaben gesetzt sind.`
       statusFehlendLinks.value = check.fehlend
       return
     }
+    await ladeAktivierungPreview()
+    aktivierungCheckOffen.value = true
+    return
   }
+
+  await statusSpeichernFn(neuerStatus)
+}
+
+async function statusAendernBestaetigt() {
+  aktivierungCheckOffen.value = false
+  await statusSpeichernFn('anmeldung_offen')
+}
+
+async function statusSpeichernFn(neuerStatus: string) {
   statusSpeichern.value = true
   const { error } = await supabase.from('lager').update({ status: neuerStatus }).eq('id', lagerId.value)
   statusSpeichern.value = false
@@ -1626,45 +1687,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
       <!-- Teilnehmer -->
       <section v-if="activeTab === 'teilnehmer'">
-        <h3>TN-Anmeldung</h3>
-        <p v-if="isLeitung" class="hint">
-          «Anmeldung offen» oder «Laufend» erlauben die öffentliche TN-Anmeldung.
-          Stammdaten (Name, Start, Ende, Ort) müssen unter Einstellungen gesetzt sein.
-        </p>
-        <div v-if="isLeitung" class="anmeldung-aktivierung">
-          <label>
-            Lager-Status für TN-Anmeldung
-            <select :value="lager.status" @change="statusAendern(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
-              <option value="planung">Planung (Anmeldung geschlossen)</option>
-              <option value="anmeldung_offen">Anmeldung offen</option>
-              <option value="laufend">Laufend (Anmeldung weiterhin möglich)</option>
-              <option value="abgeschlossen">Abgeschlossen</option>
-              <option value="archiviert">Archiviert</option>
-            </select>
-          </label>
-          <p v-if="statusFehler" class="error">{{ statusFehler }}</p>
-          <ul v-if="statusFehlendLinks.length" class="status-fehlend">
-            <li v-for="f in statusFehlendLinks" :key="f.label">
-              <strong>{{ f.label }}</strong> fehlt –
-              <button type="button" class="link-like" @click="zuPflichtTab(f.tab)">
-                {{ pflichtTabLabel(f.tab) }}
-              </button>
-            </li>
-          </ul>
-        </div>
-        <p v-else class="hint">Status: <strong>{{ lager.status }}</strong></p>
-
-        <OeffentlicheTerminePanel
-          v-if="isLeitung"
-          :lager-id="lagerId"
-          :is-leitung="isLeitung"
-          kompakt
-        />
-
-        <p class="hint">
-          Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-tn`">/anmelden-tn</router-link> ·
-          Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
-        </p>
+        <h3>Angemeldete Teilnehmer/innen ({{ tnListe.length }})</h3>
 
         <nav class="leiter-ansicht-nav">
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'uebersicht' }" @click="tnListenAnsicht = 'uebersicht'">Übersicht</button>
@@ -1760,6 +1783,65 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <button type="submit" :disabled="tnSpeichern">{{ tnSpeichern ? 'Speichere...' : 'Hinzufügen' }}</button>
         </form>
         <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
+
+        <hr class="trenner" />
+
+        <h3>TN-Anmeldung verwalten</h3>
+        <p v-if="isLeitung" class="hint">
+          «Anmeldung offen» oder «Laufend» erlauben die öffentliche TN-Anmeldung.
+          Stammdaten (Name, Start, Ende, Ort) müssen unter Einstellungen gesetzt sein.
+        </p>
+        <div v-if="isLeitung" class="anmeldung-aktivierung">
+          <label>
+            Lager-Status für TN-Anmeldung
+            <select :value="lager.status" @change="statusAendernAnfragen(($event.target as HTMLSelectElement).value)" :disabled="statusSpeichern">
+              <option value="planung">Planung (Anmeldung geschlossen)</option>
+              <option value="anmeldung_offen">Anmeldung offen</option>
+              <option value="laufend">Laufend (Anmeldung weiterhin möglich)</option>
+              <option value="abgeschlossen">Abgeschlossen</option>
+              <option value="archiviert">Archiviert</option>
+            </select>
+          </label>
+          <p v-if="statusFehler" class="error">{{ statusFehler }}</p>
+          <ul v-if="statusFehlendLinks.length" class="status-fehlend">
+            <li v-for="f in statusFehlendLinks" :key="f.label">
+              <strong>{{ f.label }}</strong> fehlt –
+              <button type="button" class="link-like" @click="zuPflichtTab(f.tab)">
+                {{ pflichtTabLabel(f.tab) }}
+              </button>
+            </li>
+          </ul>
+
+          <div v-if="aktivierungCheckOffen" class="aktivierung-check">
+            <h4>Bereit zum Öffnen?</h4>
+            <p class="hint">Bitte kurz prüfen, bevor die Anmeldung öffentlich sichtbar wird:</p>
+            <ul class="check-liste">
+              <li>Lagerbeitrag 1. Kind: <strong>{{ aktivierungPreview.kosten_erstes_kind }}.–</strong></li>
+              <li>Lagerbeitrag Geschwister: <strong>{{ aktivierungPreview.kosten_weiteres_kind }}.–</strong></li>
+              <li>Kontaktperson: <strong>{{ aktivierungPreview.kontakt_name || '⚠ nicht gesetzt' }}</strong> ({{ aktivierungPreview.kontakt_email || '⚠ keine E-Mail' }})</li>
+              <li>Anmeldeschluss: <strong>{{ aktivierungPreview.anmeldeschluss || 'nicht gesetzt' }}</strong></li>
+              <li>Altersregel: ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_min_alter_jahre }}</strong>, HL ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_hl_ab_jahre }}</strong></li>
+            </ul>
+            <p class="hint">Fehlende Angaben lassen sich jederzeit unter <button type="button" class="link-like" @click="zuPflichtTab('elterninfo')">Elterninfo</button> ergänzen.</p>
+            <div class="aktionen">
+              <button type="button" class="secondary" @click="aktivierungCheckOffen = false">Abbrechen</button>
+              <button type="button" @click="statusAendernBestaetigt">Ja, Anmeldung jetzt öffnen</button>
+            </div>
+          </div>
+        </div>
+        <p v-else class="hint">Status: <strong>{{ lager.status }}</strong></p>
+
+        <OeffentlicheTerminePanel
+          v-if="isLeitung"
+          :lager-id="lagerId"
+          :is-leitung="isLeitung"
+          kompakt
+        />
+
+        <p class="hint">
+          Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-tn`">/anmelden-tn</router-link> ·
+          Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
+        </p>
       </section>
 
       <!-- Leiter & Team -->
@@ -2292,6 +2374,10 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .leiter-detail-tabelle { font-size: 0.8rem; min-width: 900px; }
 .anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }
+.trenner { border: none; border-top: 1px solid var(--color-border); margin: 1.75rem 0; }
+.aktivierung-check { margin-top: 0.85rem; padding: 0.85rem; background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.aktivierung-check h4 { margin: 0 0 0.35rem; }
+.check-liste { list-style: none; padding: 0; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }
 .leiter-team-tabelle { font-size: 0.82rem; min-width: 900px; }
 .leiter-team-tabelle th, .leiter-team-tabelle td { padding: 0.4rem 0.5rem; vertical-align: top; }
 .zeile-bearbeiten { background: var(--color-surface-muted); }

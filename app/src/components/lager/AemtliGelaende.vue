@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import AemtliShell from './AemtliShell.vue'
 import LagerMap from './LagerMap.vue'
 import WiesenKarte from './WiesenKarte.vue'
-import { useGooglePlaces, type OrtAuswahl } from '../../composables/useGooglePlaces'
+import WiesenOrtWaehlen from './WiesenOrtWaehlen.vue'
 
 const props = defineProps<{
   lagerId: string
@@ -28,10 +28,9 @@ interface Wiese {
 
 const wiesen = ref<Wiese[]>([])
 const form = ref({ name: '', bauer_name: '', bauer_telefon: '', notiz: '' })
-const neueOrtAuswahl = ref<OrtAuswahl | null>(null)
-const neuerOrtInput = ref<HTMLInputElement | null>(null)
+const neueOrtAuswahl = ref<{ lat: number; lng: number } | null>(null)
+const neuerOrtKarteOffen = ref(false)
 const ortBearbeitenId = ref<string | null>(null)
-const { attachAutocomplete } = useGooglePlaces()
 
 const STATUS_LABELS: Record<string, string> = {
   offen: 'Noch anfragen',
@@ -57,11 +56,7 @@ async function laden() {
   wiesen.value = data ?? []
 }
 
-onMounted(async () => {
-  await laden()
-  await nextTick()
-  ortNeuAttach()
-})
+onMounted(laden)
 
 async function hinzufuegen() {
   await supabase.from('gelaendespielwiesen').insert({
@@ -76,30 +71,20 @@ async function hinzufuegen() {
   })
   form.value = { name: '', bauer_name: '', bauer_telefon: '', notiz: '' }
   neueOrtAuswahl.value = null
-  if (neuerOrtInput.value) neuerOrtInput.value.value = ''
+  neuerOrtKarteOffen.value = false
   await laden()
 }
 
-async function ortBearbeitenStarten(id: string) {
-  ortBearbeitenId.value = id
-  await nextTick()
-  const input = document.getElementById(`ort-input-${id}`) as HTMLInputElement | null
-  if (input) {
-    await attachAutocomplete(input, async (ort) => {
-      await supabase.from('gelaendespielwiesen').update({ lat: ort.lat, lng: ort.lng }).eq('id', id)
-      const w = wiesen.value.find((x) => x.id === id)
-      if (w) { w.lat = ort.lat; w.lng = ort.lng }
-      ortBearbeitenId.value = null
-    })
-  }
+function neuerOrtGewaehlt(pos: { lat: number; lng: number }) {
+  neueOrtAuswahl.value = pos
+  neuerOrtKarteOffen.value = false
 }
 
-function ortNeuAttach() {
-  if (neuerOrtInput.value) {
-    attachAutocomplete(neuerOrtInput.value, (ort) => {
-      neueOrtAuswahl.value = ort
-    })
-  }
+async function ortGewaehlt(id: string, pos: { lat: number; lng: number }) {
+  await supabase.from('gelaendespielwiesen').update({ lat: pos.lat, lng: pos.lng }).eq('id', id)
+  const w = wiesen.value.find((x) => x.id === id)
+  if (w) { w.lat = pos.lat; w.lng = pos.lng }
+  ortBearbeitenId.value = null
 }
 
 async function statusSetzen(id: string, status: string) {
@@ -131,13 +116,19 @@ async function notizSpeichern(id: string, notiz: string) {
     <h3>Neue Wiese erfassen</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
       <input v-model="form.name" placeholder="Name / Ort der Wiese" required style="flex:2" />
-      <input ref="neuerOrtInput" placeholder="📍 Ort auf Karte suchen..." style="flex:2" />
+      <button type="button" class="secondary klein" @click="neuerOrtKarteOffen = !neuerOrtKarteOffen">
+        {{ neueOrtAuswahl ? '📍 Pin gesetzt' : '📍 Auf Karte wählen' }}
+      </button>
       <input v-model="form.bauer_name" placeholder="Bauer/in" />
       <input v-model="form.bauer_telefon" placeholder="Telefon" />
       <input v-model="form.notiz" placeholder="Notiz" style="flex:1" />
       <button type="submit">+ Wiese</button>
     </form>
-    <p v-if="neueOrtAuswahl" class="hint">📍 {{ neueOrtAuswahl.adresse }}</p>
+    <WiesenOrtWaehlen
+      v-if="neuerOrtKarteOffen"
+      @gewaehlt="neuerOrtGewaehlt"
+      @abbrechen="neuerOrtKarteOffen = false"
+    />
 
     <table v-if="wiesenMitNr.length" class="liste">
       <thead>
@@ -153,7 +144,8 @@ async function notizSpeichern(id: string, notiz: string) {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="w in wiesenMitNr" :key="w.id" :class="'status-' + w.status">
+        <template v-for="w in wiesenMitNr" :key="w.id">
+        <tr :class="'status-' + w.status">
           <td class="nr">Wiese {{ w.nr }}</td>
           <td><strong>{{ w.name }}</strong></td>
           <td>{{ w.bauer_name ?? '–' }}</td>
@@ -162,13 +154,7 @@ async function notizSpeichern(id: string, notiz: string) {
             <span v-else>–</span>
           </td>
           <td>
-            <input
-              v-if="ortBearbeitenId === w.id"
-              :id="`ort-input-${w.id}`"
-              placeholder="Ort suchen..."
-              class="ort-input"
-            />
-            <button v-else class="secondary klein" @click="ortBearbeitenStarten(w.id)">
+            <button class="secondary klein" @click="ortBearbeitenId = ortBearbeitenId === w.id ? null : w.id">
               {{ w.lat && w.lng ? '📍 ändern' : '📍 setzen' }}
             </button>
           </td>
@@ -190,6 +176,17 @@ async function notizSpeichern(id: string, notiz: string) {
             <button class="secondary klein loeschen-btn" @click="loeschen(w.id)" title="Löschen">✕</button>
           </td>
         </tr>
+        <tr v-if="ortBearbeitenId === w.id">
+          <td colspan="8">
+            <WiesenOrtWaehlen
+              :initial-lat="w.lat"
+              :initial-lng="w.lng"
+              @gewaehlt="ortGewaehlt(w.id, $event)"
+              @abbrechen="ortBearbeitenId = null"
+            />
+          </td>
+        </tr>
+        </template>
       </tbody>
     </table>
     <p v-else class="hint">Noch keine Wiesen erfasst. Bauern in der Lager-Umgebung persönlich anfragen.</p>
@@ -210,7 +207,6 @@ h3 { margin: 0.75rem 0 0.4rem; font-size: 0.95rem; }
 .tel-link:hover { text-decoration: underline; }
 .notiz-input { width: 100%; min-width: 8rem; border: 1px solid transparent; background: transparent; padding: 0.2rem 0.3rem; font-size: 0.83rem; border-radius: var(--radius-sm); }
 .notiz-input:focus { border-color: var(--color-border); background: var(--color-surface); outline: none; }
-.ort-input { min-width: 12rem; font-size: 0.82rem; padding: 0.2rem 0.4rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
 .aktionen-zelle { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
 .loeschen-btn { color: var(--color-danger); }
