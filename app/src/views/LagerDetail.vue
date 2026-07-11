@@ -29,7 +29,6 @@ import AemtliSkiweekend from '../components/lager/AemtliSkiweekend.vue'
 import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import AemtliFoto from '../components/lager/AemtliFoto.vue'
-import KuecheMahlzeiten from '../components/lager/KuecheMahlzeiten.vue'
 import HoeckBereich from '../components/lager/HoeckBereich.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
@@ -44,7 +43,7 @@ import OeffentlicheTerminePanel from '../components/lager/OeffentlicheTerminePan
 import LagerNav from '../components/lager/LagerNav.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { aemtliSlug, tabIdForAemtli } from '../lib/aemtliSlug'
-import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli, APP_ADMIN_ROLLE, istAppAdmin, darfAppAdminVergeben } from '../lib/aemtliPermissions'
+import { GESCHUETZTE_AEMTLI, istGeschuetztesAemtli } from '../lib/aemtliPermissions'
 import { synchronisiereProgrammZuordnungen } from '../lib/programmZuordnung'
 import type { MaterialMitZuordnung, NamensZuordnung, ProgrammabschnittMitZuordnung } from '../lib/nameMatching'
 import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
@@ -226,6 +225,10 @@ const hatFinanzenAemtli = computed(() =>
 )
 const hatKuecheTab = computed(() =>
   meineAemtli.value.some((a) => aemtliSlug(a.name) === 'kueche'),
+)
+/** App Admin über zugewiesenes Ämtli «App Admin» */
+const hatAppAdminAemtli = computed(() =>
+  meineAemtli.value.some((a) => aemtliSlug(a.name) === 'app-admin'),
 )
 const zuordnungLade = ref(false)
 const zuordnungNachricht = ref('')
@@ -1426,11 +1429,14 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :active-tab="activeTab"
         :programm-link="programmLink"
         :is-leitung="isLeitung"
+        :hat-app-admin="hatAppAdminAemtli"
+        :hat-kueche-tab="hatKuecheTab"
         :meine-aemtli="meineAemtli"
         :leiter-anfragen="leiterAnfragen.length"
         :tn-count="tnCountNav"
         :leiter-count="leiterBestaetigt.length + leiterProvisorisch.length"
         :mobile-open="navOffen"
+        :moerderli-aktiv="moerderliAktiv"
         @close="navOffen = false"
       />
     </div>
@@ -2173,7 +2179,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <!-- Gemini (nur Lalei / App Admin) -->
       <section v-if="activeTab === 'gemini'">
         <LagerGeminiPanel
-          v-if="isLeitung || istAppAdmin(meineAemtli.find(a => a.name === 'App Admin')?.name)"
+          v-if="isLeitung || hatAppAdminAemtli"
           :lager-id="lagerId"
           :organisation-id="lager.organisation_id"
           :lager-name="lager.name"

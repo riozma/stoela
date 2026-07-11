@@ -3,10 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
 import AemtliShell from './AemtliShell.vue'
-import KuecheMahlzeiten from './KuecheMahlzeiten.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
-type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'gewohnheiten' | 'einkauf'
+type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'einkauf'
 
 interface MaterialZeile {
   name: string
@@ -370,7 +369,7 @@ async function personSpeichern(person: PersonEssen) {
   fehler.value = ''
   const tabelle = person.typ === 'tn' ? 'anmeldungen_tn' : 'anmeldungen_leiter'
   const payload: Record<string, string | null> = { essensgewohnheiten: person.essensgewohnheiten || null }
-  if (person.typ === 'tn' || person.typ === 'leiter') payload.allergien = person.allergien || null
+  if (person.typ === 'tn') payload.allergien = person.allergien || null
   const { error } = await supabase.from(tabelle).update(payload).eq('id', person.id)
   if (error) fehler.value = error.message
 }
@@ -422,22 +421,14 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     <nav class="dash-tabs">
       <button :class="{ aktiv: ansicht === 'uebersicht' }" @click="ansicht = 'uebersicht'">Übersicht</button>
       <button :class="{ aktiv: ansicht === 'menuplaner' }" @click="ansicht = 'menuplaner'">Menüplaner</button>
-      <button :class="{ aktiv: ansicht === 'personen' }" @click="ansicht = 'personen'">Personen & Allergien</button>
-      <button :class="{ aktiv: ansicht === 'gewohnheiten' }" @click="ansicht = 'gewohnheiten'">
-        Essensgewohnheiten
+      <button :class="{ aktiv: ansicht === 'personen' }" @click="ansicht = 'personen'">
+        Personen &amp; Allergien
         <span v-if="personenMitHinweis.length" class="badge">{{ personenMitHinweis.length }}</span>
       </button>
       <button :class="{ aktiv: ansicht === 'einkauf' }" @click="ansicht = 'einkauf'">Einkauf</button>
     </nav>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
-
-    <KuecheMahlzeiten
-      :lager-id="lagerId"
-      :start-datum="startDatum"
-      :end-datum="endDatum"
-      :is-leitung="!!kannEinkaufMelden"
-    />
 
     <!-- Übersicht -->
     <div v-if="ansicht === 'uebersicht'" class="dash-grid">
@@ -473,7 +464,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
             <span v-if="essensText(p) !== '–'"> · {{ essensText(p) }}</span>
           </li>
         </ul>
-        <button class="secondary klein" @click="ansicht = 'gewohnheiten'">Alle anzeigen</button>
+        <button class="secondary klein" @click="ansicht = 'personen'">Alle anzeigen</button>
       </article>
 
       <article class="dash-karte">
@@ -484,7 +475,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
           </li>
         </ul>
         <p v-else class="hint">Noch keine Notizen.</p>
-        <button class="secondary klein" @click="ansicht = 'gewohnheiten'">Notiz hinzufügen</button>
+        <button class="secondary klein" @click="ansicht = 'personen'">Notiz hinzufügen</button>
       </article>
     </div>
 
@@ -628,8 +619,15 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 
     <!-- Personen & Allergien -->
     <div v-if="ansicht === 'personen'">
-      <h3>Personen, Allergien & Anwesenheit</h3>
-      <p class="hint">Alle Kinder und Leiter mit Allergien, Essensgewohnheiten und Anwesenheitsdauer.</p>
+      <h3>Personen, Allergien &amp; Anwesenheit</h3>
+      <p class="hint">Alle Kinder und Leiter mit Allergien, Essensgewohnheiten und Anwesenheitsdauer – Angaben aus der Anmeldung, die Küche kann sie hier ergänzen.</p>
+
+      <div v-if="tage.length" class="koepfe-zeile">
+        <span class="hint">Köpfe pro Tag:</span>
+        <span v-for="tag in tage" :key="tag" class="kopf-badge" :class="{ heute: tag === heute }">
+          {{ formatTag(tag) }}: {{ koepfeAmTag(tag).total }}
+        </span>
+      </div>
 
       <table v-if="personen.length" class="liste">
         <thead>
@@ -640,6 +638,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
             <th>Essensgewohnheiten</th>
             <th>Anwesend von</th>
             <th>Anwesend bis</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -660,9 +659,10 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
               <input
                 v-model="p.essensgewohnheiten"
                 type="text"
-                placeholder="z.B. vegetarisch"
+                placeholder="z.B. vegetarisch, kein Schwein"
                 class="zellen-input"
               />
+              <span v-if="p.essensgewohnheiten_sonstiges" class="klein-hinweis">{{ p.essensgewohnheiten_sonstiges }}</span>
             </td>
             <td>
               <span class="hint">{{ p.anwesend_von ?? 'Ganztägig' }}</span>
@@ -670,56 +670,11 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
             <td>
               <span class="hint">{{ p.anwesend_bis ?? 'Ganztägig' }}</span>
             </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="hint">Noch keine Personen erfasst.</p>
-    </div>
-
-    <!-- Essensgewohnheiten -->
-    <div v-if="ansicht === 'gewohnheiten'">
-      <h3>Essensgewohnheiten &amp; Allergien</h3>
-      <p class="hint">Alle TN und Leiter – Angaben aus der Anmeldung. Die Küche kann sie hier ergänzen.</p>
-
-      <div v-if="tage.length" class="koepfe-zeile">
-        <span class="hint">Köpfe pro Tag:</span>
-        <span v-for="tag in tage" :key="tag" class="kopf-badge" :class="{ heute: tag === heute }">
-          {{ formatTag(tag) }}: {{ koepfeAmTag(tag).total }}
-        </span>
-      </div>
-
-      <table v-if="personen.length" class="liste">
-        <thead>
-          <tr><th>Name</th><th>Typ</th><th>Allergien</th><th>Essensgewohnheiten</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in personen" :key="p.id" :class="{ warn: p.allergien?.trim() || p.essensgewohnheiten?.trim() }">
-            <td>{{ p.name }}</td>
-            <td>{{ p.rolle }}</td>
-            <td>
-              <input
-                v-if="p.typ === 'tn'"
-                v-model="p.allergien"
-                type="text"
-                placeholder="z.B. Nüsse, Laktose"
-                class="zellen-input"
-              />
-              <span v-else class="hint">–</span>
-            </td>
-            <td>
-              <input
-                v-model="p.essensgewohnheiten"
-                type="text"
-                placeholder="z.B. vegetarisch, kein Schwein"
-                class="zellen-input"
-              />
-              <span v-if="p.essensgewohnheiten_sonstiges" class="klein-hinweis">{{ p.essensgewohnheiten_sonstiges }}</span>
-            </td>
             <td><button class="secondary klein" @click="personSpeichern(p)">Speichern</button></td>
           </tr>
         </tbody>
       </table>
-      <p v-else class="hint">Noch keine Teilnehmer oder Leiter erfasst.</p>
+      <p v-else class="hint">Noch keine Personen erfasst.</p>
 
       <h3>Allgemeine Küchennotizen</h3>
       <p class="hint">Regeln, Hygiene-Hinweise, Einkaufs-Erinnerungen für das ganze Lager.</p>

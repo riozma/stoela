@@ -8,6 +8,7 @@ import AnmeldungLeiter from '../views/AnmeldungLeiter.vue'
 import Willkommen from '../views/Willkommen.vue'
 import OrganisationView from '../views/OrganisationView.vue'
 import LagerBearbeitungView from '../views/LagerBearbeitungView.vue'
+import MoerderliView from '../views/MoerderliView.vue'
 import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 
 const router = createRouter({
@@ -24,7 +25,9 @@ const router = createRouter({
     {
       path: '/lager/:id/moerderli',
       name: 'moerderli',
-      redirect: (to) => ({ path: `/lager/${to.params.id}/bearbeitung` }),
+      component: MoerderliView,
+      props: (route) => ({ lagerId: route.params.id as string }),
+      meta: { requiresAuth: true },
     },
     {
       path: '/lager/:id/bearbeitung',

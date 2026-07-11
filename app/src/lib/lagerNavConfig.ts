@@ -15,6 +15,7 @@ export const LAGER_NAV_SECTIONS = [
   'gemini',
   'einkauf',
   'kalender',
+  'hoeck',
   'leiter-zeitstrahl',
   'bearbeitung',
 ] as const

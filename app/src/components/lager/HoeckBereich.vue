@@ -71,7 +71,7 @@ async function ladeDaten() {
 
   // Gruppen laden
   const { data: gruppenData } = await supabase
-    .from('gruppen')
+    .from('lagergruppen')
     .select('name')
     .eq('lager_id', props.lagerId)
     .order('name')
