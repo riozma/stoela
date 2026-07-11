@@ -10,6 +10,7 @@ import OrganisationView from '../views/OrganisationView.vue'
 import LagerBearbeitungView from '../views/LagerBearbeitungView.vue'
 import MoerderliView from '../views/MoerderliView.vue'
 import SpielwiesenView from '../views/SpielwiesenView.vue'
+import SkiweekendView from '../views/SkiweekendView.vue'
 import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 
 const router = createRouter({
@@ -34,6 +35,13 @@ const router = createRouter({
       path: '/lager/:id/spielwiesen',
       name: 'spielwiesen',
       component: SpielwiesenView,
+      props: (route) => ({ lagerId: route.params.id as string }),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lager/:id/skiweekend-anmeldung',
+      name: 'skiweekend-anmeldung',
+      component: SkiweekendView,
       props: (route) => ({ lagerId: route.params.id as string }),
       meta: { requiresAuth: true },
     },

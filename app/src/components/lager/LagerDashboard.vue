@@ -268,24 +268,6 @@ function formatAenderungZeit(iso: string) {
 
 <template>
   <section class="dashboard">
-    <div v-if="bearbeiten" class="schnell-links">
-      <span class="links-label">Schnellzugrifff</span>
-      <button class="secondary" @click="emit('tab', 'programm')">Programm</button>
-      <button class="secondary" @click="emit('tab', 'quittungen')">Quittungen</button>
-      <button v-if="hatFinanzenAemtli" class="secondary" @click="emit('tab', 'aemtli:finanzen')">Finanzen</button>
-      <button v-if="isLeitung" class="secondary" @click="emit('tab', 'leiter')">Leiter</button>
-    </div>
-
-    <button
-      v-if="aktuelleAktion"
-      class="aktion-karte aktion-jetzt"
-      :class="'aktion-' + aktuelleAktion.typ"
-      @click="aktuelleAktion.action"
-    >
-      <strong>{{ aktuelleAktion.titel }}</strong>
-      <span>{{ aktuelleAktion.text }}</span>
-    </button>
-
     <header class="lager-kopf">
       <p v-if="lager.ort" class="ort">📍 {{ lager.ort }}</p>
       <p v-if="formatZeitraum()" class="zeitraum">{{ formatZeitraum() }}</p>
@@ -296,6 +278,16 @@ function formatAenderungZeit(iso: string) {
         :ort="lager.ort"
       />
     </header>
+
+    <button
+      v-if="aktuelleAktion"
+      class="aktion-karte aktion-jetzt"
+      :class="'aktion-' + aktuelleAktion.typ"
+      @click="aktuelleAktion.action"
+    >
+      <strong>{{ aktuelleAktion.titel }}</strong>
+      <span>{{ aktuelleAktion.text }}</span>
+    </button>
 
     <div v-if="weitereAktionen.length" class="aktionen">
       <button
@@ -308,30 +300,6 @@ function formatAenderungZeit(iso: string) {
         <strong>{{ a.titel }}</strong>
         <span>{{ a.text }}</span>
       </button>
-    </div>
-
-    <a
-      v-if="fotoLink"
-      class="foto-link"
-      :href="fotoLink"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      <span>
-        <strong>Fotos vom Lager</strong>
-        <small>Fotoalbum / Google Fotos öffnen</small>
-      </span>
-      <span aria-hidden="true">→</span>
-    </a>
-
-    <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
-      <span class="links-label">Letzte Änderungen</span>
-      <ul>
-        <li v-for="(a, i) in letzteAenderungen" :key="i">
-          <time>{{ formatAenderungZeit(a.zeit) }}</time>
-          <span>{{ a.beschreibung }}</span>
-        </li>
-      </ul>
     </div>
 
     <div v-if="todosGeladen && jahresTodos.length > 0" class="fahrplan-uebersicht">
@@ -357,6 +325,30 @@ function formatAenderungZeit(iso: string) {
         </li>
       </ul>
     </div>
+
+    <div v-if="letzteAenderungen?.length" class="letzte-aenderungen">
+      <span class="links-label">Letzte Änderungen</span>
+      <ul>
+        <li v-for="(a, i) in letzteAenderungen" :key="i">
+          <time>{{ formatAenderungZeit(a.zeit) }}</time>
+          <span>{{ a.beschreibung }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <a
+      v-if="fotoLink"
+      class="foto-link"
+      :href="fotoLink"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <span>
+        <strong>Fotos vom Lager</strong>
+        <small>Fotoalbum / Google Fotos öffnen</small>
+      </span>
+      <span aria-hidden="true">→</span>
+    </a>
   </section>
 </template>
 
@@ -380,7 +372,6 @@ function formatAenderungZeit(iso: string) {
 .aktion-anfragen { border-left: 4px solid #c94f4f; }
 .aktion-karte strong { font-size: 0.95rem; }
 .aktion-karte span { font-size: 0.85rem; color: var(--color-text-muted); }
-.schnell-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 1.25rem; }
 .foto-link {
   display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
   margin-bottom: 1.25rem; padding: 0.75rem 0.9rem;

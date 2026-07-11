@@ -22,6 +22,7 @@ const props = defineProps<{
   mobileOpen?: boolean
   moerderliAktiv?: boolean
   spielwiesenAktiv?: boolean
+  skiweekendAktiv?: boolean
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -78,6 +79,10 @@ function navKlick() {
 
     <router-link v-if="spielwiesenAktiv" :to="`${base}/spielwiesen`" class="nav-link" @click="navKlick">
       Spielwiesen
+    </router-link>
+
+    <router-link v-if="skiweekendAktiv" :to="`${base}/skiweekend-anmeldung`" class="nav-link" @click="navKlick">
+      Skiweekend
     </router-link>
 
     <div class="nav-dropdown" data-label="Leute" :class="{ 'gruppe-aktiv': gruppeAktiv(['teilnehmer', 'leiter', 'gruppen']) }">

@@ -20,6 +20,7 @@ import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
 import AemtliKiosk from '../components/lager/AemtliKiosk.vue'
 import AemtliTelefon from '../components/lager/AemtliTelefon.vue'
 import AemtliGuteFee from '../components/lager/AemtliGuteFee.vue'
+import AemtliHLTeam from '../components/lager/AemtliHLTeam.vue'
 import AemtliKuchenstand from '../components/lager/AemtliKuchenstand.vue'
 import AemtliSponsoring from '../components/lager/AemtliSponsoring.vue'
 import AemtliKrankenpflege from '../components/lager/AemtliKrankenpflege.vue'
@@ -163,6 +164,7 @@ interface LeiterZeile {
 const navOffen = ref(false)
 const moerderliAktiv = ref(false)
 const spielwiesenAktiv = ref(false)
+const skiweekendAktiv = ref(false)
 const letzteAenderungen = ref<LagerAenderung[]>([])
 const tnNavCount = ref(0)
 const bloeckeLaden = ref(false)
@@ -1250,7 +1252,9 @@ async function ladeMeineAemtli() {
     for (const a of alle ?? []) set.set(a.id, a)
   }
 
-  meineAemtli.value = [...set.values()].sort((a, b) => a.name.localeCompare(b.name))
+  meineAemtli.value = [...set.values()]
+    .filter((a) => aemtliSlug(a.name) !== 'lagerleitung')
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function aemtliKomponente(name: string) {
@@ -1278,6 +1282,17 @@ async function ladeSpielwiesenStatus() {
     .select('id', { count: 'exact', head: true })
     .eq('lager_id', lagerId.value)
   spielwiesenAktiv.value = !!count
+}
+
+async function ladeSkiweekendStatus() {
+  if (!lager.value?.organisation_id) { skiweekendAktiv.value = false; return }
+  const { data } = await supabase
+    .from('org_skiweekend')
+    .select('ort, start_datum')
+    .eq('organisation_id', lager.value.organisation_id)
+    .eq('jahr', lager.value.jahr)
+    .maybeSingle()
+  skiweekendAktiv.value = !!(data?.ort && data?.start_datum)
 }
 
 function zuHoeckImProgramm() {
@@ -1393,7 +1408,7 @@ async function ladeNavKontext() {
     )
   }
   await Promise.all(tasks)
-  await Promise.all([ladeMoerderliStatus(), ladeSpielwiesenStatus()])
+  await Promise.all([ladeMoerderliStatus(), ladeSpielwiesenStatus(), ladeSkiweekendStatus()])
 }
 
 async function ladeTabDaten(tab: Tab) {
@@ -1423,7 +1438,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'dashboard') {
-    await Promise.all([ladeLetzteAenderungenListe(), ladeMoerderliStatus(), ladeSpielwiesenStatus()])
+    await Promise.all([ladeLetzteAenderungenListe(), ladeMoerderliStatus(), ladeSpielwiesenStatus(), ladeSkiweekendStatus()])
   }
 }
 
@@ -1517,6 +1532,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         :mobile-open="navOffen"
         :moerderli-aktiv="moerderliAktiv"
         :spielwiesen-aktiv="spielwiesenAktiv"
+        :skiweekend-aktiv="skiweekendAktiv"
         @close="navOffen = false"
       />
     </div>
@@ -2237,9 +2253,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           v-else-if="aemtliKomponente(a.name) === 'finanzen'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :ist-kassier="hatFinanzenAemtli"
         />
-        <div v-else-if="aemtliSlug(a.name) === 'lagerleitung'" class="aemtli-platzhalter">
-          <p class="hint">Das Ämtli «Lagerleitung» wurde entfernt. Die Lalei wird über die Team-Verwaltung gesteuert.</p>
-        </div>
         <AemtliFoto
           v-else-if="aemtliKomponente(a.name) === 'foto'"
           :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name"
@@ -2248,6 +2261,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <AemtliKiosk v-else-if="aemtliKomponente(a.name) === 'kiosk'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
         <AemtliTelefon v-else-if="aemtliKomponente(a.name) === 'telefon'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliGuteFee v-else-if="aemtliKomponente(a.name) === 'gute_fee'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" :is-gute-fee="true" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
+        <AemtliHLTeam v-else-if="aemtliKomponente(a.name) === 'hl'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliSkiweekend v-else-if="aemtliKomponente(a.name) === 'skiweekend'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliKrankenpflege v-else-if="aemtliKomponente(a.name) === 'krankenpflege'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
         <AemtliKuchenstand v-else-if="aemtliKomponente(a.name) === 'kuchenstand'" :lager-id="lagerId" :aemtli-id="a.id" :aemtli-name="a.name" />
