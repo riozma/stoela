@@ -169,7 +169,7 @@ const vergangeneLager = computed(() => {
 /** Für den Jahresfahrplan-Tab: nächstes/laufendes Lager, sonst das zuletzt vergangene. */
 const relevantesLager = computed(() => kommendeOderLaufendeLager.value[0] ?? vergangeneLager.value[0] ?? null)
 
-type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'ressourcen'
+type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'kalender' | 'ressourcen' | 'lager-erstellen'
 const aktivBereich = ref<VereinBereich>('lager')
 
 function profilVon(m: VereinsMitglied) {
@@ -863,6 +863,8 @@ onMounted(async () => {
           <button type="button" :class="{ aktiv: aktivBereich === 'lager' }" @click="aktivBereich = 'lager'">Lager</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'team' }" @click="aktivBereich = 'team'">Team</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'fahrplan' }" @click="aktivBereich = 'fahrplan'">Jahresfahrplan</button>
+          <button type="button" :class="{ aktiv: aktivBereich === 'kalender' }" @click="aktivBereich = 'kalender'">Kalender</button>
+          <button v-if="istVereinsleitung" type="button" :class="{ aktiv: aktivBereich === 'lager-erstellen' }" @click="aktivBereich = 'lager-erstellen'">Lager erstellen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
         </nav>
 
@@ -999,7 +1001,7 @@ onMounted(async () => {
           </div>
         </section>
 
-        <section v-if="aktivBereich === 'ressourcen' && orgKalenderBereit" class="karte">
+        <section v-if="aktivBereich === 'kalender' && orgKalenderBereit" class="karte">
           <h2>Vereinskalender</h2>
           <p class="hint">
             Ein Kalender für alle Lager im Verein. Name beim Abonnieren: <strong>{{ orgKalenderTitel }}</strong>.
@@ -1029,6 +1031,61 @@ onMounted(async () => {
             </button>
           </p>
           <button type="button" class="secondary klein-btn" @click="orgKalenderIcsDownload">ICS herunterladen</button>
+        </section>
+        <section v-else-if="aktivBereich === 'kalender'" class="karte">
+          <h2>Vereinskalender</h2>
+          <p class="hint">Kalender wird geladen…</p>
+        </section>
+
+        <section v-if="aktivBereich === 'lager-erstellen' && istVereinsleitung" class="karte">
+          <h2>Neues Lager erfassen</h2>
+          <form class="lager-form" @submit.prevent="lagerFormularAbsenden">
+            <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
+            <label>Name <input v-model="lagerForm.name" required /></label>
+            <label>Ort <input ref="ortInput" v-model="lagerForm.ort" placeholder="Adresse eingeben..." /></label>
+            <label>Start <input v-model="lagerForm.start_datum" type="date" /></label>
+            <label>Ende <input v-model="lagerForm.end_datum" type="date" /></label>
+            <label>Vorjahres-Lager
+              <select v-model="lagerForm.vor_lager_id">
+                <option value="">– optional –</option>
+                <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
+              </select>
+            </label>
+            <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
+          </form>
+
+          <div v-if="laleiModalOffen" class="modal-overlay" @click.self="laleiModalAbbrechen">
+            <div class="modal-karte" role="dialog" aria-labelledby="lalei-modal-titel">
+              <h3 id="lalei-modal-titel">Lagerleitung (Lalei) festlegen</h3>
+              <p class="hint">Wer ist Lagerleitung für «{{ lagerForm.name }}»?</p>
+              <fieldset class="lalei-feld">
+                <label class="radio-label">
+                  <input v-model="laleiModal.modus" type="radio" value="selbst" />
+                  Ich bin Lagerleitung (Lalei)
+                </label>
+                <label class="radio-label">
+                  <input v-model="laleiModal.modus" type="radio" value="verein" />
+                  Person aus dem Verein als Lalei wählen
+                </label>
+                <label v-if="laleiModal.modus === 'verein'">
+                  Lalei
+                  <select v-model="laleiModal.personId" required>
+                    <option value="">– Person wählen –</option>
+                    <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
+                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                    </option>
+                  </select>
+                </label>
+                <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend.</p>
+              </fieldset>
+              <div class="modal-aktionen">
+                <button type="button" class="secondary" @click="laleiModalAbbrechen">Abbrechen</button>
+                <button type="button" :disabled="lagerSpeichern" @click="lagerErstellen">
+                  {{ lagerSpeichern ? 'Erstelle…' : 'Lager erstellen' }}
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section v-if="aktivBereich === 'fahrplan'" class="karte">
@@ -1190,57 +1247,6 @@ onMounted(async () => {
             <input v-model="personForm.rolle_hinweis" placeholder="Rolle / Hinweis" />
             <button type="submit" :disabled="personSpeichern">{{ personSpeichern ? 'Speichere…' : 'Person hinzufügen' }}</button>
           </form>
-
-          <template v-if="istVereinsleitung">
-            <h3 class="unterabschnitt">Neues Lager erfassen</h3>
-            <form class="lager-form" @submit.prevent="lagerFormularAbsenden">
-              <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
-              <label>Name <input v-model="lagerForm.name" required /></label>
-              <label>Ort <input ref="ortInput" v-model="lagerForm.ort" placeholder="Adresse eingeben..." /></label>
-              <label>Start <input v-model="lagerForm.start_datum" type="date" /></label>
-              <label>Ende <input v-model="lagerForm.end_datum" type="date" /></label>
-              <label>Vorjahres-Lager
-                <select v-model="lagerForm.vor_lager_id">
-                  <option value="">– optional –</option>
-                  <option v-for="l in vorLagerListe" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
-                </select>
-              </label>
-              <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
-            </form>
-
-            <div v-if="laleiModalOffen" class="modal-overlay" @click.self="laleiModalAbbrechen">
-              <div class="modal-karte" role="dialog" aria-labelledby="lalei-modal-titel">
-                <h3 id="lalei-modal-titel">Lagerleitung (Lalei) festlegen</h3>
-                <p class="hint">Wer ist Lagerleitung für «{{ lagerForm.name }}»?</p>
-                <fieldset class="lalei-feld">
-                  <label class="radio-label">
-                    <input v-model="laleiModal.modus" type="radio" value="selbst" />
-                    Ich bin Lagerleitung (Lalei)
-                  </label>
-                  <label class="radio-label">
-                    <input v-model="laleiModal.modus" type="radio" value="verein" />
-                    Person aus dem Verein als Lalei wählen
-                  </label>
-                  <label v-if="laleiModal.modus === 'verein'">
-                    Lalei
-                    <select v-model="laleiModal.personId" required>
-                      <option value="">– Person wählen –</option>
-                      <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
-                        {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
-                      </option>
-                    </select>
-                  </label>
-                  <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend.</p>
-                </fieldset>
-                <div class="modal-aktionen">
-                  <button type="button" class="secondary" @click="laleiModalAbbrechen">Abbrechen</button>
-                  <button type="button" :disabled="lagerSpeichern" @click="lagerErstellen">
-                    {{ lagerSpeichern ? 'Erstelle…' : 'Lager erstellen' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </template>
         </section>
       </template>
 
