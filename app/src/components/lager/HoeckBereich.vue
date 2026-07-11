@@ -18,8 +18,25 @@ interface HoeckRolle {
   sortierung: number
   bedarf_anzahl: number | null
   uhrzeit: string | null
+  programm_block_id: string | null
   leute: { id: string; leiter_id: string; vorname: string; nachname: string }[]
 }
+
+interface ProgrammBlock {
+  id: string
+  code: string
+  titel: string
+  start_zeit: string | null
+  end_zeit: string | null
+}
+
+const ZEITABSCHNITTE = [
+  { key: 'morgen', label: 'Morgen' },
+  { key: 'nachmittag', label: 'Nachmittag' },
+  { key: 'abend', label: 'Abend' },
+  { key: 'sonstiges', label: 'Sonstiges' },
+] as const
+type ZeitabschnittKey = (typeof ZEITABSCHNITTE)[number]['key']
 
 interface GruppenDienst {
   id: string
@@ -63,7 +80,8 @@ const aktiverTag = ref('')
 const ansicht = ref<'tag' | 'feedback'>('tag')
 const eigeneRolleNeu = ref('')
 const rolleBearbeitenId = ref<string | null>(null)
-const bearbeitenForm = ref({ bedarf_anzahl: '', uhrzeit: '' })
+const bearbeitenForm = ref({ bedarf_anzahl: '', uhrzeit: '', programm_block_id: '' })
+const tagBloecke = ref<ProgrammBlock[]>([])
 const feedback = ref<Feedback[]>([])
 const neuesFeedback = ref('')
 const feedbackSpeichern = ref(false)
@@ -89,6 +107,36 @@ const leiterImLagerAmTag = computed(() => {
     return true
   })
 })
+
+function blockVon(rolle: HoeckRolle): ProgrammBlock | null {
+  if (!rolle.programm_block_id) return null
+  return tagBloecke.value.find((b) => b.id === rolle.programm_block_id) ?? null
+}
+
+function zeitabschnitt(rolle: HoeckRolle): ZeitabschnittKey {
+  const block = blockVon(rolle)
+  const zeitStr = block?.start_zeit ?? (rolle.uhrzeit ? `${aktiverTag.value}T${rolle.uhrzeit}` : null)
+  if (!zeitStr) return 'sonstiges'
+  const stunde = new Date(zeitStr).getHours()
+  if (stunde < 12) return 'morgen'
+  if (stunde < 18) return 'nachmittag'
+  if (stunde < 22) return 'abend'
+  return 'sonstiges'
+}
+
+const rollenNachAbschnitt = computed(() => {
+  const gruppen: Record<ZeitabschnittKey, HoeckRolle[]> = { morgen: [], nachmittag: [], abend: [], sonstiges: [] }
+  for (const r of rollen.value) {
+    gruppen[zeitabschnitt(r)].push(r)
+  }
+  return gruppen
+})
+
+function formatBlockZeit(block: ProgrammBlock) {
+  if (!block.start_zeit) return ''
+  const zeit = new Intl.DateTimeFormat('de-CH', { hour: '2-digit', minute: '2-digit' }).format(new Date(block.start_zeit))
+  return zeit
+}
 
 function formatTag(tag: string) {
   return new Intl.DateTimeFormat('de-CH', { weekday: 'short', day: 'numeric', month: 'numeric' }).format(new Date(tag + 'T00:00:00'))
@@ -174,6 +222,14 @@ async function ladeFuerTag(tag: string) {
   const { data: rollenData } = await supabase
     .rpc('get_hoeck_rollen_fuer_tag', { p_lager_id: props.lagerId, p_tag: tag })
   rollen.value = (rollenData as HoeckRolle[]) ?? []
+
+  const { data: bloeckeData } = await supabase
+    .from('programmbloecke')
+    .select('id, code, titel, start_zeit, end_zeit')
+    .eq('lager_id', props.lagerId)
+    .eq('tag', tag)
+    .order('start_zeit')
+  tagBloecke.value = (bloeckeData as ProgrammBlock[]) ?? []
 
   const { data: diensteData } = await supabase
     .from('hoeck_gruppen_dienste')
@@ -293,6 +349,7 @@ async function eigeneRolleHinzufuegen() {
       sortierung: data.sortierung,
       bedarf_anzahl: null,
       uhrzeit: null,
+      programm_block_id: null,
       leute: [],
     })
   }
@@ -309,15 +366,18 @@ function bearbeitenStarten(rolle: HoeckRolle) {
   bearbeitenForm.value = {
     bedarf_anzahl: rolle.bedarf_anzahl != null ? String(rolle.bedarf_anzahl) : '',
     uhrzeit: rolle.uhrzeit ?? '',
+    programm_block_id: rolle.programm_block_id ?? '',
   }
 }
 
 async function bearbeitenSpeichern(rolle: HoeckRolle) {
   const bedarf = bearbeitenForm.value.bedarf_anzahl ? Number(bearbeitenForm.value.bedarf_anzahl) : null
   const uhrzeit = bearbeitenForm.value.uhrzeit || null
-  await supabase.from('hoeck_rollen').update({ bedarf_anzahl: bedarf, uhrzeit }).eq('id', rolle.id)
+  const blockId = bearbeitenForm.value.programm_block_id || null
+  await supabase.from('hoeck_rollen').update({ bedarf_anzahl: bedarf, uhrzeit, programm_block_id: blockId }).eq('id', rolle.id)
   rolle.bedarf_anzahl = bedarf
   rolle.uhrzeit = uhrzeit
+  rolle.programm_block_id = blockId
   rolleBearbeitenId.value = null
 }
 
@@ -375,40 +435,55 @@ onMounted(ladeDaten)
     <template v-if="!laden && ansicht === 'tag' && aktiverTag">
       <div class="rollen-section">
         <h4>Rollen</h4>
-        <div v-for="rolle in rollen" :key="rolle.id" class="rolle-card">
-          <div class="rolle-kopf">
-            <div class="rolle-titel">
-              <strong>{{ rolle.rolle }}</strong>
-              <span v-if="rolle.uhrzeit || rolle.bedarf_anzahl" class="rolle-meta">
-                <span v-if="rolle.uhrzeit">🕐 {{ rolle.uhrzeit.slice(0, 5) }}</span>
-                <span v-if="rolle.bedarf_anzahl">· {{ rolle.leute.length }}/{{ rolle.bedarf_anzahl }} Personen</span>
-              </span>
-            </div>
-            <div class="rolle-aktionen">
-              <button type="button" class="stift-btn" title="Bedarf & Uhrzeit bearbeiten" @click="bearbeitenStarten(rolle)">✏️</button>
-              <button v-if="rolle.ist_eigene" type="button" class="klein sekundaer" @click="eigeneRolleLoeschen(rolle.id)">✕</button>
-            </div>
-          </div>
+        <div class="abschnitte-raster">
+          <div v-for="abschnitt in ZEITABSCHNITTE" :key="abschnitt.key" class="abschnitt-spalte">
+            <span class="abschnitt-label">{{ abschnitt.label }}</span>
 
-          <div v-if="rolleBearbeitenId === rolle.id" class="bearbeiten-zeile">
-            <label>Personen gesucht <input v-model="bearbeitenForm.bedarf_anzahl" type="number" min="0" class="klein-inp" /></label>
-            <label>Uhrzeit <input v-model="bearbeitenForm.uhrzeit" type="time" class="klein-inp" /></label>
-            <button type="button" class="klein" @click="bearbeitenSpeichern(rolle)">Speichern</button>
-            <button type="button" class="klein sekundaer" @click="rolleBearbeitenId = null">Abbrechen</button>
-          </div>
+            <div v-for="rolle in rollenNachAbschnitt[abschnitt.key]" :key="rolle.id" class="rolle-card">
+              <div class="rolle-kopf">
+                <div class="rolle-titel">
+                  <strong>{{ rolle.rolle }}</strong>
+                  <span v-if="blockVon(rolle)" class="rolle-block">{{ blockVon(rolle)!.code }} {{ blockVon(rolle)!.titel }} · {{ formatBlockZeit(blockVon(rolle)!) }}</span>
+                  <span v-if="rolle.uhrzeit || rolle.bedarf_anzahl" class="rolle-meta">
+                    <span v-if="rolle.uhrzeit && !blockVon(rolle)">🕐 {{ rolle.uhrzeit.slice(0, 5) }}</span>
+                    <span v-if="rolle.bedarf_anzahl">{{ rolle.leute.length }}/{{ rolle.bedarf_anzahl }} Personen</span>
+                  </span>
+                </div>
+                <div class="rolle-aktionen">
+                  <button type="button" class="stift-btn" title="Bedarf, Uhrzeit & Programmblock bearbeiten" @click="bearbeitenStarten(rolle)">✏️</button>
+                  <button v-if="rolle.ist_eigene" type="button" class="klein sekundaer" @click="eigeneRolleLoeschen(rolle.id)">✕</button>
+                </div>
+              </div>
 
-          <div class="rolle-leute">
-            <button
-              v-for="l in leiterImLagerAmTag"
-              :key="l.id"
-              type="button"
-              class="leiter-chip"
-              :class="{ aktiv: rolle.leute.some((r) => r.leiter_id === l.id) }"
-              @click="toggleLeiterRolle(rolle.id, l.id)"
-            >
-              {{ l.vorname }}
-            </button>
-            <span v-if="!leiterImLagerAmTag.length" class="hint klein">Niemand an diesem Tag im Lager erfasst.</span>
+              <div v-if="rolleBearbeitenId === rolle.id" class="bearbeiten-zeile">
+                <label>Personen gesucht <input v-model="bearbeitenForm.bedarf_anzahl" type="number" min="0" class="klein-inp" /></label>
+                <label>Uhrzeit <input v-model="bearbeitenForm.uhrzeit" type="time" class="klein-inp" :disabled="!!bearbeitenForm.programm_block_id" /></label>
+                <label>Programmblock (optional)
+                  <select v-model="bearbeitenForm.programm_block_id" class="klein-inp breit">
+                    <option value="">– Kein –</option>
+                    <option v-for="b in tagBloecke" :key="b.id" :value="b.id">{{ b.code }} {{ b.titel }} ({{ formatBlockZeit(b) }})</option>
+                  </select>
+                </label>
+                <button type="button" class="klein" @click="bearbeitenSpeichern(rolle)">Speichern</button>
+                <button type="button" class="klein sekundaer" @click="rolleBearbeitenId = null">Abbrechen</button>
+              </div>
+
+              <div class="rolle-leute">
+                <button
+                  v-for="l in leiterImLagerAmTag"
+                  :key="l.id"
+                  type="button"
+                  class="leiter-chip"
+                  :class="{ aktiv: rolle.leute.some((r) => r.leiter_id === l.id) }"
+                  @click="toggleLeiterRolle(rolle.id, l.id)"
+                >
+                  {{ l.vorname }}
+                </button>
+                <span v-if="!leiterImLagerAmTag.length" class="hint klein">Niemand an diesem Tag im Lager erfasst.</span>
+              </div>
+            </div>
+
+            <p v-if="!rollenNachAbschnitt[abschnitt.key].length" class="hint klein leer-hinweis">Keine Rollen.</p>
           </div>
         </div>
 
@@ -477,6 +552,11 @@ onMounted(ladeDaten)
 .feedback-btn { margin-left: 0.35rem; border-style: dashed; }
 
 .rollen-section { margin-bottom: 1.5rem; }
+.abschnitte-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.85rem; }
+.abschnitt-spalte { display: flex; flex-direction: column; gap: 0.5rem; }
+.abschnitt-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text-muted); }
+.leer-hinweis { margin: 0; padding: 0.5rem 0.6rem; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
+.rolle-block { font-size: 0.75rem; color: var(--color-accent); }
 .rolle-card {
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: var(--radius-md); padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
@@ -489,6 +569,7 @@ onMounted(ladeDaten)
 .bearbeiten-zeile { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--color-surface-muted); border-radius: var(--radius-sm); }
 .bearbeiten-zeile label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
 .klein-inp { width: 6rem; padding: 0.2rem 0.35rem; font-size: 0.82rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.klein-inp.breit { width: 100%; min-width: 12rem; }
 .rolle-leute { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .leiter-chip {
   padding: 0.2rem 0.5rem; font-size: 0.78rem; border: 1px solid var(--color-border);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import { useAuth } from '../../composables/useAuth'
 import LagerMap from './LagerMap.vue'
 
 interface Block {
@@ -62,6 +63,8 @@ const emit = defineEmits<{
 
 const jahresTodos = ref<JahresTodo[]>([])
 const todosGeladen = ref(false)
+const { session } = useAuth()
+const meineHoeckRollenHeute = ref<{ rolle: string; programm_block_id: string }[]>([])
 
 onMounted(async () => {
   if (!props.lager.id) return
@@ -73,7 +76,32 @@ onMounted(async () => {
     .limit(10)
   jahresTodos.value = (data ?? []) as JahresTodo[]
   todosGeladen.value = true
+
+  await ladeMeineHoeckRolleHeute()
 })
+
+async function ladeMeineHoeckRolleHeute() {
+  const email = session.value?.user.email
+  if (!email || !props.lager.id) return
+  const heute = new Date().toISOString().slice(0, 10)
+
+  const { data: meinLeiter } = await supabase
+    .from('anmeldungen_leiter')
+    .select('id')
+    .eq('lager_id', props.lager.id)
+    .eq('status', 'bestaetigt')
+    .ilike('email', email)
+    .maybeSingle()
+  if (!meinLeiter) return
+
+  const { data } = await supabase
+    .from('hoeck_zuweisungen')
+    .select('hoeck_rolle:hoeck_rolle_id(rolle, programm_block_id, tag)')
+    .eq('leiter_id', meinLeiter.id)
+  meineHoeckRollenHeute.value = ((data ?? []) as any[])
+    .map((z) => z.hoeck_rolle)
+    .filter((r) => r && r.tag === heute && r.programm_block_id)
+}
 
 const faelligeFahrplanTodos = computed(() =>
   jahresTodos.value.filter((t) => !t.erledigt && t.faellig_am && new Date(t.faellig_am) <= new Date()),
@@ -133,6 +161,11 @@ const aktuellerBlock = computed(() => {
   }) ?? null
 })
 
+const meineRolleJetzt = computed(() => {
+  if (!aktuellerBlock.value) return null
+  return meineHoeckRollenHeute.value.find((r) => r.programm_block_id === aktuellerBlock.value!.id) ?? null
+})
+
 const morgen = computed(() => {
   const d = new Date()
   d.setDate(d.getDate() + 1)
@@ -184,6 +217,15 @@ const aktionen = computed(() => {
     })
   }
 
+  if (meineRolleJetzt.value) {
+    list.push({
+      typ: 'meine-rolle',
+      titel: `Deine Rolle jetzt: ${meineRolleJetzt.value.rolle}`,
+      text: aktuellerBlock.value ? `${aktuellerBlock.value.code} ${aktuellerBlock.value.titel}` : '',
+      action: () => emit('hoeck'),
+    })
+  }
+
   if (lagerLaufend.value && istHoeckZeit.value) {
     list.push({
       typ: 'hoeck',
@@ -214,8 +256,10 @@ const aktionen = computed(() => {
   return list
 })
 
-const aktuelleAktion = computed(() => aktionen.value.find((a) => a.typ === 'jetzt') ?? null)
-const weitereAktionen = computed(() => aktionen.value.filter((a) => a.typ !== 'jetzt'))
+const aktuelleAktion = computed(() =>
+  aktionen.value.find((a) => a.typ === 'meine-rolle') ?? aktionen.value.find((a) => a.typ === 'jetzt') ?? null,
+)
+const weitereAktionen = computed(() => aktionen.value.filter((a) => a !== aktuelleAktion.value))
 
 function formatAenderungZeit(iso: string) {
   return new Intl.DateTimeFormat('de-CH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
@@ -235,6 +279,7 @@ function formatAenderungZeit(iso: string) {
     <button
       v-if="aktuelleAktion"
       class="aktion-karte aktion-jetzt"
+      :class="'aktion-' + aktuelleAktion.typ"
       @click="aktuelleAktion.action"
     >
       <strong>{{ aktuelleAktion.titel }}</strong>
@@ -329,6 +374,7 @@ function formatAenderungZeit(iso: string) {
 .aktion-karte:hover { background: var(--color-surface-muted); }
 .aktion-jetzt { border-left: 4px solid var(--color-accent); }
 .dashboard > .aktion-jetzt { margin-bottom: 1.25rem; }
+.aktion-meine-rolle { border-left: 4px solid #2e7d32; background: #f4faf5; }
 .aktion-hoeck { border-left: 4px solid #c98a3f; }
 .aktion-vorbereiten { border-left: 4px solid #6b7fa8; }
 .aktion-anfragen { border-left: 4px solid #c94f4f; }
