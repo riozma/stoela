@@ -2,11 +2,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 
-const props = defineProps<{ lagerId: string }>()
+const props = defineProps<{ lagerId: string; startDatum?: string | null; endDatum?: string | null }>()
 
 interface AemtliStatus {
   name: string
   status: string
+}
+
+interface AemtliLuecke {
+  aemtli: string
+  hinweis: string
 }
 
 interface ProgrammEintrag {
@@ -20,6 +25,7 @@ interface ProgrammEintrag {
 
 const laden = ref(true)
 const aemtliStatus = ref<AemtliStatus[]>([])
+const aemtliLuecken = ref<AemtliLuecke[]>([])
 const programmStatistik = ref<ProgrammEintrag[]>([])
 const tnStatusZaehler = ref<Record<string, number>>({})
 const tnBezahltCount = ref(0)
@@ -33,6 +39,50 @@ const aemtliZaehler = computed(() => {
   return z
 })
 
+function mergeUndFindeLuecke(lagerVon: string, lagerBis: string, intervalle: { von: string; bis: string }[]): string | null {
+  if (!intervalle.length) return lagerVon
+  const sortiert = [...intervalle].sort((a, b) => a.von.localeCompare(b.von))
+  let abgedeckt = lagerVon
+  for (const iv of sortiert) {
+    if (iv.von > abgedeckt) return abgedeckt
+    if (iv.bis > abgedeckt) abgedeckt = iv.bis
+  }
+  return abgedeckt < lagerBis ? abgedeckt : null
+}
+
+async function ladeAemtliLuecken() {
+  if (!props.startDatum || !props.endDatum) {
+    aemtliLuecken.value = []
+    return
+  }
+  const { data } = await supabase
+    .from('anmeldungen_leiter')
+    .select('anwesend_von, anwesend_bis, status, leiter_rollen(aemtli:aemtli_id(name))')
+    .eq('lager_id', props.lagerId)
+    .eq('status', 'bestaetigt')
+
+  const intervalleProAemtli: Record<string, { von: string; bis: string }[]> = {}
+  for (const row of (data ?? []) as any[]) {
+    const von = row.anwesend_von ?? props.startDatum!
+    const bis = row.anwesend_bis ?? props.endDatum!
+    for (const rolle of row.leiter_rollen ?? []) {
+      const name = rolle.aemtli?.name
+      if (!name) continue
+      if (!intervalleProAemtli[name]) intervalleProAemtli[name] = []
+      intervalleProAemtli[name].push({ von, bis })
+    }
+  }
+
+  const luecken: AemtliLuecke[] = []
+  for (const [name, intervalle] of Object.entries(intervalleProAemtli)) {
+    const luecke = mergeUndFindeLuecke(props.startDatum!, props.endDatum!, intervalle)
+    if (luecke) {
+      luecken.push({ aemtli: name, hinweis: `Ab ${luecke} ist niemand vom Ämtli «${name}» anwesend.` })
+    }
+  }
+  aemtliLuecken.value = luecken
+}
+
 async function ladenAlle() {
   laden.value = true
   const [{ data: aemtli }, { data: prog }, { data: tn }] = await Promise.all([
@@ -43,6 +93,7 @@ async function ladenAlle() {
     supabase.rpc('lager_programm_statistik', { p_lager_id: props.lagerId }),
     supabase.from('anmeldungen_tn').select('status, tn_finanzen(bezahlt)').eq('lager_id', props.lagerId),
   ])
+  await ladeAemtliLuecken()
 
   aemtliStatus.value = (aemtli ?? []).map((a: any) => ({
     name: a.aemtli?.name ?? '–',
@@ -73,6 +124,12 @@ onMounted(ladenAlle)
     <p v-if="laden" class="hint">Lade Statistik...</p>
 
     <template v-else>
+      <div v-if="aemtliLuecken.length" class="warnungen">
+        <h3>Anwesenheits-Lücken bei Ämtli</h3>
+        <p v-for="l in aemtliLuecken" :key="l.aemtli" class="warn-zeile">⚠️ {{ l.hinweis }}</p>
+      </div>
+      <p v-else-if="props.startDatum && props.endDatum" class="hint">Anwesenheit aller besetzten Ämtli deckt das ganze Lager ab.</p>
+
       <div class="karten">
         <div class="karte">
           <span class="label">Ämtli-Status</span>
@@ -152,4 +209,10 @@ h3 { margin: 1.25rem 0 0.5rem; font-size: 0.95rem; }
 .status-badge.in_arbeit { background: #faf0e2; color: #8a5a1f; }
 .status-badge.offen { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
+.warnungen { margin-bottom: 1.25rem; }
+.warnungen h3 { margin: 0 0 0.4rem; }
+.warn-zeile {
+  margin: 0.25rem 0; padding: 0.5rem 0.7rem; font-size: 0.85rem;
+  background: #fdf3e0; border: 1px solid #c98a3f; border-radius: var(--radius-md);
+}
 </style>

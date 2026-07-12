@@ -726,6 +726,64 @@ async function leiterHinzufuegen() {
   await ladeLetzteAenderungenListe()
 }
 
+const aemtliZuteilenOffen = ref(false)
+const aemtliZuteilenSchritt = ref<'check' | 'liste'>('check')
+const aemtliZuteilenIndex = ref(0)
+const aemtliZuteilenAuswahl = ref('')
+const KASSIER_NAMEN = ['kassier', 'finanzen', 'kasse']
+
+const aemtliZuteilenListe = computed(() =>
+  aemtliListe.value.filter(
+    (a) => !KASSIER_NAMEN.some((k) => a.name.toLowerCase().includes(k)) && aemtliSlug(a.name) !== 'kuche',
+  ),
+)
+const aemtliZuteilenAktuell = computed(() => aemtliZuteilenListe.value[aemtliZuteilenIndex.value] ?? null)
+const aemtliZuteilenZugewiesene = computed(() => {
+  if (!aemtliZuteilenAktuell.value) return []
+  const id = aemtliZuteilenAktuell.value.id
+  return leiterBestaetigt.value.filter((l) => (leiterRollenMap.value[l.id] ?? []).some((r) => r.id === id))
+})
+const aemtliZuteilenAuswahlbar = computed(() => {
+  const zugewiesenIds = new Set(aemtliZuteilenZugewiesene.value.map((l) => l.id))
+  return leiterBestaetigt.value.filter((l) => !zugewiesenIds.has(l.id))
+})
+
+function aemtliZuteilenStarten() {
+  aemtliZuteilenSchritt.value = 'check'
+  aemtliZuteilenIndex.value = 0
+  aemtliZuteilenAuswahl.value = ''
+  aemtliZuteilenOffen.value = true
+}
+
+function aemtliZuteilenWeiterNachCheck() {
+  aemtliZuteilenSchritt.value = 'liste'
+}
+
+async function aemtliZuteilenPersonZuweisen() {
+  if (!aemtliZuteilenAuswahl.value || !aemtliZuteilenAktuell.value) return
+  await rolleZuweisen(aemtliZuteilenAuswahl.value, aemtliZuteilenAktuell.value.id)
+  aemtliZuteilenAuswahl.value = ''
+}
+
+async function aemtliZuteilenPersonEntfernen(anmeldungLeiterId: string) {
+  const zuweisung = (leiterRollenMap.value[anmeldungLeiterId] ?? []).find((r) => r.id === aemtliZuteilenAktuell.value?.id)
+  if (!zuweisung) return
+  await rolleEntfernen(zuweisung.zuweisungId)
+}
+
+function aemtliZuteilenWeiter() {
+  if (aemtliZuteilenIndex.value < aemtliZuteilenListe.value.length - 1) {
+    aemtliZuteilenIndex.value++
+    aemtliZuteilenAuswahl.value = ''
+  } else {
+    aemtliZuteilenOffen.value = false
+  }
+}
+
+function aemtliZuteilenAbbrechen() {
+  aemtliZuteilenOffen.value = false
+}
+
 async function geplanteRolleAendern(anmeldungId: string, rolle: string) {
   const { error: err } = await supabase
     .from('anmeldungen_leiter')
@@ -1995,6 +2053,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           Stammdaten, Ämtli und App-Berechtigungen in einer Tabelle. Lagerleitung (Lalei) steuert das Lager –
           mindestens eine Person muss Lalei bleiben.
         </p>
+        <button v-if="isLeitung" type="button" class="secondary" @click="aemtliZuteilenStarten">Ämtli neu zuteilen</button>
 
         <div v-if="leiterZeilen.length" class="detail-scroll">
         <table class="liste leiter-team-tabelle">
@@ -2204,6 +2263,49 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         </form>
         <p v-if="leiterFehler" class="error">{{ leiterFehler }}</p>
         </template>
+
+        <div v-if="aemtliZuteilenOffen" class="modal-overlay" @click.self="aemtliZuteilenAbbrechen">
+          <div class="modal-karte" role="dialog" aria-labelledby="zuteilen-titel">
+            <template v-if="aemtliZuteilenSchritt === 'check'">
+              <h3 id="zuteilen-titel">Ämtli neu zuteilen</h3>
+              <p class="hint">
+                Bevor es losgeht: Sind alle Leiter/innen für dieses Lager bereits erfasst
+                (unter «Leiter hinzufügen»)? Das Kassier-/Finanzen-Ämtli läuft nicht ab und wird hier übersprungen.
+              </p>
+              <div class="modal-aktionen">
+                <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Abbrechen</button>
+                <button type="button" @click="aemtliZuteilenWeiterNachCheck">Ja, alle erfasst – weiter</button>
+              </div>
+            </template>
+            <template v-else-if="aemtliZuteilenAktuell">
+              <h3 id="zuteilen-titel">{{ aemtliZuteilenAktuell.name }}</h3>
+              <p class="hint">Ämtli {{ aemtliZuteilenIndex + 1 }} von {{ aemtliZuteilenListe.length }}</p>
+
+              <div v-if="aemtliZuteilenZugewiesene.length" class="zuteilen-zugewiesen">
+                <span v-for="l in aemtliZuteilenZugewiesene" :key="l.id" class="rollen-pill">
+                  {{ l.vorname }} {{ l.nachname }}
+                  <button type="button" class="rollen-entfernen" title="Entfernen" @click="aemtliZuteilenPersonEntfernen(l.id)">×</button>
+                </span>
+              </div>
+              <p v-else class="hint">Noch niemandem zugewiesen.</p>
+
+              <div class="modal-zuweisen-zeile">
+                <select v-model="aemtliZuteilenAuswahl">
+                  <option value="">Person wählen…</option>
+                  <option v-for="l in aemtliZuteilenAuswahlbar" :key="l.id" :value="l.id">{{ l.vorname }} {{ l.nachname }}</option>
+                </select>
+                <button type="button" class="secondary" :disabled="!aemtliZuteilenAuswahl" @click="aemtliZuteilenPersonZuweisen">Zuweisen</button>
+              </div>
+
+              <div class="modal-aktionen">
+                <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Später fortsetzen</button>
+                <button type="button" @click="aemtliZuteilenWeiter">
+                  {{ aemtliZuteilenIndex < aemtliZuteilenListe.length - 1 ? 'Überspringen / Weiter' : 'Fertig' }}
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
       </section>
 
       <!-- Gruppen -->
@@ -2327,7 +2429,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 
       <!-- Statistik -->
       <section v-if="activeTab === 'statistik' && isLeitung">
-        <StatistikPanel :lager-id="lagerId" />
+        <StatistikPanel :lager-id="lagerId" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
       </section>
 
       <!-- Gemini (nur Lalei / App Admin) -->
@@ -2497,6 +2599,19 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .rollen-entfernen { background: none; border: none; color: var(--color-text-muted); padding: 0 0.2rem; font-size: 0.85rem; line-height: 1; cursor: pointer; }
 .rollen-entfernen:hover { color: var(--color-danger); }
 .neue-rolle-input { width: 110px; margin-left: 0.4rem; }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 200;
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-karte {
+  background: var(--color-surface); border-radius: var(--radius-md); padding: 1.25rem;
+  max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.modal-karte h3 { margin: 0 0 0.5rem; }
+.modal-aktionen { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
+.zuteilen-zugewiesen { margin: 0.5rem 0; }
+.modal-zuweisen-zeile { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.modal-zuweisen-zeile select { flex: 1; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.75rem 0 1rem; }
 .inline-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
 .gruppen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
