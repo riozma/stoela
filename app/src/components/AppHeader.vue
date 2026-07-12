@@ -18,19 +18,64 @@ defineEmits<{ toggleNav: [] }>()
 
 const { session, signOut } = useAuth()
 const router = useRouter()
-const profil = ref<{ vorname: string | null; nachname: string | null } | null>(null)
+const profil = ref<{ vorname: string | null; nachname: string | null; telefon: string | null } | null>(null)
+
+const SNOOZE_KEY = 'stoela_profil_hinweis_snooze'
+const hinweisSichtbar = ref(false)
+const hinweisForm = ref({ vorname: '', nachname: '', telefon: '' })
+const hinweisSpeichern = ref(false)
+
+function snoozeBisAbgelaufen(): boolean {
+  const bis = localStorage.getItem(SNOOZE_KEY)
+  if (!bis) return true
+  return new Date(bis) < new Date()
+}
 
 async function ladeProfil() {
   if (!session.value) {
     profil.value = null
+    hinweisSichtbar.value = false
     return
   }
   const { data } = await supabase
     .from('profiles')
-    .select('vorname, nachname')
+    .select('vorname, nachname, telefon')
     .eq('id', session.value.user.id)
     .single()
   profil.value = data
+  const fehlt = !data?.vorname?.trim() || !data?.nachname?.trim() || !data?.telefon?.trim()
+  hinweisSichtbar.value = fehlt && snoozeBisAbgelaufen()
+  if (hinweisSichtbar.value) {
+    hinweisForm.value = {
+      vorname: data?.vorname ?? '',
+      nachname: data?.nachname ?? '',
+      telefon: data?.telefon ?? '',
+    }
+  }
+}
+
+async function hinweisSpeichernHandler() {
+  if (!session.value) return
+  hinweisSpeichern.value = true
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      vorname: hinweisForm.value.vorname.trim() || null,
+      nachname: hinweisForm.value.nachname.trim() || null,
+      telefon: hinweisForm.value.telefon.trim() || null,
+    })
+    .eq('id', session.value.user.id)
+  hinweisSpeichern.value = false
+  if (error) return
+  hinweisSichtbar.value = false
+  await ladeProfil()
+}
+
+function hinweisSpaeter() {
+  const bis = new Date()
+  bis.setMonth(bis.getMonth() + 1)
+  localStorage.setItem(SNOOZE_KEY, bis.toISOString())
+  hinweisSichtbar.value = false
 }
 
 onMounted(ladeProfil)
@@ -76,6 +121,21 @@ async function logout() {
       <button type="button" class="secondary logout-btn" @click="logout">Logout</button>
     </div>
   </header>
+  <div v-if="hinweisSichtbar" class="profil-hinweis">
+    <div class="profil-hinweis-inner">
+      <div class="profil-hinweis-text">
+        <strong>Dein Profil ist unvollständig.</strong>
+        <span>Vorname, Nachname und Telefon werden für Leiter-/Ämtli-Zuweisungen benötigt.</span>
+      </div>
+      <form class="profil-hinweis-form" @submit.prevent="hinweisSpeichernHandler">
+        <input v-model="hinweisForm.vorname" placeholder="Vorname" required />
+        <input v-model="hinweisForm.nachname" placeholder="Nachname" required />
+        <input v-model="hinweisForm.telefon" placeholder="Telefon" required />
+        <button type="submit" :disabled="hinweisSpeichern">{{ hinweisSpeichern ? 'Speichere…' : 'Speichern' }}</button>
+        <button type="button" class="secondary" @click="hinweisSpaeter">Diesen Monat nicht mehr anzeigen</button>
+      </form>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -173,5 +233,44 @@ async function logout() {
 @media (max-width: 768px) {
   .burger-btn { display: flex; }
   .lager-name { display: none; }
+}
+.profil-hinweis {
+  width: 100%;
+  background: #fdf3e0;
+  border-bottom: 1px solid #c98a3f;
+  box-sizing: border-box;
+}
+.profil-hinweis-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  padding: 0.55rem 1.25rem;
+}
+.profil-hinweis-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+  min-width: 200px;
+}
+.profil-hinweis-text span { color: var(--color-text-muted); }
+.profil-hinweis-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  flex: 1;
+}
+.profil-hinweis-form input {
+  min-width: 130px;
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+}
+.profil-hinweis-form button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
+  white-space: nowrap;
 }
 </style>

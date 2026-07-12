@@ -27,6 +27,7 @@ const fehler = ref('')
 const generiereLade = ref(false)
 const uebernahmeLade = ref(false)
 
+const alleAnzeigen = ref(false)
 const neuAufgabeOffen = ref(false)
 const neuForm = ref({ titel: '', beschreibung: '', kategorie: 'lager', zustaendig: 'lalei', monate_vor_lager: 3 })
 const bearbeitenId = ref<string | null>(null)
@@ -142,7 +143,23 @@ async function aufgabeLoeschen(todo: LagerTodo) {
   await ladenTodos()
 }
 
-const gruppen = computed(() => gruppiereTodos(todos.value))
+/** Nächste zwei unterschiedliche Fälligkeitsdaten offener Aufgaben – Fokus statt Überforderung. */
+const naechsteFaelligkeiten = computed(() => {
+  const daten = new Set(
+    todos.value.filter((t) => !t.erledigt && t.faellig_am).map((t) => t.faellig_am as string),
+  )
+  return Array.from(daten).sort().slice(0, 2)
+})
+
+const sichtbareTodos = computed(() => {
+  if (alleAnzeigen.value || !naechsteFaelligkeiten.value.length) return todos.value
+  return todos.value.filter(
+    (t) => t.erledigt || !t.faellig_am || naechsteFaelligkeiten.value.includes(t.faellig_am),
+  )
+})
+
+const gruppen = computed(() => gruppiereTodos(sichtbareTodos.value))
+const ausgeblendeteAnzahl = computed(() => todos.value.length - sichtbareTodos.value.length)
 const offen = computed(() => todos.value.filter((t) => !t.erledigt).length)
 const erledigt = computed(() => todos.value.filter((t) => t.erledigt).length)
 const fortschritt = computed(() =>
@@ -257,6 +274,14 @@ function linkFuerTodo(todo: LagerTodo) {
       <span class="stat">{{ erledigt }}/{{ todos.length }} erledigt ({{ fortschritt }}%)</span>
     </div>
 
+    <p v-if="!alleAnzeigen && ausgeblendeteAnzahl > 0" class="hint fokus-hinweis">
+      Zeigt nur die nächsten anstehenden Termine ({{ ausgeblendeteAnzahl }} weitere ausgeblendet).
+      <button type="button" class="link-like" @click="alleAnzeigen = true">Alle anzeigen</button>
+    </p>
+    <p v-else-if="alleAnzeigen && naechsteFaelligkeiten.length" class="hint fokus-hinweis">
+      <button type="button" class="link-like" @click="alleAnzeigen = false">Nur nächste Termine anzeigen</button>
+    </p>
+
     <p v-if="nachricht" class="ok">{{ nachricht }}</p>
     <p v-if="fehler" class="error">{{ fehler }}</p>
     <p v-if="laden">Lade Fahrplan...</p>
@@ -349,4 +374,6 @@ function linkFuerTodo(todo: LagerTodo) {
 .inline-aktionen { display: flex; gap: 0.5rem; }
 .todo-admin-aktionen { display: flex; gap: 0.2rem; flex-shrink: 0; }
 .stift-btn { background: none; border: none; cursor: pointer; font-size: 0.85rem; padding: 0.1rem 0.25rem; }
+.fokus-hinweis { margin: -0.5rem 0 0.85rem; }
+.link-like { border: none; background: transparent; color: var(--color-accent); padding: 0; cursor: pointer; font-size: inherit; text-decoration: underline; }
 </style>

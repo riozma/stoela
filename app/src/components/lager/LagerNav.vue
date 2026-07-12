@@ -126,16 +126,38 @@ function navKlick() {
       </div>
     </div>
 
-    <router-link
-      v-for="a in meineAemtli"
-      :key="a.id"
-      :to="aemtliPath(a.name)"
-      class="nav-link"
-      :class="{ aktiv: isAemtliActive(a.name) }"
-      @click="navKlick"
+    <div
+      v-if="meineAemtli.length > 3"
+      class="nav-dropdown"
+      data-label="Ämtli"
+      :class="{ 'gruppe-aktiv': meineAemtli.some((a) => isAemtliActive(a.name)) }"
     >
-      {{ a.name }}
-    </router-link>
+      <span class="nav-dropdown-label">Ämtli</span>
+      <div class="nav-dropdown-menu">
+        <router-link
+          v-for="a in meineAemtli"
+          :key="a.id"
+          :to="aemtliPath(a.name)"
+          class="nav-link"
+          :class="{ aktiv: isAemtliActive(a.name) }"
+          @click="navKlick"
+        >
+          {{ a.name }}
+        </router-link>
+      </div>
+    </div>
+    <template v-else>
+      <router-link
+        v-for="a in meineAemtli"
+        :key="a.id"
+        :to="aemtliPath(a.name)"
+        class="nav-link"
+        :class="{ aktiv: isAemtliActive(a.name) }"
+        @click="navKlick"
+      >
+        {{ a.name }}
+      </router-link>
+    </template>
 
     <router-link :to="sectionPath('quittungen')" class="nav-link" :class="{ aktiv: isActive('quittungen') }" @click="navKlick">
       Quittungen
