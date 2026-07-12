@@ -105,6 +105,13 @@ interface TN {
   anwesend_bis: string | null
   notfallkontakt: string
   eltern_email: string
+  allergien: string | null
+  essensgewohnheiten: string | null
+  essensgewohnheiten_sonstiges: string | null
+  medikamente: string | null
+  gesundheit_bemerkungen: string | null
+  eltern_aufenthaltsort: string | null
+  sonstige_info: string | null
 }
 interface LeiterAnmeldung {
   id: string
@@ -400,11 +407,92 @@ const tnListe = ref<TN[]>([])
 const tnForm = ref({ vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', notfallkontakt: '', eltern_email: '' })
 const tnSpeichern = ref(false)
 const tnFehler = ref('')
+const tnBearbeitenId = ref<string | null>(null)
+const tnEditForm = ref({
+  vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', ahv_nr: '',
+  notfallkontakt: '', eltern_email: '', eltern_aufenthaltsort: '',
+  allergien: '', essensgewohnheiten: '', essensgewohnheiten_sonstiges: '',
+  medikamente: '', gesundheit_bemerkungen: '', sonstige_info: '',
+})
+const tnDokumente = ref<Record<string, { typ: string; url: string }[]>>({})
+
+const darfTnBearbeiten = computed(() => isLeitung.value || hatAppAdminAemtli.value)
+
+function tnBearbeitenStart(tn: TN) {
+  if (tnBearbeitenId.value === tn.id) { tnBearbeitenId.value = null; return }
+  tnBearbeitenId.value = tn.id
+  tnEditForm.value = {
+    vorname: tn.vorname, nachname: tn.nachname, geburtsdatum: tn.geburtsdatum ?? '',
+    geschlecht: tn.geschlecht ?? '', ahv_nr: tn.ahv_nr ?? '',
+    notfallkontakt: tn.notfallkontakt ?? '', eltern_email: tn.eltern_email ?? '',
+    eltern_aufenthaltsort: tn.eltern_aufenthaltsort ?? '',
+    allergien: tn.allergien ?? '', essensgewohnheiten: tn.essensgewohnheiten ?? '',
+    essensgewohnheiten_sonstiges: tn.essensgewohnheiten_sonstiges ?? '',
+    medikamente: tn.medikamente ?? '', gesundheit_bemerkungen: tn.gesundheit_bemerkungen ?? '',
+    sonstige_info: tn.sonstige_info ?? '',
+  }
+}
+
+async function tnBearbeitenSpeichern(tn: TN) {
+  tnFehler.value = ''
+  const f = tnEditForm.value
+  const { error } = await supabase.from('anmeldungen_tn').update({
+    vorname: f.vorname.trim(),
+    nachname: f.nachname.trim(),
+    geburtsdatum: f.geburtsdatum || null,
+    geschlecht: f.geschlecht || null,
+    ahv_nr: f.ahv_nr.trim() || null,
+    notfallkontakt: f.notfallkontakt.trim() || null,
+    eltern_email: f.eltern_email.trim() || null,
+    eltern_aufenthaltsort: f.eltern_aufenthaltsort.trim() || null,
+    allergien: f.allergien.trim() || null,
+    essensgewohnheiten: f.essensgewohnheiten.trim() || null,
+    essensgewohnheiten_sonstiges: f.essensgewohnheiten_sonstiges.trim() || null,
+    medikamente: f.medikamente.trim() || null,
+    gesundheit_bemerkungen: f.gesundheit_bemerkungen.trim() || null,
+    sonstige_info: f.sonstige_info.trim() || null,
+  }).eq('id', tn.id)
+  if (error) { tnFehler.value = error.message; return }
+  Object.assign(tn, {
+    vorname: f.vorname.trim(), nachname: f.nachname.trim(), geburtsdatum: f.geburtsdatum || null,
+    geschlecht: f.geschlecht || null, ahv_nr: f.ahv_nr.trim() || null,
+    notfallkontakt: f.notfallkontakt.trim() || null, eltern_email: f.eltern_email.trim() || null,
+    eltern_aufenthaltsort: f.eltern_aufenthaltsort.trim() || null,
+    allergien: f.allergien.trim() || null, essensgewohnheiten: f.essensgewohnheiten.trim() || null,
+    essensgewohnheiten_sonstiges: f.essensgewohnheiten_sonstiges.trim() || null,
+    medikamente: f.medikamente.trim() || null, gesundheit_bemerkungen: f.gesundheit_bemerkungen.trim() || null,
+    sonstige_info: f.sonstige_info.trim() || null,
+  })
+  tnBearbeitenId.value = null
+}
+
+async function ladeTnDokumente() {
+  const tnIds = tnListe.value.map((t) => t.id)
+  if (!tnIds.length) { tnDokumente.value = {}; return }
+  const { data } = await supabase
+    .from('tn_anmeldung_dokumente')
+    .select('anmeldung_tn_id, typ, storage_path')
+    .in('anmeldung_tn_id', tnIds)
+  const map: Record<string, { typ: string; url: string }[]> = {}
+  for (const row of data ?? []) {
+    const { data: signed } = await supabase.storage.from('tn-anmeldungen').createSignedUrl(row.storage_path, 3600)
+    if (!signed?.signedUrl) continue
+    if (!map[row.anmeldung_tn_id]) map[row.anmeldung_tn_id] = []
+    map[row.anmeldung_tn_id].push({ typ: row.typ, url: signed.signedUrl })
+  }
+  tnDokumente.value = map
+}
+
+const TN_DOK_LABEL: Record<string, string> = {
+  krankenkasse_vorne: 'KK vorne',
+  krankenkasse_hinten: 'KK hinten',
+  impfung: 'Impfausweis',
+}
 
 async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis')
+    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   tnListe.value = (data ?? []) as TN[]
@@ -1525,6 +1613,7 @@ async function ladeTabDaten(tab: Tab) {
   }
   if (tab === 'teilnehmer') {
     await Promise.all([ladeTeilnehmer(), ladeGruppen()])
+    await ladeTnDokumente()
     return
   }
   if (tab === 'gruppen') {
@@ -1842,11 +1931,13 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             <thead>
               <tr>
                 <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>Gruppe</th><th>Rolle</th>
-                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th>
+                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th><th>Dokumente</th>
+                <th v-if="darfTnBearbeiten">Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tn in tnListe" :key="tn.id">
+              <template v-for="tn in tnListe" :key="tn.id">
+              <tr>
                 <td>{{ tn.vorname }} {{ tn.nachname }}</td>
                 <td>{{ tn.geburtsdatum ?? '–' }}</td>
                 <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
@@ -1857,7 +1948,51 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 <td>{{ tn.notfallkontakt ?? '–' }}</td>
                 <td>{{ tn.eltern_email ?? '–' }}</td>
                 <td>{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
+                <td>
+                  <span v-if="(tnDokumente[tn.id] ?? []).length" class="tn-dok-links">
+                    <a v-for="(d, i) in tnDokumente[tn.id]" :key="i" :href="d.url" target="_blank" rel="noopener">{{ TN_DOK_LABEL[d.typ] ?? d.typ }}</a>
+                  </span>
+                  <span v-else class="hint">–</span>
+                </td>
+                <td v-if="darfTnBearbeiten">
+                  <button type="button" class="secondary klein" @click="tnBearbeitenStart(tn)">
+                    {{ tnBearbeitenId === tn.id ? 'Schliessen' : 'Bearbeiten' }}
+                  </button>
+                </td>
               </tr>
+              <tr v-if="tnBearbeitenId === tn.id">
+                <td :colspan="darfTnBearbeiten ? 11 : 10">
+                  <div class="tn-bearbeiten-form">
+                    <label>Vorname <input v-model="tnEditForm.vorname" /></label>
+                    <label>Nachname <input v-model="tnEditForm.nachname" /></label>
+                    <label>Geburtsdatum <input v-model="tnEditForm.geburtsdatum" type="date" /></label>
+                    <label>Geschlecht
+                      <select v-model="tnEditForm.geschlecht">
+                        <option value="">–</option>
+                        <option value="m">männlich</option>
+                        <option value="w">weiblich</option>
+                        <option value="d">divers</option>
+                      </select>
+                    </label>
+                    <label>AHV-Nr. <input v-model="tnEditForm.ahv_nr" /></label>
+                    <label>Notfallkontakt <input v-model="tnEditForm.notfallkontakt" /></label>
+                    <label>Eltern E-Mail <input v-model="tnEditForm.eltern_email" type="email" /></label>
+                    <label>Aufenthaltsort Eltern <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
+                    <label>Allergien <input v-model="tnEditForm.allergien" /></label>
+                    <label>Essensgewohnheiten <input v-model="tnEditForm.essensgewohnheiten" /></label>
+                    <label>Essen Sonstiges <input v-model="tnEditForm.essensgewohnheiten_sonstiges" /></label>
+                    <label>Medikamente <input v-model="tnEditForm.medikamente" /></label>
+                    <label class="full">Gesundheitsbemerkungen <textarea v-model="tnEditForm.gesundheit_bemerkungen" rows="2"></textarea></label>
+                    <label class="full">Sonstiges <textarea v-model="tnEditForm.sonstige_info" rows="2"></textarea></label>
+                    <div class="inline-aktionen">
+                      <button type="button" @click="tnBearbeitenSpeichern(tn)">Speichern</button>
+                      <button type="button" class="secondary" @click="tnBearbeitenId = null">Abbrechen</button>
+                    </div>
+                    <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
+                  </div>
+                </td>
+              </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -2590,6 +2725,14 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .leiter-ansicht-nav button { background: var(--color-surface); border: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-text); }
 .leiter-ansicht-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .detail-scroll { overflow-x: auto; margin-bottom: 1rem; }
+.tn-dok-links { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.78rem; }
+.tn-bearbeiten-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem;
+  padding: 0.85rem; background: var(--color-surface-muted); border-radius: var(--radius-md);
+}
+.tn-bearbeiten-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--color-text-muted); }
+.tn-bearbeiten-form label.full { grid-column: 1 / -1; }
+.tn-bearbeiten-form .inline-aktionen { grid-column: 1 / -1; display: flex; gap: 0.5rem; }
 .leiter-detail-tabelle { font-size: 0.8rem; min-width: 900px; }
 .anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }

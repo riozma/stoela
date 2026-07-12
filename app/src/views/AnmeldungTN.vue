@@ -156,7 +156,32 @@ function weiteresKind() {
   schritt.value = 'kind'
 }
 
-async function uploadDokument(anmeldungId: string, typ: string, file: File) {
+/** Skaliert Bilder auf max. 1600px Kante und komprimiert als JPEG, um Speicherplatz zu sparen. PDFs bleiben unverändert. */
+async function bildKomprimieren(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const maxKante = 1600
+    const skalierung = Math.min(1, maxKante / Math.max(bitmap.width, bitmap.height))
+    const breite = Math.round(bitmap.width * skalierung)
+    const hoehe = Math.round(bitmap.height * skalierung)
+    const canvas = document.createElement('canvas')
+    canvas.width = breite
+    canvas.height = hoehe
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(bitmap, 0, 0, breite, hoehe)
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75))
+    if (!blob) return file
+    const neuerName = file.name.replace(/\.\w+$/, '') + '.jpg'
+    return new File([blob], neuerName, { type: 'image/jpeg' })
+  } catch {
+    return file
+  }
+}
+
+async function uploadDokument(anmeldungId: string, typ: string, rohFile: File) {
+  const file = await bildKomprimieren(rohFile)
   const path = `${lagerId}/${anmeldungId}/${typ}_${Date.now()}_${file.name}`
   const { error: upErr } = await supabase.storage.from('tn-anmeldungen').upload(path, file, { upsert: false })
   if (upErr) throw upErr
