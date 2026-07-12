@@ -112,6 +112,7 @@ interface TN {
   gesundheit_bemerkungen: string | null
   eltern_aufenthaltsort: string | null
   sonstige_info: string | null
+  rezeption_notiz: string | null
 }
 interface LeiterAnmeldung {
   id: string
@@ -418,6 +419,13 @@ const tnDokumente = ref<Record<string, { typ: string; url: string }[]>>({})
 
 const darfTnBearbeiten = computed(() => isLeitung.value || hatAppAdminAemtli.value)
 
+function tnSonstiges(tn: TN): string {
+  const teile: string[] = []
+  if (tn.sonstige_info?.trim()) teile.push(tn.sonstige_info.trim())
+  if (tn.rezeption_notiz?.trim()) teile.push(`Rezeption: ${tn.rezeption_notiz.trim()}`)
+  return teile.join(' · ') || '–'
+}
+
 function tnBearbeitenStart(tn: TN) {
   if (tnBearbeitenId.value === tn.id) { tnBearbeitenId.value = null; return }
   tnBearbeitenId.value = tn.id
@@ -492,7 +500,7 @@ const TN_DOK_LABEL: Record<string, string> = {
 async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info')
+    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info, rezeption_notiz')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   tnListe.value = (data ?? []) as TN[]
@@ -1760,6 +1768,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :leiter-anfragen="leiterAnfragen.length"
           :letzte-aenderungen="letzteAenderungen"
           :foto-link="lager.foto_link"
+          :organisation-id="lager.organisation_id"
           @tab="tabWechseln($event as Tab)"
           @hoeck="zuHoeckImProgramm"
           @block="zuBlockSpringen"
@@ -1931,7 +1940,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             <thead>
               <tr>
                 <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>Gruppe</th><th>Rolle</th>
-                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th><th>Dokumente</th>
+                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th><th>Dokumente</th><th>Sonstiges</th>
                 <th v-if="darfTnBearbeiten">Aktionen</th>
               </tr>
             </thead>
@@ -1954,6 +1963,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                   </span>
                   <span v-else class="hint">–</span>
                 </td>
+                <td>{{ tnSonstiges(tn) }}</td>
                 <td v-if="darfTnBearbeiten">
                   <button type="button" class="secondary klein" @click="tnBearbeitenStart(tn)">
                     {{ tnBearbeitenId === tn.id ? 'Schliessen' : 'Bearbeiten' }}
@@ -1961,7 +1971,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 </td>
               </tr>
               <tr v-if="tnBearbeitenId === tn.id">
-                <td :colspan="darfTnBearbeiten ? 11 : 10">
+                <td :colspan="darfTnBearbeiten ? 12 : 11">
                   <div class="tn-bearbeiten-form">
                     <label>Vorname <input v-model="tnEditForm.vorname" /></label>
                     <label>Nachname <input v-model="tnEditForm.nachname" /></label>

@@ -13,6 +13,8 @@ interface TN {
   ahv_nr: string | null
   essensgewohnheiten: string | null
   gesundheit_bemerkungen: string | null
+  rezeption_notiz: string | null
+  angekommen: boolean
 }
 
 interface TnFinanz {
@@ -31,7 +33,7 @@ async function laden_() {
   laden.value = true
   const { data: tn } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, status, notfallkontakt, eltern_email, ahv_nr, essensgewohnheiten, gesundheit_bemerkungen')
+    .select('id, vorname, nachname, status, notfallkontakt, eltern_email, ahv_nr, essensgewohnheiten, gesundheit_bemerkungen, rezeption_notiz, angekommen')
     .eq('lager_id', props.lagerId)
     .order('nachname')
   tnListe.value = (tn ?? []) as TN[]
@@ -70,6 +72,25 @@ function finanzBemerkung(tnId: string): string | null {
 }
 
 const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben(t).length && bezahlt(t.id)).length)
+const angekommenAnzahl = computed(() => tnListe.value.filter((t) => t.angekommen).length)
+
+const notizOffenId = ref<string | null>(null)
+const notizSpeichern = ref<string | null>(null)
+
+function notizToggeln(tnId: string) {
+  notizOffenId.value = notizOffenId.value === tnId ? null : tnId
+}
+
+async function notizSpeichernHandler(tn: TN) {
+  notizSpeichern.value = tn.id
+  await supabase.from('anmeldungen_tn').update({ rezeption_notiz: tn.rezeption_notiz?.trim() || null }).eq('id', tn.id)
+  notizSpeichern.value = null
+}
+
+async function angekommenSetzen(tn: TN, wert: boolean) {
+  tn.angekommen = wert
+  await supabase.from('anmeldungen_tn').update({ angekommen: wert }).eq('id', tn.id)
+}
 </script>
 
 <template>
@@ -80,22 +101,30 @@ const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben
       Ausserdem können hier Dessertaktien erfasst werden.
     </p>
 
-    <p v-if="!laden" class="stand">{{ bereitAnzahl }} / {{ tnListe.length }} vollständig und bezahlt.</p>
+    <p v-if="!laden" class="stand">
+      {{ bereitAnzahl }} / {{ tnListe.length }} vollständig und bezahlt · {{ angekommenAnzahl }} / {{ tnListe.length }} angekommen
+    </p>
     <p v-if="laden" class="hint">Lade…</p>
 
     <table v-if="tnListe.length" class="liste">
       <thead>
         <tr>
+          <th>Angekommen</th>
           <th>Name</th>
           <th>Status</th>
           <th>Fehlt noch</th>
           <th>Essen</th>
           <th>Gesundheit</th>
           <th>Bezahlt</th>
+          <th>Notiz</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="tn in tnListe" :key="tn.id">
+        <template v-for="tn in tnListe" :key="tn.id">
+        <tr>
+          <td>
+            <input type="checkbox" :checked="tn.angekommen" @change="angekommenSetzen(tn, ($event.target as HTMLInputElement).checked)" />
+          </td>
           <td>{{ tn.vorname }} {{ tn.nachname }}</td>
           <td>{{ tn.status }}</td>
           <td>
@@ -108,7 +137,23 @@ const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben
             <span :class="bezahlt(tn.id) ? 'ok-badge' : 'fehlt-badge'">{{ bezahlt(tn.id) ? 'bezahlt' : 'offen' }}</span>
             <span v-if="finanzBemerkung(tn.id)" class="finanz-notiz" :title="finanzBemerkung(tn.id)!">📝 {{ finanzBemerkung(tn.id) }}</span>
           </td>
+          <td>
+            <button type="button" class="secondary klein" @click="notizToggeln(tn.id)">
+              {{ tn.rezeption_notiz ? '📝 Notiz' : '+ Notiz' }}
+            </button>
+          </td>
         </tr>
+        <tr v-if="notizOffenId === tn.id">
+          <td colspan="8">
+            <div class="notiz-zeile">
+              <textarea v-model="tn.rezeption_notiz" rows="2" placeholder="Was die Eltern am Anreisetag noch mitgeteilt haben..."></textarea>
+              <button type="button" :disabled="notizSpeichern === tn.id" @click="notizSpeichernHandler(tn)">
+                {{ notizSpeichern === tn.id ? 'Speichere…' : 'Speichern' }}
+              </button>
+            </div>
+          </td>
+        </tr>
+        </template>
       </tbody>
     </table>
     <p v-else-if="!laden" class="hint">Noch keine Teilnehmer angemeldet.</p>
@@ -129,4 +174,6 @@ const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben
 .ok-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: #eaf3ec; color: #2f6b40; font-size: 0.78rem; }
 .trenner { margin: 1.5rem 0; border: none; border-top: 1px solid var(--color-border); }
 .finanz-notiz { display: block; margin-top: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
+.notiz-zeile { display: flex; gap: 0.5rem; align-items: flex-start; padding: 0.5rem; }
+.notiz-zeile textarea { flex: 1; }
 </style>

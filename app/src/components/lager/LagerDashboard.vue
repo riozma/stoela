@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import { useAuth } from '../../composables/useAuth'
 import LagerMap from './LagerMap.vue'
+import ExterneToolsBlock from './ExterneToolsBlock.vue'
 
 interface Block {
   id: string
@@ -44,6 +45,7 @@ const props = defineProps<{
   leiterAnfragen?: number
   letzteAenderungen?: LagerAenderung[]
   fotoLink?: string | null
+  organisationId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -273,6 +275,8 @@ function formatAenderungZeit(iso: string) {
       </span>
       <span aria-hidden="true">→</span>
     </a>
+
+    <ExterneToolsBlock v-if="organisationId" :organisation-id="organisationId" :ist-leitung="isLeitung" />
   </section>
 </template>
 
