@@ -124,7 +124,7 @@ const feedback = ref<Feedback[]>([])
 const neuesFeedback = ref('')
 const feedbackSpeichern = ref(false)
 
-const tage = computed(() => {
+const alleTage = computed(() => {
   if (!props.startDatum || !props.endDatum) return []
   const list: string[] = []
   const cur = new Date(props.startDatum + 'T00:00:00')
@@ -135,6 +135,9 @@ const tage = computed(() => {
   }
   return list
 })
+/** Erster Lagertag = Starthöck, eigener Button; restliche Tage sind normale Lagerhöcks. */
+const starthoeckTag = computed(() => alleTage.value[0] ?? '')
+const tage = computed(() => alleTage.value.slice(1))
 
 const leiterImLagerAmTag = computed(() => {
   const tag = aktiverTag.value
@@ -187,14 +190,14 @@ function formatDatum(iso: string) {
 /** Vor 21 Uhr: heutiger Tag. Ab 21 Uhr: nächster Tag. Vor Lagerbeginn: erster Tag.
  *  Nach Lagerende (bzw. wenn der berechnete Zieltag nach dem Lager liegt): Feedback-Höck. */
 function autoAnsichtBestimmen(): { ansicht: 'tag' | 'feedback'; tag: string } {
-  if (!props.startDatum || !props.endDatum || !tage.value.length) {
-    return { ansicht: 'tag', tag: tage.value[0] ?? '' }
+  if (!props.startDatum || !props.endDatum || !alleTage.value.length) {
+    return { ansicht: 'tag', tag: alleTage.value[0] ?? '' }
   }
   const jetzt = new Date()
   const heuteIso = jetzt.toISOString().slice(0, 10)
 
   if (heuteIso < props.startDatum) {
-    return { ansicht: 'tag', tag: tage.value[0] }
+    return { ansicht: 'tag', tag: alleTage.value[0] }
   }
 
   let zielIso = heuteIso
@@ -205,10 +208,10 @@ function autoAnsichtBestimmen(): { ansicht: 'tag' | 'feedback'; tag: string } {
   }
 
   if (zielIso > props.endDatum) {
-    return { ansicht: 'feedback', tag: tage.value[tage.value.length - 1] }
+    return { ansicht: 'feedback', tag: alleTage.value[alleTage.value.length - 1] }
   }
   if (zielIso < props.startDatum) {
-    return { ansicht: 'tag', tag: tage.value[0] }
+    return { ansicht: 'tag', tag: alleTage.value[0] }
   }
   return { ansicht: 'tag', tag: zielIso }
 }
@@ -355,6 +358,15 @@ async function ladeDaten() {
 async function ladeFuerTag(tag: string) {
   aktiverTag.value = tag
   ansicht.value = 'tag'
+
+  if (hoeckTypen.value.length) {
+    const zielName = tag === starthoeckTag.value ? 'Starthöck' : 'Lagerhöck'
+    const ziel = hoeckTypen.value.find((t) => t.name === zielName)
+    if (ziel) {
+      ausgewaehlterTypId.value = ziel.id
+      await ladeTraktanden()
+    }
+  }
   await ladeTraktandenErledigt()
 
   const { data: rollenData } = await supabase
@@ -571,6 +583,28 @@ async function setDienst(dienst: string, gruppenName: string) {
   }
 }
 
+const hoeckErfassenForm = ref({ datum: '', titel: '' })
+const hoeckErfassenLaden = ref(false)
+const hoeckErfassenErfolg = ref(false)
+
+async function hoeckErfassen() {
+  if (!hoeckErfassenForm.value.datum) return
+  hoeckErfassenLaden.value = true
+  hoeckErfassenErfolg.value = false
+  const { error } = await supabase.from('lager_termine').insert({
+    lager_id: props.lagerId,
+    typ: 'hoeck',
+    titel: hoeckErfassenForm.value.titel.trim() || 'Höck',
+    start_datum: hoeckErfassenForm.value.datum,
+    end_datum: hoeckErfassenForm.value.datum,
+  })
+  hoeckErfassenLaden.value = false
+  if (!error) {
+    hoeckErfassenErfolg.value = true
+    hoeckErfassenForm.value = { datum: '', titel: '' }
+  }
+}
+
 onMounted(ladeDaten)
 </script>
 
@@ -579,7 +613,19 @@ onMounted(ladeDaten)
     <h3>Höck – Tages-Rollen &amp; Dienste</h3>
     <p class="hint">Pro Tag Leiter für Rollen einteilen und Gruppen für Kiosk/Telefon zuweisen.</p>
 
-    <nav v-if="tage.length" class="tage-nav">
+    <nav v-if="alleTage.length" class="tage-nav">
+      <button
+        v-if="starthoeckTag"
+        type="button"
+        class="starthoeck-btn"
+        :class="{ aktiv: ansicht === 'tag' && aktiverTag === starthoeckTag }"
+        @click="ladeFuerTag(starthoeckTag)"
+      >
+        Starthöck
+      </button>
+      <router-link :to="`/lager/${lagerId}/vorweekend`" class="feedback-btn vorweekend-btn">
+        Vorweekend →
+      </router-link>
       <button
         v-for="t in tage"
         :key="t"
@@ -592,10 +638,16 @@ onMounted(ladeDaten)
       <button type="button" class="feedback-btn" :class="{ aktiv: ansicht === 'feedback' }" @click="ladeFeedback">
         Feedback-Höck
       </button>
-      <router-link :to="`/lager/${lagerId}/vorweekend`" class="feedback-btn vorweekend-btn">
-        Vorweekend →
-      </router-link>
     </nav>
+
+    <form v-if="isLeitung" class="hoeck-erfassen-form" @submit.prevent="hoeckErfassen">
+      <label>Weiteren Höck erfassen (z.B. Planungshöck vor dem Lager)
+        <input v-model="hoeckErfassenForm.datum" type="date" required />
+      </label>
+      <input v-model="hoeckErfassenForm.titel" placeholder="Titel (optional)" />
+      <button type="submit" :disabled="hoeckErfassenLaden">{{ hoeckErfassenLaden ? 'Speichere…' : '+ Im Kalender erfassen' }}</button>
+      <span v-if="hoeckErfassenErfolg" class="hint klein ok">✓ Im Kalender erfasst.</span>
+    </form>
 
     <div v-if="laden" class="hint">Lade...</div>
 
@@ -781,6 +833,10 @@ onMounted(ladeDaten)
 .tage-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .feedback-btn { margin-left: 0.35rem; border-style: dashed; }
 .vorweekend-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.starthoeck-btn { font-weight: 700; }
+.hoeck-erfassen-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0 1.25rem; font-size: 0.85rem; }
+.hoeck-erfassen-form label { display: flex; flex-direction: column; gap: 0.2rem; color: var(--color-text-muted); font-size: 0.82rem; }
+.hoeck-erfassen-form .ok { color: #2e7d32; }
 .traktanden-section { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem; }
 .traktanden-kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .traktanden-kopf h4 { margin: 0; }
