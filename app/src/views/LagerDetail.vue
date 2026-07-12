@@ -54,6 +54,7 @@ import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 import { leiterAlsCsv, leiterCsvDownload, type LeiterExportZeile } from '../lib/leiterCsv'
 import { tnAlsCsv, tnCsvDownload } from '../lib/tnCsv'
 import LagerBearbeitung from '../components/lager/LagerBearbeitung.vue'
+import LeiterErgaenzenPopup from '../components/lager/LeiterErgaenzenPopup.vue'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
 interface MaterialItem extends MaterialMitZuordnung {}
@@ -1861,6 +1862,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="lager">
+
+      <LeiterErgaenzenPopup :lager-id="lagerId" :config="lager.leiter_anmeldung_config" />
 
       <LagerBearbeitung v-if="!tabErlaubt" :lager-id="lagerId" :bereich="activeTab" />
 
