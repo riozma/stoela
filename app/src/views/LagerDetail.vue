@@ -113,6 +113,13 @@ interface TN {
   eltern_aufenthaltsort: string | null
   sonstige_info: string | null
   rezeption_notiz: string | null
+  eltern_kontakt_id: string | null
+  eltern_vorname?: string | null
+  eltern_nachname?: string | null
+  eltern_telefon?: string | null
+  eltern_adresse?: string | null
+  eltern_plz?: string | null
+  eltern_ort?: string | null
 }
 interface LeiterAnmeldung {
   id: string
@@ -414,6 +421,7 @@ const tnEditForm = ref({
   notfallkontakt: '', eltern_email: '', eltern_aufenthaltsort: '',
   allergien: '', essensgewohnheiten: '', essensgewohnheiten_sonstiges: '',
   medikamente: '', gesundheit_bemerkungen: '', sonstige_info: '',
+  eltern_vorname: '', eltern_nachname: '', eltern_telefon: '', eltern_adresse: '', eltern_plz: '', eltern_ort: '',
 })
 const tnDokumente = ref<Record<string, { typ: string; url: string }[]>>({})
 
@@ -438,6 +446,9 @@ function tnBearbeitenStart(tn: TN) {
     essensgewohnheiten_sonstiges: tn.essensgewohnheiten_sonstiges ?? '',
     medikamente: tn.medikamente ?? '', gesundheit_bemerkungen: tn.gesundheit_bemerkungen ?? '',
     sonstige_info: tn.sonstige_info ?? '',
+    eltern_vorname: tn.eltern_vorname ?? '', eltern_nachname: tn.eltern_nachname ?? '',
+    eltern_telefon: tn.eltern_telefon ?? '', eltern_adresse: tn.eltern_adresse ?? '',
+    eltern_plz: tn.eltern_plz ?? '', eltern_ort: tn.eltern_ort ?? '',
   }
 }
 
@@ -461,6 +472,19 @@ async function tnBearbeitenSpeichern(tn: TN) {
     sonstige_info: f.sonstige_info.trim() || null,
   }).eq('id', tn.id)
   if (error) { tnFehler.value = error.message; return }
+
+  if (tn.eltern_kontakt_id) {
+    const { error: kErr } = await supabase.from('tn_eltern_kontakte').update({
+      eltern_vorname: f.eltern_vorname.trim() || null,
+      eltern_nachname: f.eltern_nachname.trim() || null,
+      telefon: f.eltern_telefon.trim() || null,
+      adresse: f.eltern_adresse.trim() || null,
+      plz: f.eltern_plz.trim() || null,
+      ort: f.eltern_ort.trim() || null,
+    }).eq('id', tn.eltern_kontakt_id)
+    if (kErr) { tnFehler.value = kErr.message; return }
+  }
+
   Object.assign(tn, {
     vorname: f.vorname.trim(), nachname: f.nachname.trim(), geburtsdatum: f.geburtsdatum || null,
     geschlecht: f.geschlecht || null, ahv_nr: f.ahv_nr.trim() || null,
@@ -470,6 +494,9 @@ async function tnBearbeitenSpeichern(tn: TN) {
     essensgewohnheiten_sonstiges: f.essensgewohnheiten_sonstiges.trim() || null,
     medikamente: f.medikamente.trim() || null, gesundheit_bemerkungen: f.gesundheit_bemerkungen.trim() || null,
     sonstige_info: f.sonstige_info.trim() || null,
+    eltern_vorname: f.eltern_vorname.trim() || null, eltern_nachname: f.eltern_nachname.trim() || null,
+    eltern_telefon: f.eltern_telefon.trim() || null, eltern_adresse: f.eltern_adresse.trim() || null,
+    eltern_plz: f.eltern_plz.trim() || null, eltern_ort: f.eltern_ort.trim() || null,
   })
   tnBearbeitenId.value = null
 }
@@ -500,10 +527,29 @@ const TN_DOK_LABEL: Record<string, string> = {
 async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info, rezeption_notiz')
+    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info, rezeption_notiz, eltern_kontakt_id')
     .eq('lager_id', lagerId.value)
     .order('nachname')
-  tnListe.value = (data ?? []) as TN[]
+  const liste = (data ?? []) as TN[]
+
+  const kontaktIds = [...new Set(liste.map((t) => t.eltern_kontakt_id).filter(Boolean))] as string[]
+  if (kontaktIds.length) {
+    const { data: kontakte } = await supabase
+      .from('tn_eltern_kontakte')
+      .select('id, eltern_vorname, eltern_nachname, telefon, adresse, plz, ort')
+      .in('id', kontaktIds)
+    const kontaktMap = new Map((kontakte ?? []).map((k) => [k.id, k]))
+    for (const t of liste) {
+      const k = t.eltern_kontakt_id ? kontaktMap.get(t.eltern_kontakt_id) : null
+      t.eltern_vorname = k?.eltern_vorname ?? null
+      t.eltern_nachname = k?.eltern_nachname ?? null
+      t.eltern_telefon = k?.telefon ?? null
+      t.eltern_adresse = k?.adresse ?? null
+      t.eltern_plz = k?.plz ?? null
+      t.eltern_ort = k?.ort ?? null
+    }
+  }
+  tnListe.value = liste
 }
 
 async function tnHinzufuegen() {
@@ -1984,8 +2030,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <table class="liste tn-detail-tabelle">
             <thead>
               <tr>
-                <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>Gruppe</th><th>Rolle</th>
-                <th>Status</th><th>Notfallkontakt</th><th>Eltern E-Mail</th><th>Anwesend</th><th>Dokumente</th><th>Sonstiges</th>
+                <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>AHV-Nr.</th><th>Gruppe</th><th>Rolle</th>
+                <th>Status</th><th>Notfallkontakt</th><th>Allergien</th><th>Essensgewohnheiten</th><th>Medikamente</th><th>Gesundheit</th>
+                <th>Eltern</th><th>Eltern E-Mail</th><th>Eltern Telefon</th><th>Eltern Adresse</th><th>Anwesend</th><th>Dokumente</th><th>Sonstiges</th>
                 <th v-if="darfTnBearbeiten">Aktionen</th>
               </tr>
             </thead>
@@ -1996,11 +2043,25 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 <td>{{ tn.geburtsdatum ?? '–' }}</td>
                 <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
                 <td>{{ tn.geschlecht ?? '–' }}</td>
+                <td>{{ tn.ahv_nr ?? '–' }}</td>
                 <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
                 <td>{{ tn.rolle }}</td>
                 <td>{{ tn.status }}</td>
                 <td>{{ tn.notfallkontakt ?? '–' }}</td>
+                <td>{{ tn.allergien ?? '–' }}</td>
+                <td>
+                  {{ tn.essensgewohnheiten ?? '–' }}
+                  <span v-if="tn.essensgewohnheiten_sonstiges" class="hint klein">({{ tn.essensgewohnheiten_sonstiges }})</span>
+                </td>
+                <td>{{ tn.medikamente ?? '–' }}</td>
+                <td>{{ tn.gesundheit_bemerkungen ?? '–' }}</td>
+                <td>{{ [tn.eltern_vorname, tn.eltern_nachname].filter(Boolean).join(' ') || '–' }}</td>
                 <td>{{ tn.eltern_email ?? '–' }}</td>
+                <td>{{ tn.eltern_telefon ?? '–' }}</td>
+                <td>
+                  {{ tn.eltern_adresse ?? '–' }}<span v-if="tn.eltern_plz || tn.eltern_ort"><br />{{ tn.eltern_plz }} {{ tn.eltern_ort }}</span>
+                  <span v-if="tn.eltern_aufenthaltsort" class="hint klein"><br />Aufenthaltsort: {{ tn.eltern_aufenthaltsort }}</span>
+                </td>
                 <td>{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
                 <td>
                   <span v-if="(tnDokumente[tn.id] ?? []).length" class="tn-dok-links">
@@ -2016,7 +2077,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 </td>
               </tr>
               <tr v-if="tnBearbeitenId === tn.id">
-                <td :colspan="darfTnBearbeiten ? 12 : 11">
+                <td :colspan="darfTnBearbeiten ? 21 : 20">
                   <div class="tn-bearbeiten-form">
                     <label>Vorname <input v-model="tnEditForm.vorname" /></label>
                     <label>Nachname <input v-model="tnEditForm.nachname" /></label>
@@ -2031,8 +2092,14 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                     </label>
                     <label>AHV-Nr. <input :value="tnEditForm.ahv_nr" @input="tnEditForm.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" /></label>
                     <label>Notfallkontakt <input v-model="tnEditForm.notfallkontakt" /></label>
+                    <label>Eltern Vorname <input v-model="tnEditForm.eltern_vorname" /></label>
+                    <label>Eltern Nachname <input v-model="tnEditForm.eltern_nachname" /></label>
                     <label>Eltern E-Mail <input v-model="tnEditForm.eltern_email" type="email" /></label>
-                    <label>Aufenthaltsort Eltern <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
+                    <label>Eltern Telefon <input v-model="tnEditForm.eltern_telefon" /></label>
+                    <label>Eltern Adresse <input v-model="tnEditForm.eltern_adresse" /></label>
+                    <label>Eltern PLZ <input v-model="tnEditForm.eltern_plz" /></label>
+                    <label>Eltern Ort <input v-model="tnEditForm.eltern_ort" /></label>
+                    <label>Aufenthaltsort Eltern (während Lager) <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
                     <label>Allergien <input v-model="tnEditForm.allergien" /></label>
                     <label>Essensgewohnheiten <input v-model="tnEditForm.essensgewohnheiten" /></label>
                     <label>Essen Sonstiges <input v-model="tnEditForm.essensgewohnheiten_sonstiges" /></label>
