@@ -20,7 +20,20 @@ const bestaetigungHinweis = computed(() => {
   return bis ? `Bitte spätestens bis ${bis} bestätigen (3 Monate vor Lager).` : ''
 })
 
+interface LeiterAnmeldungConfig {
+  geburtsdatum: boolean
+  geschlecht: boolean
+  ahv_nr: boolean
+  essensgewohnheiten: boolean
+}
+
 const lagerInfo = ref<{ name: string; start_datum: string | null; end_datum: string | null } | null>(null)
+const anmeldungConfig = ref<LeiterAnmeldungConfig>({
+  geburtsdatum: true,
+  geschlecht: true,
+  ahv_nr: true,
+  essensgewohnheiten: true,
+})
 const ladefehler = ref('')
 const gesendet = ref(false)
 const speichern = ref(false)
@@ -67,13 +80,16 @@ onMounted(async () => {
 
   const { data, error } = await supabase.rpc('get_lager_anmeldung_info', { p_lager_id: lagerId, p_typ: 'leiter' })
   if (error || !data) {
-    const { data: peek } = await supabase.rpc('get_lager_anmeldung_peek', { p_lager_id: lagerId })
-    ladefehler.value = peek?.status
-      ? `Leiter-Bewerbung nicht möglich (Status: ${peek.status}).`
-      : 'Dieses Lager ist nicht verfügbar.'
+    ladefehler.value = 'Die Leiteranmeldung ist für dieses Lager aktuell nicht eröffnet. Bitte bei der Lagerleitung nachfragen.'
     return
   }
   lagerInfo.value = data as typeof lagerInfo.value
+  if ((data as { leiter_anmeldung_config?: Partial<LeiterAnmeldungConfig> }).leiter_anmeldung_config) {
+    anmeldungConfig.value = {
+      ...anmeldungConfig.value,
+      ...(data as { leiter_anmeldung_config: Partial<LeiterAnmeldungConfig> }).leiter_anmeldung_config,
+    }
+  }
   form.value.anwesend_von = data.start_datum ?? ''
   form.value.anwesend_bis = data.end_datum ?? ''
 
@@ -202,8 +218,8 @@ async function absenden() {
         <p v-else class="hint">Angemeldet als {{ form.vorname }} {{ form.nachname }}</p>
 
         <template v-if="!profilHatStammdaten">
-          <label>Geburtsdatum <input v-model="form.geburtsdatum" type="date" /></label>
-          <label>Geschlecht
+          <label v-if="anmeldungConfig.geburtsdatum">Geburtsdatum <input v-model="form.geburtsdatum" type="date" /></label>
+          <label v-if="anmeldungConfig.geschlecht">Geschlecht
             <select v-model="form.geschlecht">
               <option value="">–</option>
               <option value="m">männlich</option>
@@ -211,7 +227,7 @@ async function absenden() {
               <option value="d">divers</option>
             </select>
           </label>
-          <label>AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
+          <label v-if="anmeldungConfig.ahv_nr">AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
           <label>Telefon <input v-model="form.telefon" type="tel" /></label>
         </template>
         <p v-else class="hint">Stammdaten aus deinem Profil übernommen (Geburtsdatum, Geschlecht, AHV, Telefon).</p>
@@ -226,7 +242,7 @@ async function absenden() {
         </template>
         <p v-if="form.provisorisch && bestaetigungHinweis" class="hint">{{ bestaetigungHinweis }}</p>
 
-        <fieldset class="essen-feld">
+        <fieldset v-if="anmeldungConfig.essensgewohnheiten" class="essen-feld">
           <legend>Essensgewohnheiten</legend>
           <label v-for="o in ESSENS_OPTIONEN" :key="o.id" class="checkbox-label">
             <input type="checkbox" :checked="form.essensgewohnheiten.includes(o.id)" @change="toggleEssens(o.id)" />

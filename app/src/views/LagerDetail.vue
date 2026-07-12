@@ -88,6 +88,8 @@ interface Lager {
   vorweekend_start: string | null
   vorweekend_ende: string | null
   foto_link: string | null
+  leiter_anmeldung_status: string
+  leiter_anmeldung_config: { geburtsdatum: boolean; geschlecht: boolean; ahv_nr: boolean; essensgewohnheiten: boolean }
 }
 interface TN {
   id: string
@@ -782,6 +784,24 @@ function aemtliZuteilenWeiter() {
 
 function aemtliZuteilenAbbrechen() {
   aemtliZuteilenOffen.value = false
+}
+
+const leiterAnmeldungSpeichern = ref(false)
+async function leiterAnmeldungStatusAendern(status: string) {
+  if (!lager.value) return
+  leiterAnmeldungSpeichern.value = true
+  const { error: err } = await supabase.from('lager').update({ leiter_anmeldung_status: status }).eq('id', lagerId.value)
+  leiterAnmeldungSpeichern.value = false
+  if (err) { leiterFehler.value = err.message; return }
+  lager.value.leiter_anmeldung_status = status
+}
+
+async function leiterAnmeldungConfigAendern(feld: keyof Lager['leiter_anmeldung_config'], wert: boolean) {
+  if (!lager.value) return
+  const neueConfig = { ...lager.value.leiter_anmeldung_config, [feld]: wert }
+  const { error: err } = await supabase.from('lager').update({ leiter_anmeldung_config: neueConfig }).eq('id', lagerId.value)
+  if (err) { leiterFehler.value = err.message; return }
+  lager.value.leiter_anmeldung_config = neueConfig
 }
 
 async function geplanteRolleAendern(anmeldungId: string, rolle: string) {
@@ -1534,7 +1554,7 @@ async function ladeLagerSeite() {
 
   const { data: lagerData, error: lagerError } = await supabase
     .from('lager')
-    .select('id, name, jahr, organisation_id, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende, foto_link')
+    .select('id, name, jahr, organisation_id, ort, start_datum, end_datum, status, ort_lat, ort_lng, created_by, vor_lager_id, vorweekend_start, vorweekend_ende, foto_link, leiter_anmeldung_status, leiter_anmeldung_config')
     .eq('id', lagerId.value)
     .single()
 
@@ -1937,8 +1957,12 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           kompakt
         />
 
-        <p class="hint">
+        <p v-if="lager.status === 'anmeldung_offen' || lager.status === 'laufend'" class="hint">
           Anmeldung: <router-link :to="`/lager/${lagerId}/anmelden-tn`">/anmelden-tn</router-link> ·
+          Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
+        </p>
+        <p v-else class="hint">
+          Anmeldelink erscheint hier, sobald die Anmeldung oben eröffnet wird.
           Infoseite TN: <router-link :to="`/lager/${lagerId}/willkommen`">/willkommen</router-link>
         </p>
       </section>
@@ -1952,10 +1976,42 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
         />
-        <p class="hint">
-          Leiterbewerbung:
-          <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
-        </p>
+        <div v-if="isLeitung" class="leiter-anmeldung-verwaltung">
+          <h3>Leiteranmeldung</h3>
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              :checked="lager.leiter_anmeldung_status === 'offen'"
+              :disabled="leiterAnmeldungSpeichern"
+              @change="leiterAnmeldungStatusAendern(($event.target as HTMLInputElement).checked ? 'offen' : 'geschlossen')"
+            />
+            Leiteranmeldung eröffnen
+          </label>
+          <p class="hint">Abgefragte Felder (Name/Telefon immer dabei):</p>
+          <div class="feld-toggles">
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="lager.leiter_anmeldung_config.geburtsdatum" @change="leiterAnmeldungConfigAendern('geburtsdatum', ($event.target as HTMLInputElement).checked)" />
+              Geburtsdatum
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="lager.leiter_anmeldung_config.geschlecht" @change="leiterAnmeldungConfigAendern('geschlecht', ($event.target as HTMLInputElement).checked)" />
+              Geschlecht
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="lager.leiter_anmeldung_config.ahv_nr" @change="leiterAnmeldungConfigAendern('ahv_nr', ($event.target as HTMLInputElement).checked)" />
+              AHV-Nummer
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="lager.leiter_anmeldung_config.essensgewohnheiten" @change="leiterAnmeldungConfigAendern('essensgewohnheiten', ($event.target as HTMLInputElement).checked)" />
+              Essensgewohnheiten
+            </label>
+          </div>
+          <p v-if="lager.leiter_anmeldung_status === 'offen'" class="hint">
+            Bewerbungslink: <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
+          </p>
+          <p v-else class="hint">Anmeldung ist geschlossen – Link ist erst nach dem Eröffnen aktiv.</p>
+        </div>
+        <p v-else class="hint">Leiterbewerbung: {{ lager.leiter_anmeldung_status === 'offen' ? 'geöffnet' : 'geschlossen' }}</p>
         <p v-if="isLeitung" class="hint geschuetzt-hinweis">
           Nur die Lagerleitung kann die Ämtli <strong>Küche</strong> und <strong>Finanzen</strong> zuweisen.
         </p>
@@ -2612,6 +2668,10 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .zuteilen-zugewiesen { margin: 0.5rem 0; }
 .modal-zuweisen-zeile { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .modal-zuweisen-zeile select { flex: 1; }
+.leiter-anmeldung-verwaltung { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin: 0.75rem 0 1.25rem; }
+.leiter-anmeldung-verwaltung h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.feld-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0.4rem 0 0.6rem; }
+.checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.75rem 0 1rem; }
 .inline-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
 .gruppen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
