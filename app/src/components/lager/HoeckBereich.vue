@@ -556,7 +556,7 @@ onMounted(ladeDaten)
           </div>
         </div>
 
-        <div v-if="isLeitung" class="eigene-rolle-form">
+        <div class="eigene-rolle-form">
           <select v-model="neueRolleAbschnitt" class="abschnitt-select">
             <option v-for="a in ZEITABSCHNITTE" :key="a.key" :value="a.key">{{ a.label }}</option>
           </select>

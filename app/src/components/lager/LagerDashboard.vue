@@ -276,7 +276,7 @@ function formatAenderungZeit(iso: string) {
       <span aria-hidden="true">→</span>
     </a>
 
-    <ExterneToolsBlock v-if="organisationId" :organisation-id="organisationId" :ist-leitung="isLeitung" />
+    <ExterneToolsBlock v-if="organisationId" :organisation-id="organisationId" />
   </section>
 </template>
 

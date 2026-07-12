@@ -8,7 +8,7 @@ const props = defineProps<{ lagerId: string; aemtliId: string; aemtliName: strin
 const eintraege = ref<{ id: string; jahr: number; sponsor: string; betrag: number | null; material: string | null; danke_gesendet: boolean }[]>([])
 const form = ref({ jahr: new Date().getFullYear(), sponsor: '', betrag: null as number | null, material: '' })
 
-const BEISPIEL_MAIL = `Betreff: Sponsoring Stöcklilager [JAHR]
+const STANDARD_MAIL = `Betreff: Sponsoring Stöcklilager [JAHR]
 
 Guten Tag
 
@@ -20,6 +20,11 @@ Herzlichen Dank!
 [Lagerleitung]
 Stöcklilager`
 
+const orgId = ref<string | null>(null)
+const beispielMail = ref('')
+const mailBearbeiten = ref(false)
+const mailSpeichern = ref(false)
+
 async function ladeOrgId() {
   const { data } = await supabase
     .from('lager')
@@ -30,13 +35,25 @@ async function ladeOrgId() {
 }
 
 async function laden() {
-  const orgId = await ladeOrgId()
-  if (!orgId) return
-  const { data } = await supabase.from('org_sponsoring').select('*').eq('organisation_id', orgId).order('jahr', { ascending: false })
+  orgId.value = await ladeOrgId()
+  if (!orgId.value) return
+  const [{ data }, { data: org }] = await Promise.all([
+    supabase.from('org_sponsoring').select('*').eq('organisation_id', orgId.value).order('jahr', { ascending: false }),
+    supabase.from('organisation').select('sponsoring_mail_vorlage').eq('id', orgId.value).single(),
+  ])
   eintraege.value = data ?? []
+  beispielMail.value = org?.sponsoring_mail_vorlage ?? STANDARD_MAIL
 }
 
 onMounted(laden)
+
+async function mailSpeichernHandler() {
+  if (!orgId.value) return
+  mailSpeichern.value = true
+  await supabase.from('organisation').update({ sponsoring_mail_vorlage: beispielMail.value }).eq('id', orgId.value)
+  mailSpeichern.value = false
+  mailBearbeiten.value = false
+}
 
 async function hinzufuegen() {
   const orgId = await ladeOrgId()
@@ -61,7 +78,15 @@ async function dankeToggle(id: string, wert: boolean) {
 <template>
   <AemtliShell :lager-id="lagerId" :aemtli-id="aemtliId" :aemtli-name="aemtliName">
     <h3>Beispiel-Mail</h3>
-    <pre class="mail">{{ BEISPIEL_MAIL }}</pre>
+    <pre v-if="!mailBearbeiten" class="mail">{{ beispielMail }}</pre>
+    <textarea v-else v-model="beispielMail" rows="10" class="mail-edit"></textarea>
+    <div class="inline-aktionen">
+      <button v-if="!mailBearbeiten" type="button" class="secondary klein" @click="mailBearbeiten = true">Bearbeiten</button>
+      <template v-else>
+        <button type="button" class="klein" :disabled="mailSpeichern" @click="mailSpeichernHandler">{{ mailSpeichern ? 'Speichere…' : 'Speichern' }}</button>
+        <button type="button" class="secondary klein" @click="mailBearbeiten = false">Abbrechen</button>
+      </template>
+    </div>
 
     <h3>Sponsoring-Liste (mehrjährig)</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
@@ -89,6 +114,8 @@ async function dankeToggle(id: string, wert: boolean) {
 
 <style scoped>
 .mail { background: var(--color-surface-muted); padding: 0.75rem; border-radius: var(--radius-md); font-size: 0.82rem; white-space: pre-wrap; }
+.mail-edit { width: 100%; max-width: 480px; font-size: 0.82rem; font-family: inherit; }
+.inline-aktionen { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 .liste { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
 .liste th, .liste td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-border); text-align: left; }
