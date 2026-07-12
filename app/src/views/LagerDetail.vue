@@ -120,6 +120,7 @@ interface LeiterAnmeldung {
   bestaetigen_bis?: string | null
   von_vorjahr?: boolean
   essensgewohnheiten?: string | null
+  geplante_rolle?: string | null
 }
 interface Aemtli {
   id: string
@@ -529,7 +530,7 @@ function leiterCsvHerunterladen() {
 async function ladeLeiter() {
   const { data } = await supabase
     .from('leiter_teilnahmen')
-    .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr, essensgewohnheiten')
+    .select('id, profile_id, vorname, nachname, email, telefon, geburtsdatum, geschlecht, ahv_nr, anwesend_von, anwesend_bis, status, anmeldung_art, bestaetigen_bis, von_vorjahr, essensgewohnheiten, geplante_rolle')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
@@ -725,8 +726,17 @@ async function leiterHinzufuegen() {
   await ladeLetzteAenderungenListe()
 }
 
+async function geplanteRolleAendern(anmeldungId: string, rolle: string) {
+  const { error: err } = await supabase
+    .from('anmeldungen_leiter')
+    .update({ geplante_rolle: rolle || null })
+    .eq('id', anmeldungId)
+  if (err) { leiterFehler.value = err.message; return }
+  await leiterNachAenderung()
+}
+
 function darfLeiterBearbeiten(l: LeiterAnmeldung) {
-  return isLeitung.value || (l.profile_id != null && l.profile_id === session.value?.user.id)
+  return isLeitung.value || hatAppAdminAemtli.value || (l.profile_id != null && l.profile_id === session.value?.user.id)
 }
 
 function leiterBearbeitenStart(l: LeiterAnmeldung) {
@@ -1568,7 +1578,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
           :is-leitung="isLeitung"
-          :zeige-fahrplan-link="false"
           @fahrplan="tabWechseln('fahrplan')"
         />
         <LagerDashboard
@@ -2070,6 +2079,18 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                     <option value="kueche">Küche</option>
                   </select>
                   <span v-else-if="z.team">{{ TEAM_ROLLE_LABELS[z.team.rolle] ?? z.team.rolle }}</span>
+                  <template v-else-if="isLeitung && !z.nurTeam">
+                    <select
+                      :value="z.leiter.geplante_rolle ?? ''"
+                      title="Geplante Rolle – wird übernommen, sobald diese Person ein App-Login hat"
+                      @change="geplanteRolleAendern(z.leiter.id, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="">– geplant –</option>
+                      <option value="leiter">Leiter</option>
+                      <option value="lagerleitung">Lagerleitung (Lalei)</option>
+                      <option value="kueche">Küche</option>
+                    </select>
+                  </template>
                   <span v-else class="hint">–</span>
                 </td>
                 <td>{{ z.team?.status ?? '–' }}</td>
