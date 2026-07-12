@@ -4,7 +4,7 @@ import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
 import AemtliShell from './AemtliShell.vue'
 
-type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause'
+type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause' | 'dessert'
 type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'einkauf'
 
 interface MaterialZeile {
@@ -105,7 +105,8 @@ const mahlzeitLabels: Record<MahlzeitTyp, string> = {
   fruehstueck: 'Frühstück',
   zmittag: 'Zmorgen',
   znacht: 'Znacht',
-  jause: 'Jause',
+  jause: 'Pause',
+  dessert: 'Dessert',
 }
 
 const defaultUhrzeit: Record<MahlzeitTyp, string> = {
@@ -113,6 +114,7 @@ const defaultUhrzeit: Record<MahlzeitTyp, string> = {
   zmittag: '12:00',
   jause: '15:30',
   znacht: '18:30',
+  dessert: '19:30',
 }
 
 const wochentage = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
