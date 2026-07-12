@@ -18,6 +18,7 @@ interface TN {
 interface TnFinanz {
   anmeldung_tn_id: string
   bezahlt: boolean
+  bemerkung: string | null
 }
 
 const props = defineProps<{ lagerId: string }>()
@@ -39,7 +40,7 @@ async function laden_() {
   if (tnIds.length) {
     const { data: fin } = await supabase
       .from('tn_finanzen')
-      .select('anmeldung_tn_id, bezahlt')
+      .select('anmeldung_tn_id, bezahlt, bemerkung')
       .in('anmeldung_tn_id', tnIds)
     const map: Record<string, TnFinanz> = {}
     for (const f of fin ?? []) map[f.anmeldung_tn_id] = f
@@ -62,6 +63,10 @@ function fehlendeAngaben(tn: TN): string[] {
 
 function bezahlt(tnId: string): boolean {
   return finanzen.value[tnId]?.bezahlt ?? false
+}
+
+function finanzBemerkung(tnId: string): string | null {
+  return finanzen.value[tnId]?.bemerkung?.trim() || null
 }
 
 const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben(t).length && bezahlt(t.id)).length)
@@ -101,6 +106,7 @@ const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben
           <td>{{ tn.gesundheit_bemerkungen || '–' }}</td>
           <td>
             <span :class="bezahlt(tn.id) ? 'ok-badge' : 'fehlt-badge'">{{ bezahlt(tn.id) ? 'bezahlt' : 'offen' }}</span>
+            <span v-if="finanzBemerkung(tn.id)" class="finanz-notiz" :title="finanzBemerkung(tn.id)!">📝 {{ finanzBemerkung(tn.id) }}</span>
           </td>
         </tr>
       </tbody>
@@ -122,4 +128,5 @@ const bereitAnzahl = computed(() => tnListe.value.filter((t) => !fehlendeAngaben
 .fehlt-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: #fdf3e0; color: #8a5a1f; font-size: 0.78rem; }
 .ok-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: #eaf3ec; color: #2f6b40; font-size: 0.78rem; }
 .trenner { margin: 1.5rem 0; border: none; border-top: 1px solid var(--color-border); }
+.finanz-notiz { display: block; margin-top: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
 </style>
