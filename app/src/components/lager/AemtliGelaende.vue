@@ -27,6 +27,7 @@ interface Wiese {
 }
 
 const wiesen = ref<Wiese[]>([])
+const fehler = ref('')
 const form = ref({ name: '', bauer_name: '', bauer_telefon: '', notiz: '' })
 const neueOrtAuswahl = ref<{ lat: number; lng: number } | null>(null)
 const neuerOrtKarteOffen = ref(false)
@@ -59,7 +60,8 @@ async function laden() {
 onMounted(laden)
 
 async function hinzufuegen() {
-  await supabase.from('gelaendespielwiesen').insert({
+  fehler.value = ''
+  const { error } = await supabase.from('gelaendespielwiesen').insert({
     lager_id: props.lagerId,
     name: form.value.name,
     bauer_name: form.value.bauer_name || null,
@@ -69,6 +71,7 @@ async function hinzufuegen() {
     lat: neueOrtAuswahl.value?.lat ?? null,
     lng: neueOrtAuswahl.value?.lng ?? null,
   })
+  if (error) { fehler.value = error.message; return }
   form.value = { name: '', bauer_name: '', bauer_telefon: '', notiz: '' }
   neueOrtAuswahl.value = null
   neuerOrtKarteOffen.value = false
@@ -124,6 +127,7 @@ async function notizSpeichern(id: string, notiz: string) {
       <input v-model="form.notiz" placeholder="Notiz" style="flex:1" />
       <button type="submit">+ Wiese</button>
     </form>
+    <p v-if="fehler" class="error">{{ fehler }}</p>
     <WiesenOrtWaehlen
       v-if="neuerOrtKarteOffen"
       @gewaehlt="neuerOrtGewaehlt"
@@ -197,6 +201,7 @@ async function notizSpeichern(id: string, notiz: string) {
 </template>
 
 <style scoped>
+.error { color: var(--color-danger); }
 h3 { margin: 0.75rem 0 0.4rem; font-size: 0.95rem; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 1rem; align-items: end; }
 .liste { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
