@@ -84,6 +84,17 @@ interface OrgTodoVorlage {
   kategorie: string
 }
 
+interface OrgKalenderTermin {
+  id: string
+  lager_id: string
+  lager_name: string
+  typ: string
+  titel: string
+  start_datum: string
+  end_datum: string | null
+  ort: string | null
+}
+
 const route = useRoute()
 const router = useRouter()
 const { session } = useAuth()
@@ -130,6 +141,7 @@ const laleiModal = ref({ modus: 'selbst' as 'selbst' | 'verein', personId: '' })
 const orgRessourcen = ref<OrgRessource[]>([])
 const orgKalenderToken = ref('')
 const orgKalenderTitel = ref('')
+const orgKalenderTermine = ref<OrgKalenderTermin[]>([])
 const kalenderLinkKopiert = ref<'https' | 'webcal' | null>(null)
 let kalenderKopiertTimer: ReturnType<typeof setTimeout> | null = null
 const orgLinks = computed(() => orgRessourcen.value.filter((r) => r.typ === 'link'))
@@ -303,6 +315,9 @@ async function ladeVereinDaten() {
 
   orgKalenderToken.value = org?.kalender_token ?? ''
   orgKalenderTitel.value = org?.name ?? aktuellerVerein.value?.name ?? 'Vereinskalender'
+
+  const { data: termine } = await supabase.rpc('list_org_kalender_termine', { p_organisation_id: orgId })
+  orgKalenderTermine.value = (termine ?? []) as OrgKalenderTermin[]
 
   mitglieder.value = ((m ?? []) as Omit<VereinsMitglied, 'organisation_id'>[]).map((row) => ({
     ...row,
@@ -1031,6 +1046,17 @@ onMounted(async () => {
             </button>
           </p>
           <button type="button" class="secondary klein-btn" @click="orgKalenderIcsDownload">ICS herunterladen</button>
+
+          <div v-if="orgKalenderTermine.length" class="termine-liste">
+            <h3 class="unterabschnitt">Termine</h3>
+            <article v-for="t in orgKalenderTermine" :key="t.id" class="termin-zeile">
+              <div>
+                <strong>{{ t.titel }}</strong>
+                <span class="meta">{{ t.lager_name }} · {{ t.start_datum }}{{ t.end_datum && t.end_datum !== t.start_datum ? ` – ${t.end_datum}` : '' }}{{ t.ort ? ` · ${t.ort}` : '' }}</span>
+              </div>
+              <router-link :to="`/lager/${t.lager_id}/kalender`" class="secondary klein-btn">Bearbeiten</router-link>
+            </article>
+          </div>
         </section>
         <section v-else-if="aktivBereich === 'kalender'" class="karte">
           <h2>Vereinskalender</h2>
@@ -1364,6 +1390,14 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.4rem; color: var(--color-text) !important; font-size: 0.85rem !important; }
 .unterabschnitt { margin: 1.5rem 0 0.65rem; font-size: 1rem; }
 .abo-hinweis { font-size: 0.82rem; background: var(--color-surface-muted); padding: 0.5rem 0.65rem; border-radius: var(--radius-md); word-break: break-all; margin: 0.65rem 0; }
+.termine-liste { margin-top: 1.25rem; }
+.termin-zeile {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: 0.55rem 0.75rem; margin-bottom: 0.4rem;
+}
+.termin-zeile .meta { display: block; font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.1rem; }
+.termin-zeile .klein-btn { white-space: nowrap; text-decoration: none; }
 .kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 .ressource-admin { margin-top: 0.5rem; }
 </style>
