@@ -27,7 +27,24 @@ interface LeiterAnmeldungConfig {
   essensgewohnheiten: boolean
 }
 
+interface ZusatzFeld {
+  id: string
+  typ: 'text' | 'einzelauswahl' | 'mehrfachauswahl'
+  label: string
+  optionen: string[]
+  pflicht: boolean
+}
+
 const lagerInfo = ref<{ name: string; start_datum: string | null; end_datum: string | null } | null>(null)
+const zusatzFelder = ref<ZusatzFeld[]>([])
+const zusatzAntworten = ref<Record<string, string | string[]>>({})
+
+function toggleMehrfach(feldId: string, option: string) {
+  const aktuelle = (zusatzAntworten.value[feldId] as string[] | undefined) ?? []
+  const idx = aktuelle.indexOf(option)
+  const neu = idx >= 0 ? aktuelle.filter((o) => o !== option) : [...aktuelle, option]
+  zusatzAntworten.value[feldId] = neu
+}
 const anmeldungConfig = ref<LeiterAnmeldungConfig>({
   geburtsdatum: true,
   geschlecht: true,
@@ -92,6 +109,16 @@ onMounted(async () => {
   }
   form.value.anwesend_von = data.start_datum ?? ''
   form.value.anwesend_bis = data.end_datum ?? ''
+
+  const { data: felder } = await supabase
+    .from('leiter_anmeldung_felder')
+    .select('id, typ, label, optionen, pflicht')
+    .eq('lager_id', lagerId)
+    .order('sortierung')
+  zusatzFelder.value = (felder ?? []) as ZusatzFeld[]
+  for (const f of zusatzFelder.value) {
+    zusatzAntworten.value[f.id] = f.typ === 'mehrfachauswahl' ? [] : ''
+  }
 
   const profil = await ladeProfilLeiterDaten(session.value.user)
   form.value.vorname = profil.vorname
@@ -165,10 +192,10 @@ async function absenden() {
       anmeldung_art: form.value.provisorisch ? 'provisorisch' : 'fix',
       bestaetigen_bis: lagerInfo.value?.start_datum ? bestaetigenBis(lagerInfo.value.start_datum) : null,
     })
-    .select('status')
+    .select('id, status')
     .single()
-  speichern.value = false
   if (error) {
+    speichern.value = false
     if (error.message.includes('Vereinsmitglied')) {
       fehler.value = 'Du musst zuerst Vereinsmitglied sein. Stelle auf der Startseite eine Beitrittsanfrage.'
     } else {
@@ -176,6 +203,26 @@ async function absenden() {
     }
     return
   }
+
+  if (inserted && zusatzFelder.value.length) {
+    const zeilen = zusatzFelder.value
+      .filter((f) => {
+        const wert = zusatzAntworten.value[f.id]
+        return typeof wert === 'string' ? wert.trim() : (wert?.length ?? 0) > 0
+      })
+      .map((f) => {
+        const wert = zusatzAntworten.value[f.id]
+        return {
+          anmeldung_leiter_id: (inserted as { id: string }).id,
+          feld_id: f.id,
+          wert: typeof wert === 'string' ? wert.trim() : null,
+          wert_liste: Array.isArray(wert) ? wert : null,
+        }
+      })
+    if (zeilen.length) await supabase.from('leiter_anmeldung_antworten').insert(zeilen)
+  }
+
+  speichern.value = false
   gesendet.value = true
   bestehendeAnfrage.value = inserted?.status ?? 'angefragt'
   if (bestehendeAnfrage.value === 'bestaetigt') {
@@ -257,6 +304,27 @@ async function absenden() {
           </label>
         </fieldset>
 
+        <template v-if="zusatzFelder.length">
+          <label v-for="f in zusatzFelder" :key="f.id">
+            {{ f.label }}<span v-if="f.pflicht"> *</span>
+            <input v-if="f.typ === 'text'" v-model="(zusatzAntworten[f.id] as string)" :required="f.pflicht" />
+            <select v-else-if="f.typ === 'einzelauswahl'" v-model="(zusatzAntworten[f.id] as string)" :required="f.pflicht">
+              <option value="">– wählen –</option>
+              <option v-for="o in f.optionen" :key="o" :value="o">{{ o }}</option>
+            </select>
+            <div v-else class="mehrfach-optionen">
+              <label v-for="o in f.optionen" :key="o" class="checkbox-label">
+                <input
+                  type="checkbox"
+                  :checked="((zusatzAntworten[f.id] as string[]) ?? []).includes(o)"
+                  @change="toggleMehrfach(f.id, o)"
+                />
+                {{ o }}
+              </label>
+            </div>
+          </label>
+        </template>
+
         <button type="submit" :disabled="speichern">{{ speichern ? 'Sende...' : 'Anmeldung senden' }}</button>
       </form>
       <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -273,4 +341,5 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.5rem; font-size: 0.88rem !important; color: var(--color-text) !important; }
 .essen-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; }
 .essen-feld legend { font-size: 0.85rem; color: var(--color-text-muted); padding: 0 0.25rem; }
+.mehrfach-optionen { display: flex; flex-direction: column; gap: 0.35rem; }
 </style>

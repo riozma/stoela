@@ -883,6 +883,50 @@ function aemtliZuteilenAbbrechen() {
   aemtliZuteilenOffen.value = false
 }
 
+interface LeiterAnmeldungFeld {
+  id: string
+  typ: string
+  label: string
+  optionen: string[]
+  pflicht: boolean
+  sortierung: number
+}
+const leiterAnmeldungFelder = ref<LeiterAnmeldungFeld[]>([])
+const zusatzfeldForm = ref({ label: '', typ: 'text', optionenText: '', pflicht: false })
+
+async function ladeLeiterAnmeldungFelder() {
+  const { data } = await supabase
+    .from('leiter_anmeldung_felder')
+    .select('id, typ, label, optionen, pflicht, sortierung')
+    .eq('lager_id', lagerId.value)
+    .order('sortierung')
+  leiterAnmeldungFelder.value = (data ?? []) as LeiterAnmeldungFeld[]
+}
+
+async function zusatzfeldHinzufuegen() {
+  if (!zusatzfeldForm.value.label.trim()) return
+  const optionen = zusatzfeldForm.value.typ === 'text'
+    ? []
+    : zusatzfeldForm.value.optionenText.split(',').map((o) => o.trim()).filter(Boolean)
+  const { error } = await supabase.from('leiter_anmeldung_felder').insert({
+    lager_id: lagerId.value,
+    typ: zusatzfeldForm.value.typ,
+    label: zusatzfeldForm.value.label.trim(),
+    optionen,
+    pflicht: zusatzfeldForm.value.pflicht,
+    sortierung: leiterAnmeldungFelder.value.length,
+  })
+  if (error) { leiterFehler.value = error.message; return }
+  zusatzfeldForm.value = { label: '', typ: 'text', optionenText: '', pflicht: false }
+  await ladeLeiterAnmeldungFelder()
+}
+
+async function zusatzfeldLoeschen(id: string) {
+  if (!confirm('Zusatzfeld wirklich löschen? Bisherige Antworten gehen verloren.')) return
+  await supabase.from('leiter_anmeldung_felder').delete().eq('id', id)
+  await ladeLeiterAnmeldungFelder()
+}
+
 const leiterAnmeldungSpeichern = ref(false)
 async function leiterAnmeldungStatusAendern(status: string) {
   if (!lager.value) return
@@ -1616,7 +1660,7 @@ async function ladeTabDaten(tab: Tab) {
     return
   }
   if (tab === 'leiter') {
-    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli(), ladeOrgPersonenPool(), ladeGruppen()])
+    await Promise.all([ladeLeiter(), ladeLeiterRollen(), ladeAemtli(), ladeOrgPersonenPool(), ladeGruppen(), ladeLeiterAnmeldungFelder()])
     return
   }
   if (tab === 'teilnehmer') {
@@ -2160,6 +2204,32 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             Bewerbungslink: <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
           </p>
           <p v-else class="hint">Anmeldung ist geschlossen – Link ist erst nach dem Eröffnen aktiv.</p>
+
+          <h4>Zusatzfelder</h4>
+          <ul v-if="leiterAnmeldungFelder.length" class="zusatzfelder-liste">
+            <li v-for="f in leiterAnmeldungFelder" :key="f.id">
+              <span>{{ f.label }} <span class="hint klein">({{ f.typ }}{{ f.pflicht ? ', Pflicht' : '' }})</span></span>
+              <button type="button" class="secondary klein" @click="zusatzfeldLoeschen(f.id)">Löschen</button>
+            </li>
+          </ul>
+          <form class="zusatzfeld-form" @submit.prevent="zusatzfeldHinzufuegen">
+            <input v-model="zusatzfeldForm.label" placeholder="Frage / Feldname" required />
+            <select v-model="zusatzfeldForm.typ">
+              <option value="text">Text</option>
+              <option value="einzelauswahl">Einzelauswahl</option>
+              <option value="mehrfachauswahl">Mehrfachauswahl</option>
+            </select>
+            <input
+              v-if="zusatzfeldForm.typ !== 'text'"
+              v-model="zusatzfeldForm.optionenText"
+              placeholder="Optionen, mit Komma getrennt"
+            />
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="zusatzfeldForm.pflicht" />
+              Pflichtfeld
+            </label>
+            <button type="submit">+ Feld</button>
+          </form>
         </div>
         <p v-else class="hint">Leiterbewerbung: {{ lager.leiter_anmeldung_status === 'offen' ? 'geöffnet' : 'geschlossen' }}</p>
         <p v-if="isLeitung" class="hint geschuetzt-hinweis">
@@ -2829,6 +2899,9 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .leiter-anmeldung-verwaltung { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin: 0.75rem 0 1.25rem; }
 .leiter-anmeldung-verwaltung h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .feld-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0.4rem 0 0.6rem; }
+.zusatzfelder-liste { list-style: none; padding: 0; margin: 0.5rem 0; }
+.zusatzfelder-liste li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.88rem; }
+.zusatzfeld-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
 .checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.75rem 0 1rem; }
 .inline-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
