@@ -52,6 +52,7 @@ import { bestaetigenBis, formatFaelligkeit } from '../lib/workflowUtils'
 import { logLagerAktivitaet, ladeLetzteAenderungen, type LagerAenderung } from '../lib/lagerAktivitaet'
 import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 import { leiterAlsCsv, leiterCsvDownload, type LeiterExportZeile } from '../lib/leiterCsv'
+import { tnAlsCsv, tnCsvDownload } from '../lib/tnCsv'
 import LagerBearbeitung from '../components/lager/LagerBearbeitung.vue'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
@@ -670,6 +671,11 @@ const leiterExportZeilen = computed<LeiterExportZeile[]>(() =>
 function leiterCsvHerunterladen() {
   const name = (lager.value?.name ?? 'lager').replace(/\s+/g, '_')
   leiterCsvDownload(`${name}_leiter.csv`, leiterAlsCsv(leiterExportZeilen.value))
+}
+
+function tnCsvHerunterladen() {
+  const name = (lager.value?.name ?? 'lager').replace(/\s+/g, '_')
+  tnCsvDownload(`${name}_teilnehmer.csv`, tnAlsCsv(tnListe.value))
 }
 
 async function ladeLeiter() {
@@ -2006,6 +2012,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'uebersicht' }" @click="tnListenAnsicht = 'uebersicht'">Übersicht</button>
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'detail' }" @click="tnListenAnsicht = 'detail'">Detailansicht</button>
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'verwaltung' }" @click="tnListenAnsicht = 'verwaltung'">Verwaltung</button>
+          <button v-if="tnListe.length" type="button" class="secondary" @click="tnCsvHerunterladen">CSV herunterladen</button>
         </nav>
 
         <!-- Übersicht -->

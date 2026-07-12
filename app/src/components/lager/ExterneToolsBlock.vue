@@ -31,16 +31,25 @@ async function laderRessourcen() {
 
 onMounted(laderRessourcen)
 
-function findeRessource(titel: string, typ: 'link' | 'zugang'): OrgRessource | null {
-  return ressourcen.value.find((r) => r.typ === typ && r.titel.toLowerCase() === titel.toLowerCase()) ?? null
+function findeRessource(name: string, typ: 'link' | 'zugang'): OrgRessource | null {
+  const exakt = ressourcen.value.find((r) => r.typ === typ && r.titel.toLowerCase() === name.toLowerCase())
+  if (exakt) return exakt
+  // "Externe Cloud" matcht auch jahresspezifische Titel wie "Cloud 2026".
+  if (name === 'Externe Cloud') {
+    return ressourcen.value.find((r) => r.typ === typ && r.titel.toLowerCase().includes('cloud')) ?? null
+  }
+  return null
 }
 
 const tools = computed(() =>
-  TOOL_NAMEN.map((name) => ({
-    name,
-    link: findeRessource(name, 'link'),
-    login: findeRessource(name, 'zugang'),
-  })),
+  TOOL_NAMEN.map((name) => {
+    const link = findeRessource(name, 'link')
+    return {
+      name: link && name === 'Externe Cloud' ? link.titel : name,
+      link,
+      login: findeRessource(name, 'zugang'),
+    }
+  }),
 )
 
 function togglePasswort(id: string) {
