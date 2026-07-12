@@ -583,25 +583,32 @@ async function setDienst(dienst: string, gruppenName: string) {
   }
 }
 
-const hoeckErfassenForm = ref({ datum: '', titel: '' })
+const hoeckErfassenForm = ref({
+  titel: '', start_datum: '', end_datum: '', start_zeit: '', end_zeit: '', ort: '', beschreibung: '',
+})
 const hoeckErfassenLaden = ref(false)
 const hoeckErfassenErfolg = ref(false)
 
 async function hoeckErfassen() {
-  if (!hoeckErfassenForm.value.datum) return
+  if (!hoeckErfassenForm.value.start_datum) return
   hoeckErfassenLaden.value = true
   hoeckErfassenErfolg.value = false
+  const f = hoeckErfassenForm.value
   const { error } = await supabase.from('lager_termine').insert({
     lager_id: props.lagerId,
     typ: 'hoeck',
-    titel: hoeckErfassenForm.value.titel.trim() || 'Höck',
-    start_datum: hoeckErfassenForm.value.datum,
-    end_datum: hoeckErfassenForm.value.datum,
+    titel: f.titel.trim() || 'Höck',
+    start_datum: f.start_datum,
+    end_datum: f.end_datum || f.start_datum,
+    start_zeit: f.start_zeit || null,
+    end_zeit: f.end_zeit || null,
+    ort: f.ort.trim() || null,
+    beschreibung: f.beschreibung.trim() || null,
   })
   hoeckErfassenLaden.value = false
   if (!error) {
     hoeckErfassenErfolg.value = true
-    hoeckErfassenForm.value = { datum: '', titel: '' }
+    hoeckErfassenForm.value = { titel: '', start_datum: '', end_datum: '', start_zeit: '', end_zeit: '', ort: '', beschreibung: '' }
   }
 }
 
@@ -640,14 +647,21 @@ onMounted(ladeDaten)
       </button>
     </nav>
 
-    <form v-if="isLeitung" class="hoeck-erfassen-form" @submit.prevent="hoeckErfassen">
-      <label>Weiteren Höck erfassen (z.B. Planungshöck vor dem Lager)
-        <input v-model="hoeckErfassenForm.datum" type="date" required />
-      </label>
-      <input v-model="hoeckErfassenForm.titel" placeholder="Titel (optional)" />
-      <button type="submit" :disabled="hoeckErfassenLaden">{{ hoeckErfassenLaden ? 'Speichere…' : '+ Im Kalender erfassen' }}</button>
-      <span v-if="hoeckErfassenErfolg" class="hint klein ok">✓ Im Kalender erfasst.</span>
-    </form>
+    <div v-if="isLeitung" class="hoeck-erfassen-box">
+      <h4>Weiteren Höck erfassen</h4>
+      <p class="hint klein">z.B. Planungshöck vor dem Lager – erscheint auch im Kalender.</p>
+      <form class="hoeck-erfassen-form" @submit.prevent="hoeckErfassen">
+        <label>Titel <input v-model="hoeckErfassenForm.titel" placeholder="Höck" /></label>
+        <label>Start <input v-model="hoeckErfassenForm.start_datum" type="date" required /></label>
+        <label>Ende <input v-model="hoeckErfassenForm.end_datum" type="date" /></label>
+        <label>Von <input v-model="hoeckErfassenForm.start_zeit" type="time" /></label>
+        <label>Bis <input v-model="hoeckErfassenForm.end_zeit" type="time" /></label>
+        <label>Ort <input v-model="hoeckErfassenForm.ort" /></label>
+        <label>Beschreibung <input v-model="hoeckErfassenForm.beschreibung" /></label>
+        <button type="submit" :disabled="hoeckErfassenLaden">{{ hoeckErfassenLaden ? 'Speichere…' : 'Speichern' }}</button>
+        <span v-if="hoeckErfassenErfolg" class="hint klein ok">✓ Im Kalender erfasst.</span>
+      </form>
+    </div>
 
     <div v-if="laden" class="hint">Lade...</div>
 
@@ -834,9 +848,17 @@ onMounted(ladeDaten)
 .feedback-btn { margin-left: 0.35rem; border-style: dashed; }
 .vorweekend-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .starthoeck-btn { font-weight: 700; }
-.hoeck-erfassen-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0 1.25rem; font-size: 0.85rem; }
+.hoeck-erfassen-box {
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: 0.85rem 1rem; margin: 0.75rem 0 1.25rem; background: var(--color-surface-muted);
+}
+.hoeck-erfassen-box h4 { margin: 0 0 0.15rem; }
+.hoeck-erfassen-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem; align-items: end; margin-top: 0.5rem; font-size: 0.85rem;
+}
 .hoeck-erfassen-form label { display: flex; flex-direction: column; gap: 0.2rem; color: var(--color-text-muted); font-size: 0.82rem; }
-.hoeck-erfassen-form .ok { color: #2e7d32; }
+.hoeck-erfassen-form .ok { color: #2e7d32; grid-column: 1 / -1; }
 .traktanden-section { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem; }
 .traktanden-kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .traktanden-kopf h4 { margin: 0; }
