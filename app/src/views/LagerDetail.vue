@@ -1888,6 +1888,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :start-datum="lager.start_datum"
           :end-datum="lager.end_datum"
           :is-leitung="isLeitung"
+          :organisation-id="lager.organisation_id"
         />
       </section>
 

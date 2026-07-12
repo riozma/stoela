@@ -75,7 +75,20 @@ const props = defineProps<{
   startDatum: string | null
   endDatum: string | null
   isLeitung: boolean
+  organisationId?: string | null
 }>()
+
+interface HoeckTyp {
+  id: string
+  name: string
+  ist_standard: boolean
+  uebernehmen_naechstes_jahr: boolean
+}
+interface Traktandum {
+  id: string
+  text: string
+  sortierung: number
+}
 
 const { session } = useAuth()
 
@@ -200,8 +213,107 @@ function autoAnsichtBestimmen(): { ansicht: 'tag' | 'feedback'; tag: string } {
   return { ansicht: 'tag', tag: zielIso }
 }
 
+const hoeckTypen = ref<HoeckTyp[]>([])
+const ausgewaehlterTypId = ref('')
+const traktanden = ref<Traktandum[]>([])
+const traktandenErledigt = ref<Set<string>>(new Set())
+const neuTraktandumText = ref('')
+const neuerHoeckTypOffen = ref(false)
+const neuerHoeckTypForm = ref({ name: '', uebernehmen: true })
+
+async function ladeHoeckTypen() {
+  if (!props.organisationId) return
+  await supabase.rpc('hoeck_typen_sicherstellen', { p_organisation_id: props.organisationId })
+  const { data } = await supabase
+    .from('hoeck_typen')
+    .select('id, name, ist_standard, uebernehmen_naechstes_jahr')
+    .eq('organisation_id', props.organisationId)
+    .order('sortierung')
+  hoeckTypen.value = (data ?? []) as HoeckTyp[]
+  if (!ausgewaehlterTypId.value) {
+    const standard = hoeckTypen.value.find((t) => t.name === 'Lagerhöck')
+    ausgewaehlterTypId.value = standard?.id ?? hoeckTypen.value[0]?.id ?? ''
+  }
+  await ladeTraktanden()
+}
+
+async function ladeTraktanden() {
+  if (!ausgewaehlterTypId.value) { traktanden.value = []; return }
+  const { data } = await supabase
+    .from('hoeck_traktanden')
+    .select('id, text, sortierung')
+    .eq('hoeck_typ_id', ausgewaehlterTypId.value)
+    .order('sortierung')
+  traktanden.value = (data ?? []) as Traktandum[]
+  await ladeTraktandenErledigt()
+}
+
+async function ladeTraktandenErledigt() {
+  if (!aktiverTag.value) { traktandenErledigt.value = new Set(); return }
+  const { data } = await supabase
+    .from('hoeck_traktanden_erledigt')
+    .select('traktandum_id')
+    .eq('lager_id', props.lagerId)
+    .eq('tag', aktiverTag.value)
+  traktandenErledigt.value = new Set((data ?? []).map((r) => r.traktandum_id))
+}
+
+async function traktandumToggeln(traktandumId: string) {
+  if (!aktiverTag.value) return
+  if (traktandenErledigt.value.has(traktandumId)) {
+    await supabase.from('hoeck_traktanden_erledigt').delete()
+      .eq('lager_id', props.lagerId).eq('tag', aktiverTag.value).eq('traktandum_id', traktandumId)
+    traktandenErledigt.value.delete(traktandumId)
+  } else {
+    await supabase.from('hoeck_traktanden_erledigt').insert({
+      lager_id: props.lagerId, tag: aktiverTag.value, traktandum_id: traktandumId,
+    })
+    traktandenErledigt.value.add(traktandumId)
+  }
+  traktandenErledigt.value = new Set(traktandenErledigt.value)
+}
+
+async function traktandumHinzufuegen() {
+  if (!neuTraktandumText.value.trim() || !ausgewaehlterTypId.value) return
+  await supabase.from('hoeck_traktanden').insert({
+    hoeck_typ_id: ausgewaehlterTypId.value,
+    text: neuTraktandumText.value.trim(),
+    sortierung: traktanden.value.length,
+  })
+  neuTraktandumText.value = ''
+  await ladeTraktanden()
+}
+
+async function traktandumLoeschen(id: string) {
+  await supabase.from('hoeck_traktanden').delete().eq('id', id)
+  await ladeTraktanden()
+}
+
+async function eigenerHoeckTypErstellen() {
+  if (!neuerHoeckTypForm.value.name.trim() || !props.organisationId) return
+  const { data, error } = await supabase.from('hoeck_typen').insert({
+    organisation_id: props.organisationId,
+    name: neuerHoeckTypForm.value.name.trim(),
+    ist_standard: false,
+    uebernehmen_naechstes_jahr: neuerHoeckTypForm.value.uebernehmen,
+    sortierung: hoeckTypen.value.length,
+  }).select('id, name, ist_standard, uebernehmen_naechstes_jahr').single()
+  if (error || !data) return
+  hoeckTypen.value.push(data as HoeckTyp)
+  ausgewaehlterTypId.value = data.id
+  neuerHoeckTypForm.value = { name: '', uebernehmen: true }
+  neuerHoeckTypOffen.value = false
+  await ladeTraktanden()
+}
+
+async function typWechseln(typId: string) {
+  ausgewaehlterTypId.value = typId
+  await ladeTraktanden()
+}
+
 async function ladeDaten() {
   laden.value = true
+  await ladeHoeckTypen()
 
   const { data: leiterData } = await supabase
     .from('anmeldungen_leiter')
@@ -243,6 +355,7 @@ async function ladeDaten() {
 async function ladeFuerTag(tag: string) {
   aktiverTag.value = tag
   ansicht.value = 'tag'
+  await ladeTraktandenErledigt()
 
   const { data: rollenData } = await supabase
     .rpc('get_hoeck_rollen_fuer_tag', { p_lager_id: props.lagerId, p_tag: tag })
@@ -479,12 +592,57 @@ onMounted(ladeDaten)
       <button type="button" class="feedback-btn" :class="{ aktiv: ansicht === 'feedback' }" @click="ladeFeedback">
         Feedback-Höck
       </button>
+      <router-link :to="`/lager/${lagerId}/vorweekend`" class="feedback-btn vorweekend-btn">
+        Vorweekend →
+      </router-link>
     </nav>
 
     <div v-if="laden" class="hint">Lade...</div>
 
     <!-- Tages-Höck -->
     <template v-if="!laden && ansicht === 'tag' && aktiverTag">
+      <div class="traktanden-section">
+        <div class="traktanden-kopf">
+          <h4>Traktanden</h4>
+          <select :value="ausgewaehlterTypId" @change="typWechseln(($event.target as HTMLSelectElement).value)">
+            <option v-for="t in hoeckTypen" :key="t.id" :value="t.id">{{ t.name }}</option>
+          </select>
+        </div>
+        <ul v-if="traktanden.length" class="traktanden-liste">
+          <li v-for="tr in traktanden" :key="tr.id" :class="{ erledigt: traktandenErledigt.has(tr.id) }">
+            <label>
+              <input type="checkbox" :checked="traktandenErledigt.has(tr.id)" @change="traktandumToggeln(tr.id)" />
+              {{ tr.text }}
+            </label>
+            <router-link
+              v-if="tr.text.toLowerCase().includes('ämtli verteilen')"
+              :to="`/lager/${lagerId}/leiter`"
+              class="link-klein"
+            >
+              Ämtli zuteilen →
+            </router-link>
+            <button v-if="isLeitung" type="button" class="stift-btn" title="Löschen" @click="traktandumLoeschen(tr.id)">✕</button>
+          </li>
+        </ul>
+        <p v-else class="hint klein">Keine Traktanden für diesen Höck-Typ.</p>
+        <form v-if="isLeitung" class="traktandum-form" @submit.prevent="traktandumHinzufuegen">
+          <input v-model="neuTraktandumText" placeholder="Neues Traktandum..." />
+          <button type="submit" class="sekundaer klein">+</button>
+        </form>
+        <button v-if="isLeitung && !neuerHoeckTypOffen" type="button" class="sekundaer klein" @click="neuerHoeckTypOffen = true">
+          + Eigenen Höck-Typ erstellen
+        </button>
+        <form v-if="neuerHoeckTypOffen" class="neuer-hoeck-typ-form" @submit.prevent="eigenerHoeckTypErstellen">
+          <input v-model="neuerHoeckTypForm.name" placeholder="Name des Höcks" required />
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="neuerHoeckTypForm.uebernehmen" />
+            Ins Folgejahr übernehmen
+          </label>
+          <button type="submit" class="klein">Erstellen</button>
+          <button type="button" class="sekundaer klein" @click="neuerHoeckTypOffen = false">Abbrechen</button>
+        </form>
+      </div>
+
       <div class="rollen-section">
         <h4>Rollen</h4>
         <div class="abschnitte-raster">
@@ -622,6 +780,17 @@ onMounted(ladeDaten)
 .tage-nav button { font-size: 0.8rem; padding: 0.35rem 0.6rem; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); border-radius: var(--radius-md); }
 .tage-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .feedback-btn { margin-left: 0.35rem; border-style: dashed; }
+.vorweekend-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.traktanden-section { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem; }
+.traktanden-kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.traktanden-kopf h4 { margin: 0; }
+.traktanden-liste { list-style: none; padding: 0; margin: 0; }
+.traktanden-liste li { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.9rem; }
+.traktanden-liste li.erledigt label { opacity: 0.55; text-decoration: line-through; }
+.traktanden-liste label { display: flex; align-items: center; gap: 0.4rem; flex: 1; cursor: pointer; }
+.traktandum-form { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+.traktandum-form input { flex: 1; }
+.neuer-hoeck-typ-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
 
 .rollen-section { margin-bottom: 1.5rem; }
 .abschnitte-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.85rem; }
@@ -638,6 +807,8 @@ onMounted(ladeDaten)
 .rolle-meta { font-size: 0.78rem; color: var(--color-text-muted); display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .rolle-aktionen { display: flex; gap: 0.3rem; align-items: center; }
 .stift-btn { background: none; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.1rem 0.2rem; }
+.link-klein { font-size: 0.8rem; color: var(--color-accent); white-space: nowrap; }
+.checkbox-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
 .bearbeiten-zeile { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--color-surface-muted); border-radius: var(--radius-sm); }
 .bearbeiten-zeile label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--color-text-muted); }
 .klein-inp { width: 6rem; padding: 0.2rem 0.35rem; font-size: 0.82rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
