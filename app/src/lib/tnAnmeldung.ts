@@ -57,6 +57,8 @@ export interface LagerTnInfo {
     max_teilnehmer: string
     kosten_erstes_kind: number
     kosten_weiteres_kind: number
+    iban: string | null
+    iban_kontoinhaber: string | null
     kontakt_name: string
     kontakt_email: string
     kontakt_telefon: string

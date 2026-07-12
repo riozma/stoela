@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { jsPDF } from 'jspdf'
 import { supabase } from '../supabaseClient'
 import {
   ESSENS_OPTIONEN,
@@ -166,6 +167,49 @@ async function uploadDokument(anmeldungId: string, typ: string, file: File) {
     dateiname: file.name,
   })
   if (metaErr) throw metaErr
+}
+
+function pdfHerunterladen() {
+  if (!lager.value) return
+  const doc = new jsPDF()
+  let y = 18
+  const zeile = (text: string, gross = false) => {
+    doc.setFontSize(gross ? 14 : 10)
+    doc.setFont('helvetica', gross ? 'bold' : 'normal')
+    doc.text(text, 14, y)
+    y += gross ? 8 : 6
+  }
+  zeile(`Anmeldebestätigung – ${lager.value.name} ${lager.value.jahr}`, true)
+  zeile(`Zeitraum: ${formatDatumSpanne(lager.value.start_datum, lager.value.end_datum)}`)
+  y += 4
+
+  zeile('Eltern / Erziehungsberechtigte', true)
+  zeile(`${eltern.value.eltern_vorname} ${eltern.value.eltern_nachname}`)
+  zeile(`${eltern.value.eltern_email} · ${eltern.value.telefon}`)
+  zeile(`${eltern.value.adresse}, ${eltern.value.plz} ${eltern.value.ort}`)
+  zeile(`Aufenthaltsort während Lager: ${eltern.value.aufenthaltsort_unbekannt ? 'wird noch mitgeteilt' : eltern.value.aufenthaltsort}`)
+  y += 4
+
+  for (const [i, k] of kinder.value.entries()) {
+    zeile(`Kind ${i + 1}: ${k.vorname} ${k.nachname}`, true)
+    zeile(`Geburtsdatum: ${k.geburtsdatum} · Geschlecht: ${k.geschlecht} · AHV: ${k.ahv_nr}`)
+    if (k.allergien) zeile(`Allergien: ${k.allergien}`)
+    zeile(`Essensgewohnheiten: ${essensLabel(k.essensgewohnheiten, k.essensgewohnheiten_sonstiges, k.essensgewohnheiten_keine)}`)
+    if (k.medikamente) zeile(`Medikamente: ${k.medikamente}`)
+    if (k.gesundheit_bemerkungen) zeile(`Gesundheit: ${k.gesundheit_bemerkungen}`)
+    if (k.sonstige_info) zeile(`Sonstiges: ${k.sonstige_info}`)
+    y += 3
+  }
+
+  y += 3
+  zeile('Lagerbeitrag', true)
+  zeile(`Total: CHF ${beitragGesamt.value}.– (1. Kind ${lager.value.info.kosten_erstes_kind}.–, jedes weitere ${lager.value.info.kosten_weiteres_kind}.–)`)
+  if (lager.value.info.iban) {
+    zeile(`Überweisung an: ${lager.value.info.iban_kontoinhaber ?? ''}`)
+    zeile(`IBAN: ${lager.value.info.iban}`)
+  }
+
+  doc.save(`Anmeldebestaetigung_${lager.value.name.replace(/\s+/g, '_')}.pdf`)
 }
 
 async function anmeldungAbsenden() {
@@ -436,10 +480,13 @@ async function anmeldungAbsenden() {
         Lagerbeitrag total: <strong>CHF {{ beitragGesamt }}.—</strong>
         <span class="klein">(1. Kind {{ lager.info.kosten_erstes_kind }}.—, jedes weitere {{ lager.info.kosten_weiteres_kind }}.—)</span>
       </p>
+      <p v-if="lager.info.iban" class="beitrag klein-abstand">
+        Überweisung an: <strong>{{ lager.info.iban_kontoinhaber }}</strong><br />
+        IBAN: <strong>{{ lager.info.iban }}</strong>
+      </p>
 
       <p>
         Wir werden Ihnen alle Infos via E-Mail, Brief und WhatsApp zustellen.
-        Sie sollten eine Bestätigungsmail für die Anmeldung erhalten.
         Für die Kommunikation erstellen wir einen Eltern-WhatsApp-Chat.
       </p>
 
@@ -475,11 +522,10 @@ async function anmeldungAbsenden() {
     <section v-else-if="schritt === 'fertig' && lager" class="karte">
       <h2>Vielen Dank!</h2>
       <p>Die Anmeldung für {{ kinder.length }} Kind(er) ist eingegangen.</p>
-      <p>
-        Lagerbeitrag total: <strong>CHF {{ beitragGesamt }}.—</strong><br />
-        Sie erhalten eine Bestätigung per E-Mail.
-      </p>
-      <router-link :to="`/lager/${lagerId}/willkommen`">Zur Lager-Infoseite</router-link>
+      <p>Lagerbeitrag total: <strong>CHF {{ beitragGesamt }}.—</strong></p>
+      <button type="button" @click="pdfHerunterladen">Anmeldebestätigung als PDF herunterladen</button>
+      <p class="hint">Enthält alle gemachten Angaben und die Zahlungsinformationen – bitte für die eigenen Unterlagen speichern.</p>
+      <p><router-link :to="`/lager/${lagerId}/willkommen`">Zur Lager-Infoseite</router-link></p>
     </section>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -510,6 +556,7 @@ legend { font-weight: 600; padding: 0 0.25rem; }
 .kinder-liste { list-style: none; padding: 0; margin: 0; }
 .kinder-liste li { border-bottom: 1px solid var(--color-border); padding: 0.5rem 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .beitrag { font-size: 1.05rem; margin: 1rem 0; }
+.beitrag.klein-abstand { font-size: 0.9rem; margin-top: -0.5rem; }
 .termine { padding-left: 1.2rem; }
 .datei-liste { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
 .link-btn { border: none; background: none; color: var(--color-accent); cursor: pointer; padding: 0; margin-left: 0.5rem; }

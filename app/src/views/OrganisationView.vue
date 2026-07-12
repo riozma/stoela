@@ -142,6 +142,22 @@ const orgRessourcen = ref<OrgRessource[]>([])
 const orgKalenderToken = ref('')
 const orgKalenderTitel = ref('')
 const orgKalenderTermine = ref<OrgKalenderTermin[]>([])
+const ibanForm = ref({ iban: '', iban_kontoinhaber: '' })
+const ibanSpeichern = ref(false)
+
+async function ibanSpeichernHandler() {
+  if (!orgAuswahl.value || !istOrgAdmin.value) return
+  ibanSpeichern.value = true
+  fehler.value = ''
+  info.value = ''
+  const { error } = await supabase
+    .from('organisation')
+    .update({ iban: ibanForm.value.iban.trim() || null, iban_kontoinhaber: ibanForm.value.iban_kontoinhaber.trim() || null })
+    .eq('id', orgAuswahl.value)
+  ibanSpeichern.value = false
+  if (error) { fehler.value = error.message; return }
+  info.value = 'IBAN gespeichert.'
+}
 const kalenderLinkKopiert = ref<'https' | 'webcal' | null>(null)
 let kalenderKopiertTimer: ReturnType<typeof setTimeout> | null = null
 const orgLinks = computed(() => orgRessourcen.value.filter((r) => r.typ === 'link'))
@@ -310,11 +326,12 @@ async function ladeVereinDaten() {
       .select('id, name, jahr')
       .eq('organisation_id', orgId)
       .order('jahr', { ascending: false }),
-    supabase.from('organisation').select('name, kalender_token').eq('id', orgId).single(),
+    supabase.from('organisation').select('name, kalender_token, iban, iban_kontoinhaber').eq('id', orgId).single(),
   ])
 
   orgKalenderToken.value = org?.kalender_token ?? ''
   orgKalenderTitel.value = org?.name ?? aktuellerVerein.value?.name ?? 'Vereinskalender'
+  ibanForm.value = { iban: org?.iban ?? '', iban_kontoinhaber: org?.iban_kontoinhaber ?? '' }
 
   const { data: termine } = await supabase.rpc('list_org_kalender_termine', { p_organisation_id: orgId })
   orgKalenderTermine.value = (termine ?? []) as OrgKalenderTermin[]
@@ -920,6 +937,22 @@ onMounted(async () => {
             Nur über diese Seite sichtbar – nicht in der öffentlichen TN-Anmeldung.
             {{ istOrgAdmin ? 'Als Admin kannst du Einträge verwalten und die Sichtbarkeit festlegen.' : 'Du siehst nur Einträge, für die du berechtigt bist.' }}
           </p>
+
+          <div class="ressourcen-gruppe">
+            <h3>Lagerbeitrag – IBAN</h3>
+            <p class="hint">Wird bei der TN-Anmeldung als Zahlungsziel für den Lagerbeitrag angezeigt. Bleibt über die Jahre gleich.</p>
+            <template v-if="istOrgAdmin">
+              <form class="ressource-form" @submit.prevent="ibanSpeichernHandler">
+                <label>IBAN <input v-model="ibanForm.iban" placeholder="CH00 0000 0000 0000 0000 0" /></label>
+                <label>Kontoinhaber <input v-model="ibanForm.iban_kontoinhaber" placeholder="z.B. Jubla Stöcklilager Zuchwil" /></label>
+                <button type="submit" :disabled="ibanSpeichern">{{ ibanSpeichern ? 'Speichere…' : 'IBAN speichern' }}</button>
+              </form>
+            </template>
+            <p v-else class="hint">
+              {{ ibanForm.iban ? `${ibanForm.iban} (${ibanForm.iban_kontoinhaber || 'Kontoinhaber nicht gesetzt'})` : 'Noch keine IBAN hinterlegt.' }}
+              Nur Admins können die IBAN ändern.
+            </p>
+          </div>
 
           <div class="ressourcen-gruppe">
             <h3>Links</h3>
