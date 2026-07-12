@@ -59,12 +59,12 @@ async function hinzufuegen() {
   <div class="dessertaktien">
     <h3>Dessertaktien</h3>
     <p class="hint">
-      Zustupf pro Leiterteam, mit dem das Dessert finanziert wird.
-      Teams ohne Beitrag werden hier nicht aufgeführt.
+      Zustupf pro Elternteil, mit dem das Dessert finanziert wird.
+      Wer nichts gegeben hat, wird hier nicht aufgeführt.
     </p>
 
     <form v-if="bearbeitbar" class="form-zeile" @submit.prevent="hinzufuegen">
-      <input v-model="form.name" placeholder="Team / Name" />
+      <input v-model="form.name" placeholder="Name (Elternteil)" />
       <input v-model="form.betrag" type="number" min="0" step="0.05" placeholder="Betrag CHF" />
       <button type="submit" :disabled="speichern">{{ speichern ? 'Speichere…' : 'Erfassen' }}</button>
     </form>
