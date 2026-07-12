@@ -3,9 +3,10 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
 import AemtliShell from './AemtliShell.vue'
+import DessertaktienUebersicht from './DessertaktienUebersicht.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause' | 'dessert'
-type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'einkauf'
+type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'einkauf' | 'dessertaktien'
 
 interface MaterialZeile {
   name: string
@@ -428,6 +429,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
         <span v-if="personenMitHinweis.length" class="badge">{{ personenMitHinweis.length }}</span>
       </button>
       <button :class="{ aktiv: ansicht === 'einkauf' }" @click="ansicht = 'einkauf'">Einkauf</button>
+      <button :class="{ aktiv: ansicht === 'dessertaktien' }" @click="ansicht = 'dessertaktien'">Dessertaktien</button>
     </nav>
 
     <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -715,6 +717,10 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
         :kann-melden="kannEinkaufMelden ?? true"
         :bloecke="bloecke"
       />
+    </div>
+
+    <div v-if="ansicht === 'dessertaktien'">
+      <DessertaktienUebersicht :lager-id="lagerId" />
     </div>
 
   </section>

@@ -31,6 +31,7 @@ import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import AemtliFoto from '../components/lager/AemtliFoto.vue'
 import HoeckBereich from '../components/lager/HoeckBereich.vue'
+import RezeptionPanel from '../components/lager/RezeptionPanel.vue'
 import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
@@ -1746,6 +1747,10 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :end-datum="lager.end_datum"
           :is-leitung="isLeitung"
         />
+      </section>
+
+      <section v-if="activeTab === 'rezeption'">
+        <RezeptionPanel :lager-id="lagerId" />
       </section>
 
       <!-- Programm -->

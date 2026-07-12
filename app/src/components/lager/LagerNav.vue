@@ -95,6 +95,9 @@ function navKlick() {
         <router-link :to="sectionPath('teilnehmer')" class="nav-link" :class="{ aktiv: isActive('teilnehmer') }" @click="navKlick">
           Teilnehmer <span class="badge">{{ tnCount }}</span>
         </router-link>
+        <router-link :to="sectionPath('rezeption')" class="nav-link" :class="{ aktiv: isActive('rezeption') }" @click="navKlick">
+          Rezeption
+        </router-link>
         <router-link :to="sectionPath('leiter')" class="nav-link" :class="{ aktiv: isActive('leiter') }" @click="navKlick">
           Leiter <span class="badge">{{ leiterCount }}</span>
           <span v-if="leiterAnfragen && isLeitung" class="badge warn">{{ leiterAnfragen }} offen</span>

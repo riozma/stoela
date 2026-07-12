@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import AemtliShell from './AemtliShell.vue'
+import DessertaktienUebersicht from './DessertaktienUebersicht.vue'
 
 interface TN {
   id: string
@@ -136,6 +137,9 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
       </tbody>
     </table>
     <p v-else class="hint">Noch keine Teilnehmer angemeldet.</p>
+
+    <hr class="trenner" />
+    <DessertaktienUebersicht :lager-id="lagerId" />
   </section>
   </AemtliShell>
 </template>
@@ -149,4 +153,5 @@ const bezahltCount = computed(() => Object.values(finanzen.value).filter((f) => 
 .feld-bemerkung { width: 100%; min-width: 140px; }
 .error { color: var(--color-danger); }
 .quittungen-link { display: inline-block; margin: 0 0 0.85rem; font-weight: 600; }
+.trenner { margin: 1.5rem 0; border: none; border-top: 1px solid var(--color-border); }
 </style>
