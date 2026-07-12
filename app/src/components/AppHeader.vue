@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { supabase } from '../supabaseClient'
+import FeedbackButton from './FeedbackButton.vue'
 
 withDefaults(
   defineProps<{
@@ -117,6 +118,8 @@ async function logout() {
       <span v-if="lagerName" class="lager-name">{{ lagerName }}</span>
     </div>
     <div class="app-header-right">
+      <FeedbackButton v-if="session" />
+      <router-link v-if="session?.user.email?.toLowerCase() === 'manuelzeltner@gmail.com'" to="/feedback" class="feedback-export-link" title="Feedback-Übersicht / Export">📋</router-link>
       <span class="profil-kuerzel" :title="session?.user.email ?? ''">{{ kuerzel }}</span>
       <button type="button" class="secondary logout-btn" @click="logout">Logout</button>
     </div>
@@ -230,6 +233,12 @@ async function logout() {
   font-size: 0.82rem;
   padding: 0.35rem 0.65rem;
 }
+.feedback-export-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--color-border);
+  text-decoration: none; font-size: 1rem;
+}
+.feedback-export-link:hover { background: var(--color-surface-muted); }
 @media (max-width: 768px) {
   .burger-btn { display: flex; }
   .lager-name { display: none; }

@@ -11,6 +11,7 @@ import LagerBearbeitungView from '../views/LagerBearbeitungView.vue'
 import MoerderliView from '../views/MoerderliView.vue'
 import SpielwiesenView from '../views/SpielwiesenView.vue'
 import SkiweekendView from '../views/SkiweekendView.vue'
+import FeedbackUebersicht from '../views/FeedbackUebersicht.vue'
 import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 
 const router = createRouter({
@@ -20,6 +21,7 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/lager', redirect: '/organisation' },
     { path: '/organisation', name: 'organisation', component: OrganisationView, meta: { requiresAuth: true } },
+    { path: '/feedback', name: 'feedback', component: FeedbackUebersicht, meta: { requiresAuth: true } },
     { path: '/lager/import', name: 'lager-import', redirect: '/organisation' },
     { path: '/lager/:id/willkommen', name: 'willkommen', component: Willkommen },
     { path: '/lager/:id/anmelden-tn', name: 'anmeldung-tn', component: AnmeldungTN },

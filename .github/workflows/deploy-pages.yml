@@ -37,6 +37,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_APP_COMMIT: ${{ github.sha }}
 
       - name: Copy CNAME
         run: cp CNAME app/dist/CNAME && touch app/dist/.nojekyll
