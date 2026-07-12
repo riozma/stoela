@@ -900,6 +900,16 @@ onMounted(async () => {
           <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
         </nav>
 
+        <section v-if="aktivBereich === 'lager' && relevantesLager && !relevantesLager.can_edit" class="karte einstieg-karte">
+          <h2>{{ relevantesLager.name }} ({{ relevantesLager.jahr }})</h2>
+          <p class="hint" v-if="relevantesLager.start_datum">{{ relevantesLager.start_datum }} – {{ relevantesLager.end_datum ?? '?' }}</p>
+          <p class="hint">Noch nicht dabei? Melde dich als Leiter/in für dieses Lager an.</p>
+          <div class="inline-aktionen">
+            <button @click="leiterAnmeldung(relevantesLager)">Als Leiter anmelden</button>
+            <button class="secondary" @click="lagerOeffnen(relevantesLager)">Als Gast ansehen</button>
+          </div>
+        </section>
+
         <section v-if="aktivBereich === 'lager'" class="karte">
           <h2>Lager im Verein</h2>
           <p class="hint">
@@ -1348,6 +1358,8 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
   margin-bottom: 0.9rem;
 }
 .karte h2 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.einstieg-karte { border-color: var(--color-accent); border-width: 2px; padding: 1.15rem 1.3rem; }
+.einstieg-karte h2 { font-size: 1.2rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
 .lager-grid { display: grid; gap: 0.65rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .lager-karte { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem 0.85rem; }

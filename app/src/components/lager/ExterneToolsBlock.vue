@@ -16,7 +16,16 @@ const props = defineProps<{
   organisationId: string
 }>()
 
-const TOOL_NAMEN = ['eCamp', 'Lagerkochbuch', 'J&S-Lageranmeldung', 'Jubla Atlassian', 'jubla.db', 'Externe Cloud']
+// Anzeigename + Stichwörter, nach denen im Titel gesucht wird (Kleinschreibung).
+// Damit findet z.B. "Jubla DB" auch bei Titel "jubla.db" oder "Cloud 2026" bei "Externe Cloud".
+const TOOLS_DEF: { name: string; keywords: string[] }[] = [
+  { name: 'eCamp', keywords: ['ecamp'] },
+  { name: 'Lagerkochbuch', keywords: ['lagerkochbuch'] },
+  { name: 'J&S-Lageranmeldung', keywords: ['j&s', 'jugend+sport', 'baspo', 'nds'] },
+  { name: 'Jubla Atlassian', keywords: ['atlassian'] },
+  { name: 'Jubla DB', keywords: ['jubla.db', 'jubla db', 'jubladb'] },
+  { name: 'Externe Cloud', keywords: ['cloud', 'drive', 'onedrive', 'dropbox', 'sharepoint'] },
+]
 
 const ressourcen = ref<OrgRessource[]>([])
 const laden = ref(true)
@@ -31,23 +40,17 @@ async function laderRessourcen() {
 
 onMounted(laderRessourcen)
 
-function findeRessource(name: string, typ: 'link' | 'zugang'): OrgRessource | null {
-  const exakt = ressourcen.value.find((r) => r.typ === typ && r.titel.toLowerCase() === name.toLowerCase())
-  if (exakt) return exakt
-  // "Externe Cloud" matcht auch jahresspezifische Titel wie "Cloud 2026".
-  if (name === 'Externe Cloud') {
-    return ressourcen.value.find((r) => r.typ === typ && r.titel.toLowerCase().includes('cloud')) ?? null
-  }
-  return null
+function findeRessource(keywords: string[], typ: 'link' | 'zugang'): OrgRessource | null {
+  return ressourcen.value.find((r) => r.typ === typ && keywords.some((k) => r.titel.toLowerCase().includes(k))) ?? null
 }
 
 const tools = computed(() =>
-  TOOL_NAMEN.map((name) => {
-    const link = findeRessource(name, 'link')
+  TOOLS_DEF.map((def) => {
+    const link = findeRessource(def.keywords, 'link')
     return {
-      name: link && name === 'Externe Cloud' ? link.titel : name,
+      name: link ? link.titel : def.name,
       link,
-      login: findeRessource(name, 'zugang'),
+      login: findeRessource(def.keywords, 'zugang'),
     }
   }),
 )

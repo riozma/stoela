@@ -198,7 +198,41 @@ onMounted(async () => {
     </div>
 
     <main>
-      <section class="karte">
+      <!-- Noch in keinem Verein: Beitreten/Erstellen ganz prominent zuoberst -->
+      <template v-if="!laden && !mitgliedVereine.length">
+        <section class="karte einstieg-karte">
+          <h2>Willkommen! Zuerst: einem Verein beitreten</h2>
+          <p class="hint">Suche deinen Verein und sende eine Beitrittsanfrage – danach siehst du dessen Lager.</p>
+          <input v-model="suche" placeholder="Verein suchen…" @input="sucheVereine" />
+          <div v-if="treffer.length" class="treffer">
+            <button
+              v-for="t in treffer"
+              :key="t.id"
+              type="button"
+              class="treffer-item"
+              :class="{ aktiv: joinOrgId === t.id }"
+              @click="joinOrgId = t.id"
+            >
+              {{ t.name }}
+            </button>
+          </div>
+          <div class="inline-aktionen">
+            <button type="button" :disabled="!joinOrgId || joinSaving" @click="beitrittAnfragen">
+              {{ joinSaving ? 'Sende…' : 'Beitrittsanfrage senden' }}
+            </button>
+          </div>
+          <p v-if="offeneAnfragen.length" class="hint">
+            Offene Anfragen: {{ offeneAnfragen.map((v) => v.name).join(', ') }}
+          </p>
+          <h3>Oder: eigenen Verein erstellen</h3>
+          <form class="inline-form" @submit.prevent="vereinErstellen">
+            <input v-model="vereinForm.name" placeholder="Vereinsname" required />
+            <button type="submit" :disabled="vereinSaving">{{ vereinSaving ? 'Erstelle…' : 'Verein erstellen' }}</button>
+          </form>
+        </section>
+      </template>
+
+      <section v-if="mitgliedVereine.length || laden" class="karte">
         <h2>Deine Vereine</h2>
         <p class="hint">Wähle einen Verein, um zu Organisation, Mitgliedern und Lagern zu gelangen.</p>
         <p v-if="laden">Lade…</p>
@@ -215,10 +249,9 @@ onMounted(async () => {
             </span>
           </button>
         </div>
-        <p v-else class="hint">Du bist noch in keinem Verein eingetragen.</p>
       </section>
 
-      <section class="karte">
+      <section v-if="mitgliedVereine.length" class="karte">
         <h2>Laufende & kommende Lager</h2>
         <p class="hint">Shortcuts für Lager aus deinen Vereinen.</p>
         <div v-if="lagerShortcuts.length" class="karten-grid">
@@ -235,40 +268,43 @@ onMounted(async () => {
         <p v-else class="hint">Keine laufenden oder kommenden Lager gefunden.</p>
       </section>
 
-      <section class="karte">
-        <h2>Verein erstellen</h2>
-        <form class="inline-form" @submit.prevent="vereinErstellen">
-          <input v-model="vereinForm.name" placeholder="Vereinsname" required />
-          <button type="submit" :disabled="vereinSaving">{{ vereinSaving ? 'Erstelle…' : 'Verein erstellen' }}</button>
-        </form>
-      </section>
+      <!-- Bereits in einem Verein: Beitreten/Erstellen dezenter weiter unten -->
+      <template v-if="mitgliedVereine.length">
+        <section class="karte">
+          <h2>Verein erstellen</h2>
+          <form class="inline-form" @submit.prevent="vereinErstellen">
+            <input v-model="vereinForm.name" placeholder="Vereinsname" required />
+            <button type="submit" :disabled="vereinSaving">{{ vereinSaving ? 'Erstelle…' : 'Verein erstellen' }}</button>
+          </form>
+        </section>
 
-      <section class="karte">
-        <h2>Verein beitreten</h2>
-        <p class="hint">Suche bestehende Vereine und sende eine Beitrittsanfrage.</p>
-        <input v-model="suche" placeholder="Verein suchen…" @input="sucheVereine" />
-        <div v-if="treffer.length" class="treffer">
-          <button
-            v-for="t in treffer"
-            :key="t.id"
-            type="button"
-            class="treffer-item"
-            :class="{ aktiv: joinOrgId === t.id }"
-            @click="joinOrgId = t.id"
-          >
-            {{ t.name }}
-          </button>
-        </div>
-        <div class="inline-aktionen">
-          <button type="button" :disabled="!joinOrgId || joinSaving" @click="beitrittAnfragen">
-            {{ joinSaving ? 'Sende…' : 'Beitrittsanfrage senden' }}
-          </button>
-        </div>
-        <p v-if="offeneAnfragen.length" class="hint">
-          Offene Anfragen:
-          {{ offeneAnfragen.map((v) => v.name).join(', ') }}
-        </p>
-      </section>
+        <section class="karte">
+          <h2>Weiterem Verein beitreten</h2>
+          <p class="hint">Suche bestehende Vereine und sende eine Beitrittsanfrage.</p>
+          <input v-model="suche" placeholder="Verein suchen…" @input="sucheVereine" />
+          <div v-if="treffer.length" class="treffer">
+            <button
+              v-for="t in treffer"
+              :key="t.id"
+              type="button"
+              class="treffer-item"
+              :class="{ aktiv: joinOrgId === t.id }"
+              @click="joinOrgId = t.id"
+            >
+              {{ t.name }}
+            </button>
+          </div>
+          <div class="inline-aktionen">
+            <button type="button" :disabled="!joinOrgId || joinSaving" @click="beitrittAnfragen">
+              {{ joinSaving ? 'Sende…' : 'Beitrittsanfrage senden' }}
+            </button>
+          </div>
+          <p v-if="offeneAnfragen.length" class="hint">
+            Offene Anfragen:
+            {{ offeneAnfragen.map((v) => v.name).join(', ') }}
+          </p>
+        </section>
+      </template>
 
       <p v-if="info" class="ok">{{ info }}</p>
       <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -295,6 +331,9 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
   margin-bottom: 0.9rem;
 }
 .karte h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+.einstieg-karte { border-color: var(--color-accent); border-width: 2px; padding: 1.25rem 1.4rem; }
+.einstieg-karte h2 { font-size: 1.3rem; }
+.einstieg-karte h3 { margin: 1.25rem 0 0.5rem; font-size: 1rem; }
 .karten-grid { display: grid; gap: 0.65rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .verein-karte, .lager-karte {
   text-align: left;

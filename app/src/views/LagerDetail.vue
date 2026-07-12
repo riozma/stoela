@@ -678,6 +678,8 @@ function tnCsvHerunterladen() {
   tnCsvDownload(`${name}_teilnehmer.csv`, tnAlsCsv(tnListe.value))
 }
 
+const leiterZusatzangaben = ref<Record<string, string>>({})
+
 async function ladeLeiter() {
   const { data } = await supabase
     .from('leiter_teilnahmen')
@@ -685,6 +687,27 @@ async function ladeLeiter() {
     .eq('lager_id', lagerId.value)
     .order('nachname')
   leiterListe.value = data ?? []
+
+  const ids = leiterListe.value.map((l) => l.id)
+  if (ids.length) {
+    const { data: antworten } = await supabase
+      .from('leiter_anmeldung_antworten')
+      .select('anmeldung_leiter_id, wert, wert_liste, feld:feld_id (label)')
+      .in('anmeldung_leiter_id', ids)
+    const map: Record<string, string[]> = {}
+    for (const a of (antworten ?? []) as any[]) {
+      const label = a.feld?.label ?? 'Zusatzfeld'
+      const wert = a.wert ?? (Array.isArray(a.wert_liste) ? a.wert_liste.join(', ') : null)
+      if (!wert) continue
+      if (!map[a.anmeldung_leiter_id]) map[a.anmeldung_leiter_id] = []
+      map[a.anmeldung_leiter_id].push(`${label}: ${wert}`)
+    }
+    leiterZusatzangaben.value = Object.fromEntries(
+      Object.entries(map).map(([id, zeilen]) => [id, zeilen.join(' · ')]),
+    )
+  } else {
+    leiterZusatzangaben.value = {}
+  }
 }
 
 async function leiterBestaetigen(anmeldungId: string) {
@@ -2377,7 +2400,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             <thead>
               <tr>
                 <th>Name</th><th>E-Mail</th><th>Telefon</th><th>Geburtsdatum</th><th>Geschlecht</th>
-                <th>AHV</th><th>Anwesend</th><th>Status</th><th>Essen</th><th>Ämtli</th>
+                <th>AHV</th><th>Anwesend</th><th>Status</th><th>Essen</th><th>Ämtli</th><th>Zusatzangaben</th>
               </tr>
             </thead>
             <tbody>
@@ -2392,6 +2415,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 <td>{{ l.anmeldung_art === 'provisorisch' ? 'provisorisch' : 'fix' }}</td>
                 <td>{{ l.essensgewohnheiten?.trim() || '–' }}</td>
                 <td>{{ (leiterRollenMap[l.id] ?? []).map((r) => r.name).join(', ') || '–' }}</td>
+                <td>{{ leiterZusatzangaben[l.id] ?? '–' }}</td>
               </tr>
             </tbody>
           </table>
