@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { bestaetigenBis } from '../lib/workflowUtils'
 import { ladeProfilLeiterDaten, speichereProfilLeiterDaten } from '../lib/profileNames'
-import { ESSENS_OPTIONEN, essensLabel } from '../lib/tnAnmeldung'
+import { ESSENS_OPTIONEN, ahvBeimTippen, essensLabel } from '../lib/tnAnmeldung'
 
 const route = useRoute()
 const router = useRouter()
@@ -227,7 +227,7 @@ async function absenden() {
               <option value="d">divers</option>
             </select>
           </label>
-          <label v-if="anmeldungConfig.ahv_nr">AHV-Nummer <input v-model="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" /></label>
+          <label v-if="anmeldungConfig.ahv_nr">AHV-Nummer <input :value="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" @input="form.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" /></label>
           <label>Telefon <input v-model="form.telefon" type="tel" /></label>
         </template>
         <p v-else class="hint">Stammdaten aus deinem Profil übernommen (Geburtsdatum, Geschlecht, AHV, Telefon).</p>

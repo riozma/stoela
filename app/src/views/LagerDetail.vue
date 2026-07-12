@@ -13,7 +13,7 @@ import ProgrammTag from '../components/lager/ProgrammTag.vue'
 import ProgrammBlockEdit from '../components/lager/ProgrammBlockEdit.vue'
 import ProgrammImportPanel from '../components/lager/ProgrammImportPanel.vue'
 import { heuteIso, tageZwischen } from '../lib/programmUtils'
-import { pruefeTnAnmeldungAktivierung } from '../lib/tnAnmeldung'
+import { ahvBeimTippen, pruefeTnAnmeldungAktivierung } from '../lib/tnAnmeldung'
 import AemtliKueche from '../components/lager/AemtliKueche.vue'
 import AemtliFinanzen from '../components/lager/AemtliFinanzen.vue'
 import AemtliGeneric from '../components/lager/AemtliGeneric.vue'
@@ -1974,7 +1974,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                         <option value="d">divers</option>
                       </select>
                     </label>
-                    <label>AHV-Nr. <input v-model="tnEditForm.ahv_nr" /></label>
+                    <label>AHV-Nr. <input :value="tnEditForm.ahv_nr" @input="tnEditForm.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" /></label>
                     <label>Notfallkontakt <input v-model="tnEditForm.notfallkontakt" /></label>
                     <label>Eltern E-Mail <input v-model="tnEditForm.eltern_email" type="email" /></label>
                     <label>Aufenthaltsort Eltern <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
@@ -2427,7 +2427,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                     </label>
                     <label>
                       AHV
-                      <input v-model="leiterEditForm.ahv_nr" placeholder="756.xxxx.xxxx.xx" />
+                      <input :value="leiterEditForm.ahv_nr" placeholder="756.xxxx.xxxx.xx" @input="leiterEditForm.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" />
                     </label>
                     <span class="hint">Stammdaten werden ins Profil übernommen und gelten vereinweit.</span>
                   </div>

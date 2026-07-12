@@ -28,7 +28,7 @@ export const QUITTUNG_KATEGORIEN: QuittungKategorie[] = [
   { id: 'verkleidungen', label: 'Verkleidungen/Material', richtung: 'ausgabe' },
   { id: 'material_spesen', label: 'Material/Spesen', richtung: 'ausgabe' },
   { id: 'jubla_vers', label: 'Jubla-Beiträge und Versicherungen', richtung: 'ausgabe' },
-  { id: 'js_ghk_leiter', label: 'J+S, GHK – Leiterentschädigung', richtung: 'ausgabe' },
+  { id: 'js_ghk_leiter', label: 'J&S, GHK – Leiterentschädigung', richtung: 'ausgabe' },
   { id: 'lager_tshirt', label: 'Lager T-Shirt und Merchandise', richtung: 'ausgabe' },
   { id: 'kleiderboerse_ausgabe', label: 'Kleiderbörse/Spaghetti Ausgaben', richtung: 'ausgabe' },
   { id: 'gebuehren_abos', label: 'Gebühren und Abos', richtung: 'ausgabe' },

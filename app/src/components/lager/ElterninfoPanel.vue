@@ -190,7 +190,7 @@ function downloadBrief() {
       <label class="grid-full">Beschreibung
         <textarea v-model="felder.beschreibung" rows="3" placeholder="Kurzbeschreibung fürs Lager" />
       </label>
-      <label>Lagerart <input v-model="felder.lagerart" placeholder="Sommerlager im Haus, J+S-Lager" /></label>
+      <label>Lagerart <input v-model="felder.lagerart" placeholder="Sommerlager im Haus, J&S-Lager" /></label>
       <label>Durchgeführt von <input v-model="felder.durchgefuehrt_von" /></label>
       <label>Anmeldeschluss <input v-model="felder.anmeldeschluss" placeholder="z. B. 15. Mai 2026" /></label>
       <label>Mindestalter <input v-model="felder.mindestalter" placeholder="z. B. 7 Jahre" /></label>

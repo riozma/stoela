@@ -70,7 +70,7 @@ async function loeschen(id: string) {
       ⚠ {{ offeneBestellungen }} Artikel noch «zu bestellen»
     </p>
 
-    <h3>Material / TJ+S-Bestellung</h3>
+    <h3>Material / J&S-Bestellung</h3>
     <form class="inline-form" @submit.prevent="hinzufuegen">
       <input v-model="form.artikel" placeholder="Material (z.B. Seile, Zelte)" required />
       <input v-model="form.menge" placeholder="Menge" style="width:6rem" />
@@ -105,7 +105,7 @@ async function loeschen(id: string) {
       </tbody>
     </table>
     <p v-if="!items.length" class="hint">Noch keine Materialliste erfasst.</p>
-    <p class="hint">Deckt TJ+S-Bestellung, Lieferkontrolle und Rückversand nach Lager ab.</p>
+    <p class="hint">Deckt J&S-Bestellung, Lieferkontrolle und Rückversand nach Lager ab.</p>
   </AemtliShell>
 </template>
 

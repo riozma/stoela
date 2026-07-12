@@ -108,7 +108,7 @@ function navKlick() {
       </div>
     </div>
 
-    <div class="nav-dropdown" data-label="Vorbereitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['fahrplan', 'vorweekend', 'elterninfo', 'kalender', 'einkauf']) }">
+    <div class="nav-dropdown" data-label="Vorbereitung" :class="{ 'gruppe-aktiv': gruppeAktiv(['fahrplan', 'vorweekend', 'kalender', 'einkauf']) }">
       <span class="nav-dropdown-label">Vorbereitung</span>
       <div class="nav-dropdown-menu">
         <router-link :to="sectionPath('fahrplan')" class="nav-link" :class="{ aktiv: isActive('fahrplan') }" @click="navKlick">
@@ -116,9 +116,6 @@ function navKlick() {
         </router-link>
         <router-link :to="sectionPath('vorweekend')" class="nav-link" :class="{ aktiv: isActive('vorweekend') }" @click="navKlick">
           Vorweekend
-        </router-link>
-        <router-link :to="sectionPath('elterninfo')" class="nav-link" :class="{ aktiv: isActive('elterninfo') }" @click="navKlick">
-          Elterninfo
         </router-link>
         <router-link :to="sectionPath('kalender')" class="nav-link" :class="{ aktiv: isActive('kalender') }" @click="navKlick">
           Kalender

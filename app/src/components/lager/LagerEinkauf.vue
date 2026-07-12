@@ -15,6 +15,15 @@ interface EinkaufItem {
   erstellt_von: string | null
   erstellt_von_name: string | null
   programm_block_id: string | null
+  kueche_status: string | null
+}
+
+const MAHLZEIT_LABELS: Record<string, string> = {
+  fruehstueck: 'Frühstück',
+  zmittag: "Z'Mittag",
+  znacht: "Z'Nacht",
+  jause: 'Pause',
+  dessert: 'Dessert',
 }
 
 interface EinkaufTermin {
@@ -39,6 +48,8 @@ const termine = ref<EinkaufTermin[]>([])
 const fehler = ref('')
 const form = ref({ name: '', menge: '', einheit: '', bereich: 'lager', mahlzeit: '', notiz: '', programm_block_id: '' })
 const terminForm = ref({ datum: '', uhrzeit: '10:00' })
+const bearbeitenId = ref<string | null>(null)
+const bearbeitenForm = ref({ name: '', menge: '', einheit: '', notiz: '' })
 
 const aktiverTermin = computed(() => termine.value.find((t) => !t.frueh_geschlossen) ?? null)
 
@@ -107,6 +118,36 @@ async function toggleErledigt(item: EinkaufItem) {
   item.erledigt = !item.erledigt
 }
 
+function bearbeitenStart(item: EinkaufItem) {
+  if (bearbeitenId.value === item.id) { bearbeitenId.value = null; return }
+  bearbeitenId.value = item.id
+  bearbeitenForm.value = {
+    name: item.name,
+    menge: item.menge != null ? String(item.menge) : '',
+    einheit: item.einheit ?? '',
+    notiz: item.notiz ?? '',
+  }
+}
+
+async function bearbeitenSpeichern(item: EinkaufItem) {
+  const f = bearbeitenForm.value
+  const { error } = await supabase.from('einkaufsliste_items').update({
+    name: f.name.trim(),
+    menge: f.menge ? Number(f.menge) : null,
+    einheit: f.einheit.trim() || null,
+    notiz: f.notiz.trim() || null,
+  }).eq('id', item.id)
+  if (error) { fehler.value = error.message; return }
+  bearbeitenId.value = null
+  await laden()
+}
+
+async function kuecheStatusSetzen(item: EinkaufItem, status: string | null) {
+  if (!props.istKueche) return
+  await supabase.from('einkaufsliste_items').update({ kueche_status: status }).eq('id', item.id)
+  item.kueche_status = status
+}
+
 async function mahlzeitSetzen(item: EinkaufItem, mahlzeit: string) {
   if (!props.istKueche) return
   await supabase.from('einkaufsliste_items').update({ mahlzeit: mahlzeit || null }).eq('id', item.id)
@@ -154,6 +195,9 @@ onMounted(laden)
 
 <template>
   <section>
+    <p class="info-box">
+      Hier kann eingetragen werden, was für das Lager gebraucht wird – die Küche kauft das beim nächsten Einkaufstermin ein.
+    </p>
     <div v-if="aktiverTermin" class="termin-banner" :class="{ geschlossen: aktiverTermin.frueh_geschlossen }">
       <p><strong>Nächster Einkauf:</strong> {{ formatTermin(aktiverTermin.einkauf_am) }}</p>
       <p v-if="deadline && !aktiverTermin.frueh_geschlossen">
@@ -164,6 +208,7 @@ onMounted(laden)
         Früh schliessen
       </button>
     </div>
+    <p v-else class="hint">Nächster Einkaufstermin ist noch nicht geplant.</p>
 
     <div v-if="istKueche" class="kueche-box">
       <h3>Einkaufstermin setzen (Küche)</h3>
@@ -182,10 +227,11 @@ onMounted(laden)
     <div v-if="items.length" class="liste-scroll">
     <table class="liste">
       <thead>
-        <tr><th></th><th>Artikel</th><th>Bereich</th><th>Mahlzeit</th><th>Wofür / Notiz</th><th>Von</th></tr>
+        <tr><th></th><th>Artikel</th><th>Bereich</th><th>Mahlzeit</th><th>Wofür / Notiz</th><th>Von</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
-        <tr v-for="item in items" :key="item.id" :class="{ erledigt: item.erledigt }">
+        <template v-for="item in items" :key="item.id">
+        <tr :class="{ erledigt: item.erledigt }">
           <td>
             <input
               type="checkbox"
@@ -203,16 +249,41 @@ onMounted(laden)
               @change="mahlzeitSetzen(item, ($event.target as HTMLSelectElement).value)"
             >
               <option value="">–</option>
-              <option value="fruehstueck">Frühstück</option>
-              <option value="zmittag">Z'Mittag</option>
-              <option value="znacht">Z'Nacht</option>
-              <option value="jause">Jause</option>
+              <option v-for="(label, key) in MAHLZEIT_LABELS" :key="key" :value="key">{{ label }}</option>
             </select>
-            <span v-else>{{ item.mahlzeit ?? '–' }}</span>
+            <span v-else>{{ item.mahlzeit ? (MAHLZEIT_LABELS[item.mahlzeit] ?? item.mahlzeit) : '–' }}</span>
           </td>
           <td>{{ item.notiz ?? '–' }}</td>
           <td class="hint">{{ item.erstellt_von_name ?? '–' }}</td>
+          <td>
+            <span v-if="item.kueche_status === 'abgelehnt'" class="status-badge abgelehnt">Abgelehnt</span>
+            <span v-else-if="item.kueche_status === 'verschoben'" class="status-badge verschoben">Verschoben</span>
+            <span v-else class="hint">–</span>
+          </td>
+          <td>
+            <div class="zeilen-aktionen">
+              <button v-if="darfBearbeiten(item)" type="button" class="secondary klein" @click="bearbeitenStart(item)">✏️</button>
+              <template v-if="istKueche">
+                <button v-if="item.kueche_status !== 'abgelehnt'" type="button" class="secondary klein" title="Ablehnen" @click="kuecheStatusSetzen(item, 'abgelehnt')">✕</button>
+                <button v-if="item.kueche_status !== 'verschoben'" type="button" class="secondary klein" title="Auf nächsten Termin verschieben" @click="kuecheStatusSetzen(item, 'verschoben')">→</button>
+                <button v-if="item.kueche_status" type="button" class="secondary klein" title="Status zurücksetzen" @click="kuecheStatusSetzen(item, null)">↺</button>
+              </template>
+            </div>
+          </td>
         </tr>
+        <tr v-if="bearbeitenId === item.id">
+          <td colspan="8">
+            <div class="bearbeiten-zeile">
+              <input v-model="bearbeitenForm.name" placeholder="Artikel" />
+              <input v-model="bearbeitenForm.menge" type="number" step="any" placeholder="Menge" class="klein" />
+              <input v-model="bearbeitenForm.einheit" placeholder="Einheit" class="klein" />
+              <input v-model="bearbeitenForm.notiz" placeholder="Notiz" />
+              <button type="button" @click="bearbeitenSpeichern(item)">Speichern</button>
+              <button type="button" class="secondary" @click="bearbeitenId = null">Abbrechen</button>
+            </div>
+          </td>
+        </tr>
+        </template>
       </tbody>
     </table>
     </div>
@@ -255,4 +326,10 @@ onMounted(laden)
 .hint { font-size: 0.8rem; color: var(--color-text-muted); }
 .meld-hinweis { margin-bottom: 0.75rem; padding: 0.5rem 0.65rem; background: var(--color-surface-muted); border-radius: var(--radius-md); }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
+.info-box { background: var(--color-surface-muted); padding: 0.6rem 0.8rem; border-radius: var(--radius-md); font-size: 0.88rem; margin-bottom: 0.85rem; }
+.zeilen-aktionen { display: flex; gap: 0.2rem; }
+.status-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); font-size: 0.78rem; }
+.status-badge.abgelehnt { background: #fdf3e0; color: #8a5a1f; }
+.status-badge.verschoben { background: var(--color-pill-bg); color: var(--color-text); }
+.bearbeiten-zeile { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.5rem; }
 </style>
