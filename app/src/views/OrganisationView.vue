@@ -17,7 +17,7 @@ import {
   type OrgRessourceForm,
   type OrgRessourceTyp,
 } from '../lib/orgRessourcen'
-import { kategorieLabel } from '../lib/quittungenKategorien'
+import { kategorieLabel, kategorienFuerRichtung } from '../lib/quittungenKategorien'
 
 interface VereinMitgliedschaft {
   organisation_id: string
@@ -221,6 +221,105 @@ const orgQuittungenGeladenFuer = ref<string | null>(null)
 const quittungFilterLager = ref('')
 const quittungFilterStatus = ref('')
 
+interface Iban {
+  id: string
+  iban: string
+  bezeichnung: string | null
+}
+const orgIbans = ref<Iban[]>([])
+const quittungForm = ref({
+  lagerId: '',
+  betrag: '',
+  zweck: '',
+  richtung: 'ausgabe' as 'ausgabe' | 'einnahme',
+  kategorie: '',
+  ibanId: '',
+  neueIban: '',
+})
+const quittungDateiInput = ref<HTMLInputElement | null>(null)
+const quittungDateien = ref<File[]>([])
+const quittungSpeichern = ref(false)
+const quittungNachricht = ref('')
+
+async function ladeOrgIbans() {
+  if (!session.value) return
+  const { data } = await supabase.from('profile_ibans').select('id, iban, bezeichnung').eq('profile_id', session.value.user.id).order('created_at')
+  orgIbans.value = data ?? []
+  if (orgIbans.value.length && !quittungForm.value.ibanId) quittungForm.value.ibanId = orgIbans.value[0].id
+}
+
+function quittungDateienAuswaehlen(e: Event) {
+  const input = e.target as HTMLInputElement
+  quittungDateien.value = input.files ? [...input.files] : []
+}
+
+async function quittungEinreichen() {
+  if (!session.value) return
+  quittungNachricht.value = ''
+  if (!quittungForm.value.lagerId) { quittungNachricht.value = 'Bitte Lager wählen.'; return }
+  quittungSpeichern.value = true
+
+  let ibanId = quittungForm.value.ibanId
+  if (!ibanId && quittungForm.value.neueIban.trim()) {
+    const iban = quittungForm.value.neueIban.replace(/\s/g, '').toUpperCase()
+    const { data } = await supabase.from('profile_ibans').insert({ profile_id: session.value.user.id, iban }).select('id').single()
+    if (data) { ibanId = data.id; await ladeOrgIbans() }
+  }
+  if (!ibanId) {
+    quittungNachricht.value = 'Bitte IBAN angeben oder auswählen.'
+    quittungSpeichern.value = false
+    return
+  }
+  if (!quittungDateien.value.length) {
+    quittungNachricht.value = 'Mindestens ein Bild der Quittung hochladen.'
+    quittungSpeichern.value = false
+    return
+  }
+
+  const { data: q, error } = await supabase
+    .from('quittungen')
+    .insert({
+      lager_id: quittungForm.value.lagerId,
+      einreicher_id: session.value.user.id,
+      iban_id: ibanId,
+      betrag: Number(quittungForm.value.betrag),
+      zweck: quittungForm.value.zweck,
+      kategorie: quittungForm.value.kategorie || null,
+      richtung: quittungForm.value.richtung,
+    })
+    .select('id')
+    .single()
+
+  if (error || !q) {
+    quittungNachricht.value = error?.message ?? 'Fehler beim Speichern.'
+    quittungSpeichern.value = false
+    return
+  }
+
+  try {
+    for (const file of quittungDateien.value) {
+      const path = `${session.value.user.id}/${q.id}/${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from('quittungen').upload(path, file)
+      if (upErr) throw upErr
+      await supabase.from('quittung_dateien').insert({ quittung_id: q.id, storage_path: path, dateiname: file.name })
+    }
+  } catch (e: any) {
+    quittungNachricht.value = e.message ?? 'Upload fehlgeschlagen.'
+    await supabase.from('quittungen').delete().eq('id', q.id)
+    quittungSpeichern.value = false
+    return
+  }
+
+  quittungForm.value.betrag = ''
+  quittungForm.value.zweck = ''
+  quittungDateien.value = []
+  if (quittungDateiInput.value) quittungDateiInput.value.value = ''
+  quittungNachricht.value = 'Quittung eingereicht.'
+  quittungSpeichern.value = false
+  orgQuittungenGeladenFuer.value = null
+  await ladeOrgQuittungen()
+}
+
 const orgQuittungenGefiltert = computed(() =>
   orgQuittungen.value.filter(
     (q) =>
@@ -276,7 +375,13 @@ async function ladeOrgQuittungen() {
 }
 
 watch(aktivBereich, (b) => {
-  if (b === 'quittungen') ladeOrgQuittungen()
+  if (b === 'quittungen') {
+    ladeOrgQuittungen()
+    ladeOrgIbans()
+    if (!quittungForm.value.lagerId) {
+      quittungForm.value.lagerId = kommendeOderLaufendeLager.value[0]?.id ?? lager.value[0]?.id ?? ''
+    }
+  }
 })
 watch(orgAuswahl, () => {
   orgQuittungenGeladenFuer.value = null
@@ -285,6 +390,64 @@ watch(orgAuswahl, () => {
 function formatBetragOrg(b: number) {
   return new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' }).format(b)
 }
+
+// --- Org-weite Ämtli-Besetzung (vererbt an kommende Lager) ---
+interface AemtliBesetzungZeile {
+  aemtli_id: string
+  aemtli_name: string
+  profile_id: string | null
+  name: string
+  quelle: 'organisation' | 'letztes_lager' | 'keine'
+}
+
+const aemtliBesetzung = ref<AemtliBesetzungZeile[]>([])
+const aemtliBesetzungLaden = ref(false)
+const aemtliBesetzungGeladenFuer = ref<string | null>(null)
+const aemtliBesetzungSpeichern = ref<Record<string, boolean>>({})
+
+const leiterPool = computed(() => vereinsLeiterListe.value.filter((z): z is typeof z & { profile_id: string } => !!z.profile_id))
+
+async function ladeAemtliBesetzung() {
+  if (!orgAuswahl.value) return
+  if (aemtliBesetzungGeladenFuer.value === orgAuswahl.value) return
+  aemtliBesetzungLaden.value = true
+  const { data, error } = await supabase.rpc('resolve_org_aemtli_besetzung', { p_organisation_id: orgAuswahl.value })
+  aemtliBesetzungLaden.value = false
+  if (error) return
+  aemtliBesetzung.value = (data ?? []).map((r: any) => ({
+    aemtli_id: r.aemtli_id,
+    aemtli_name: r.aemtli_name,
+    profile_id: r.profile_id,
+    name: r.profile_id ? `${r.vorname ?? ''} ${r.nachname ?? ''}`.trim() || r.email : '',
+    quelle: r.quelle,
+  }))
+  aemtliBesetzungGeladenFuer.value = orgAuswahl.value
+}
+
+async function aemtliBesetzungAendern(aemtliId: string, profileId: string) {
+  if (!orgAuswahl.value || !session.value) return
+  aemtliBesetzungSpeichern.value[aemtliId] = true
+  await supabase.from('org_aemtli_besetzung').upsert(
+    {
+      organisation_id: orgAuswahl.value,
+      aemtli_id: aemtliId,
+      profile_id: profileId || null,
+      updated_by: session.value.user.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organisation_id,aemtli_id' },
+  )
+  aemtliBesetzungSpeichern.value[aemtliId] = false
+  aemtliBesetzungGeladenFuer.value = null
+  await ladeAemtliBesetzung()
+}
+
+watch(aktivBereich, (b) => {
+  if (b === 'team') ladeAemtliBesetzung()
+})
+watch(orgAuswahl, () => {
+  aemtliBesetzungGeladenFuer.value = null
+})
 
 function profilVon(m: VereinsMitglied) {
   if (m.vorname !== undefined || m.nachname !== undefined || m.email !== undefined) {
@@ -1148,8 +1311,47 @@ onMounted(async () => {
 
         <section v-if="aktivBereich === 'quittungen'" class="karte">
           <h2>Quittungen – alle Lager</h2>
-          <p class="hint">Übersicht über alle Quittungen aus den Lagern dieses Vereins. Einreichen/bearbeiten läuft weiterhin über das jeweilige Lager selbst.</p>
+          <p class="hint">Übersicht über alle Quittungen aus den Lagern dieses Vereins. Bearbeiten (bis zur Bestätigung) läuft weiterhin über das jeweilige Lager.</p>
 
+          <h3>Quittung einreichen</h3>
+          <form class="form-grid" @submit.prevent="quittungEinreichen">
+            <label>Lager
+              <select v-model="quittungForm.lagerId" required>
+                <option value="">– wählen –</option>
+                <option v-for="l in lager" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
+              </select>
+            </label>
+            <label>Art
+              <select v-model="quittungForm.richtung" @change="quittungForm.kategorie = ''">
+                <option value="ausgabe">Ausgabe</option>
+                <option value="einnahme">Einnahme</option>
+              </select>
+            </label>
+            <label>Kategorie
+              <select v-model="quittungForm.kategorie" required>
+                <option value="">– wählen –</option>
+                <option v-for="k in kategorienFuerRichtung(quittungForm.richtung)" :key="k.id" :value="k.id">{{ k.label }}</option>
+              </select>
+            </label>
+            <label>Betrag (CHF) <input v-model="quittungForm.betrag" type="number" step="0.05" min="0" required /></label>
+            <label class="full">Verwendungszweck <input v-model="quittungForm.zweck" required placeholder="Wofür wurde es verwendet?" /></label>
+            <label>IBAN
+              <select v-model="quittungForm.ibanId">
+                <option value="">– neue IBAN unten –</option>
+                <option v-for="i in orgIbans" :key="i.id" :value="i.id">{{ i.bezeichnung ? `${i.bezeichnung}: ` : '' }}{{ i.iban }}</option>
+              </select>
+            </label>
+            <label v-if="!quittungForm.ibanId">Neue IBAN <input v-model="quittungForm.neueIban" placeholder="CH..." /></label>
+            <label class="full">
+              Bilder (Quittung)
+              <input ref="quittungDateiInput" type="file" accept="image/*" multiple @change="quittungDateienAuswaehlen" />
+            </label>
+            <p v-if="quittungDateien.length" class="hint full">{{ quittungDateien.length }} Datei(en) ausgewählt</p>
+            <button type="submit" class="full" :disabled="quittungSpeichern">{{ quittungSpeichern ? 'Reiche ein...' : 'Quittung einreichen' }}</button>
+          </form>
+          <p v-if="quittungNachricht" class="hint">{{ quittungNachricht }}</p>
+
+          <h3>Übersicht</h3>
           <p v-if="orgQuittungenLaden">Lade…</p>
           <template v-else>
             <div class="quittungen-filter">
@@ -1446,6 +1648,45 @@ onMounted(async () => {
             <input v-model="personForm.rolle_hinweis" placeholder="Rolle / Hinweis" />
             <button type="submit" :disabled="personSpeichern">{{ personSpeichern ? 'Speichere…' : 'Person hinzufügen' }}</button>
           </form>
+
+          <h3>Ämtli-Besetzung (Verein)</h3>
+          <p class="hint">
+            Wer hier gesetzt wird, gilt automatisch für alle kommenden Lager. Ohne Eintrag übernimmt ein neues Lager
+            die Zuteilung des zuletzt vergangenen Lagers. Lagerleitung, Admin und Leiter können das anpassen.
+          </p>
+          <p v-if="aemtliBesetzungLaden">Lade…</p>
+          <table v-else-if="aemtliBesetzung.length" class="liste">
+            <thead>
+              <tr>
+                <th>Ämtli</th>
+                <th>Aktuell</th>
+                <th>Herkunft</th>
+                <th>Ändern</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in aemtliBesetzung" :key="a.aemtli_id">
+                <td>{{ a.aemtli_name }}</td>
+                <td>{{ a.name || '–' }}</td>
+                <td class="hint">
+                  {{ a.quelle === 'organisation' ? 'Verein (fix)' : a.quelle === 'letztes_lager' ? 'letztes Lager (übernommen)' : '–' }}
+                </td>
+                <td>
+                  <select
+                    :value="a.profile_id ?? ''"
+                    :disabled="aemtliBesetzungSpeichern[a.aemtli_id]"
+                    @change="aemtliBesetzungAendern(a.aemtli_id, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">– niemand –</option>
+                    <option v-for="z in leiterPool" :key="z.profile_id" :value="z.profile_id!">
+                      {{ zeilenName(z.vorname, z.nachname, z.email) }}
+                    </option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="hint">Noch kein Ämtli-Katalog vorhanden.</p>
         </section>
       </template>
 
@@ -1575,6 +1816,9 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .termin-zeile .klein-btn { white-space: nowrap; text-decoration: none; }
 .kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 .ressource-admin { margin-top: 0.5rem; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.65rem; margin: 0.75rem 0 1rem; }
+.form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
+.form-grid .full { grid-column: 1 / -1; }
 .quittungen-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; }
 .quittungen-filter label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .q-liste { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
