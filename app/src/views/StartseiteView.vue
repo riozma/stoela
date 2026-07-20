@@ -64,11 +64,19 @@ function slugify(text: string) {
     .replace(/(^-|-$)/g, '')
 }
 
-function istLaufendOderKommend(l: LagerShortcut) {
-  if (l.status === 'archiviert' || l.status === 'abgeschlossen') return false
+function datumPlusTage(datum: string, tage: number) {
+  const d = new Date(`${datum}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + tage)
+  return d.toISOString().slice(0, 10)
+}
+
+function istSichtbar(l: LagerShortcut, diashowDatum: string | null) {
+  if (l.status === 'archiviert') return false
   const heute = new Date().toISOString().slice(0, 10)
-  if (l.end_datum && l.end_datum < heute) return false
-  return true
+  if (!l.end_datum || l.end_datum >= heute) return true
+  // Vergangenes Lager: bis eine Woche nach der Diashow (Fallback: Lagerende) weiterhin sichtbar.
+  const referenz = diashowDatum ?? l.end_datum
+  return datumPlusTage(referenz, 7) >= heute
 }
 
 async function ladeDaten() {
@@ -83,16 +91,28 @@ async function ladeDaten() {
   }
   vereine.value = (meine ?? []) as VereinMitgliedschaft[]
 
-  const shortcuts: LagerShortcut[] = []
+  const alleLager: LagerShortcut[] = []
   for (const v of vereine.value.filter((x) => x.mein_status === 'mitglied')) {
     const { data: lager, error: lagerErr } = await supabase.rpc('list_vereinslager', { p_organisation_id: v.organisation_id })
     if (lagerErr) continue
-    for (const row of (lager ?? [])) {
-      const l = row as LagerShortcut
-      if (!istLaufendOderKommend(l)) continue
-      shortcuts.push(l)
+    for (const row of (lager ?? [])) alleLager.push(row as LagerShortcut)
+  }
+
+  const heute = new Date().toISOString().slice(0, 10)
+  const vergangeneIds = alleLager.filter((l) => l.end_datum && l.end_datum < heute).map((l) => l.id)
+  const diashowMap = new Map<string, string>()
+  if (vergangeneIds.length) {
+    const { data: termine } = await supabase
+      .from('lager_termine')
+      .select('lager_id, start_datum')
+      .eq('typ', 'diashow')
+      .in('lager_id', vergangeneIds)
+    for (const t of termine ?? []) {
+      if (t.start_datum) diashowMap.set(t.lager_id as string, t.start_datum as string)
     }
   }
+
+  const shortcuts = alleLager.filter((l) => istSichtbar(l, diashowMap.get(l.id) ?? null))
   shortcuts.sort((a, b) => (a.start_datum ?? '9999-12-31').localeCompare(b.start_datum ?? '9999-12-31'))
   lagerShortcuts.value = shortcuts
   laden.value = false

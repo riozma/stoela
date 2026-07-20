@@ -584,10 +584,11 @@ async function tnRolleAendern(tn: TN, rolle: 'TN' | 'HL') {
 }
 
 async function tnLoeschen(tnId: string) {
-  if (!isLeitung.value) return
+  if (!darfTnBearbeiten.value) return
   const sicher = window.confirm('Teilnehmer/in wirklich löschen?')
   if (!sicher) return
   await supabase.from('anmeldungen_tn').delete().eq('id', tnId).eq('lager_id', lagerId.value)
+  tnBearbeitenId.value = null
   await Promise.all([ladeTeilnehmer(), ladeGruppen()])
 }
 
@@ -2142,6 +2143,7 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                     <div class="inline-aktionen">
                       <button type="button" @click="tnBearbeitenSpeichern(tn)">Speichern</button>
                       <button type="button" class="secondary" @click="tnBearbeitenId = null">Abbrechen</button>
+                      <button type="button" class="secondary danger" @click="tnLoeschen(tn.id)">Teilnehmer/in löschen</button>
                     </div>
                     <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
                   </div>
