@@ -145,6 +145,8 @@ const orgKalenderTitel = ref('')
 const orgKalenderTermine = ref<OrgKalenderTermin[]>([])
 const ibanForm = ref({ iban: '', iban_kontoinhaber: '' })
 const ibanSpeichern = ref(false)
+const instagramForm = ref({ instagram_url: '' })
+const instagramSpeichern = ref(false)
 
 async function ibanSpeichernHandler() {
   if (!orgAuswahl.value || !istOrgAdmin.value) return
@@ -158,6 +160,20 @@ async function ibanSpeichernHandler() {
   ibanSpeichern.value = false
   if (error) { fehler.value = error.message; return }
   info.value = 'IBAN gespeichert.'
+}
+
+async function instagramSpeichernHandler() {
+  if (!orgAuswahl.value || !istVereinsleitung.value) return
+  instagramSpeichern.value = true
+  fehler.value = ''
+  info.value = ''
+  const { error } = await supabase
+    .from('organisation')
+    .update({ instagram_url: instagramForm.value.instagram_url.trim() || null })
+    .eq('id', orgAuswahl.value)
+  instagramSpeichern.value = false
+  if (error) { fehler.value = error.message; return }
+  info.value = 'Instagram-Link gespeichert.'
 }
 const kalenderLinkKopiert = ref<'https' | 'webcal' | null>(null)
 let kalenderKopiertTimer: ReturnType<typeof setTimeout> | null = null
@@ -575,12 +591,13 @@ async function ladeVereinDaten() {
       .select('id, name, jahr')
       .eq('organisation_id', orgId)
       .order('jahr', { ascending: false }),
-    supabase.from('organisation').select('name, kalender_token, iban, iban_kontoinhaber').eq('id', orgId).single(),
+    supabase.from('organisation').select('name, kalender_token, iban, iban_kontoinhaber, instagram_url').eq('id', orgId).single(),
   ])
 
   orgKalenderToken.value = org?.kalender_token ?? ''
   orgKalenderTitel.value = org?.name ?? aktuellerVerein.value?.name ?? 'Vereinskalender'
   ibanForm.value = { iban: org?.iban ?? '', iban_kontoinhaber: org?.iban_kontoinhaber ?? '' }
+  instagramForm.value = { instagram_url: org?.instagram_url ?? '' }
 
   const { data: termine } = await supabase.rpc('list_org_kalender_termine', { p_organisation_id: orgId })
   orgKalenderTermine.value = (termine ?? []) as OrgKalenderTermin[]
@@ -1211,6 +1228,20 @@ onMounted(async () => {
             <p v-else class="hint">
               {{ ibanForm.iban ? `${ibanForm.iban} (${ibanForm.iban_kontoinhaber || 'Kontoinhaber nicht gesetzt'})` : 'Noch keine IBAN hinterlegt.' }}
               Nur Admins können die IBAN ändern.
+            </p>
+          </div>
+
+          <div class="ressourcen-gruppe">
+            <h3>Instagram-Link</h3>
+            <p class="hint">Wird auf der öffentlichen Willkommensseite (/willkommen) verlinkt, solange das Lager läuft oder bevorsteht.</p>
+            <template v-if="istVereinsleitung">
+              <form class="ressource-form" @submit.prevent="instagramSpeichernHandler">
+                <label>Instagram-URL <input v-model="instagramForm.instagram_url" type="url" placeholder="https://instagram.com/..." /></label>
+                <button type="submit" :disabled="instagramSpeichern">{{ instagramSpeichern ? 'Speichere…' : 'Speichern' }}</button>
+              </form>
+            </template>
+            <p v-else class="hint">
+              {{ instagramForm.instagram_url || 'Noch kein Instagram-Link hinterlegt.' }}
             </p>
           </div>
 

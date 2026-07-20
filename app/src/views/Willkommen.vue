@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../composables/useAuth'
 import { ladeWetter, type TagesWetter } from '../lib/weather'
 
 interface LagerInfo {
@@ -13,15 +14,23 @@ interface LagerInfo {
   ort_lat: number | null
   ort_lng: number | null
   status: string
+  foto_link: string | null
+  instagram_url: string | null
+  diashow_datum: string | null
+  diashow_zeit: string | null
+  diashow_ort: string | null
 }
 
 const route = useRoute()
+const router = useRouter()
+const { session } = useAuth()
 const lagerId = route.params.id as string
 
 const lager = ref<LagerInfo | null>(null)
 const wetter = ref<TagesWetter[]>([])
 const ladefehler = ref('')
 const wetterFehler = ref('')
+const pruefeTeamZugriff = ref(true)
 
 function formatDatum(d: string) {
   return new Intl.DateTimeFormat('de-CH', {
@@ -32,7 +41,33 @@ function formatDatum(d: string) {
   }).format(new Date(d + 'T00:00:00'))
 }
 
+type Phase = 'bevorstehend' | 'laufend' | 'vergangen'
+
+const phase = computed<Phase>(() => {
+  if (!lager.value) return 'bevorstehend'
+  const heute = new Date().toISOString().slice(0, 10)
+  if (lager.value.end_datum && heute > lager.value.end_datum) return 'vergangen'
+  if (lager.value.start_datum && heute >= lager.value.start_datum) return 'laufend'
+  return 'bevorstehend'
+})
+
 onMounted(async () => {
+  // Wer bereits im Leiterteam dieses Lagers ist (egal ob Vereinsmitglied
+  // oder explizit im Lager bestätigt), soll nie auf der Gastansicht
+  // landen -- auch nicht bei einem vergangenen Lager -- sondern direkt
+  // auf der Leiter-Seite.
+  if (session.value) {
+    const [{ data: darfRein }, { data: orgMitglied }] = await Promise.all([
+      supabase.rpc('can_access_lager', { p_lager_id: lagerId }),
+      supabase.rpc('is_org_mitglied_von_lager', { p_lager_id: lagerId }),
+    ])
+    if (darfRein || orgMitglied) {
+      await router.replace(`/lager/${lagerId}/dashboard`)
+      return
+    }
+  }
+  pruefeTeamZugriff.value = false
+
   const { data, error } = await supabase.rpc('get_lager_willkommen', { p_lager_id: lagerId })
   if (error || !data) {
     ladefehler.value = 'Diese Lagerseite ist nicht verfügbar.'
@@ -57,7 +92,8 @@ onMounted(async () => {
 
 <template>
   <main>
-    <p v-if="ladefehler" class="error">{{ ladefehler }}</p>
+    <p v-if="pruefeTeamZugriff"></p>
+    <p v-else-if="ladefehler" class="error">{{ ladefehler }}</p>
 
     <template v-else-if="lager">
       <h1>Wir freuen uns auf euch!</h1>
@@ -82,6 +118,26 @@ onMounted(async () => {
             <span class="wetter-temp">{{ w.tempMin }}° – {{ w.tempMax }}°</span>
           </li>
         </ul>
+      </section>
+
+      <section v-if="phase !== 'vergangen' && lager.instagram_url" class="info-karte insta-karte">
+        <h2>Folgt uns</h2>
+        <p>{{ phase === 'laufend' ? 'Wir posten während dem Lager laufend Fotos & Updates auf Instagram.' : 'Schon vor dem Lager gibt es News auf unserem Instagram.' }}</p>
+        <a :href="lager.instagram_url" target="_blank" rel="noopener noreferrer" class="insta-link">📷 Zu unserem Instagram</a>
+      </section>
+
+      <section v-if="phase === 'vergangen'" class="info-karte insta-karte">
+        <h2>Das Lager ist vorbei</h2>
+        <template v-if="lager.diashow_datum">
+          <p>
+            An der Diashow zeigen wir Fotos & Erinnerungen ans Lager:
+            <strong>{{ formatDatum(lager.diashow_datum) }}</strong>
+            <template v-if="lager.diashow_zeit"> · {{ lager.diashow_zeit.slice(0, 5) }} Uhr</template>
+            <template v-if="lager.diashow_ort"> · {{ lager.diashow_ort }}</template>
+          </p>
+        </template>
+        <p v-else>Die Diashow mit Fotos & Erinnerungen ans Lager wird noch angekündigt.</p>
+        <a v-if="lager.foto_link" :href="lager.foto_link" target="_blank" rel="noopener noreferrer" class="insta-link">🖼️ Zum Fotoalbum</a>
       </section>
 
       <p class="hint">
@@ -145,6 +201,14 @@ h1 {
 .wetter-temp {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
+}
+.insta-karte {
+  text-align: center;
+}
+.insta-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-weight: 700;
 }
 .hint {
   color: var(--color-text-muted);
