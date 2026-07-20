@@ -12,6 +12,7 @@ interface VereinMitgliedschaft {
   homepage: string | null
   meine_rolle: 'mitglied' | 'leitung' | 'admin'
   mein_status: 'angefragt' | 'mitglied' | 'abgelehnt'
+  offene_beitrittsanfragen: number
 }
 
 interface LagerShortcut {
@@ -52,6 +53,7 @@ const joinSaving = ref(false)
 
 const mitgliedVereine = computed(() => vereine.value.filter((v) => v.mein_status === 'mitglied'))
 const offeneAnfragen = computed(() => vereine.value.filter((v) => v.mein_status === 'angefragt'))
+const wartendeAnfragenBeiMir = computed(() => vereine.value.filter((v) => v.offene_beitrittsanfragen > 0))
 
 function slugify(text: string) {
   return text
@@ -232,6 +234,18 @@ onMounted(async () => {
         </section>
       </template>
 
+      <!-- Beitrittsanfragen, die auf DEINE Entscheidung warten (nicht die eigenen gesendeten) -->
+      <section v-if="wartendeAnfragenBeiMir.length" class="karte anfragen-karte">
+        <h2>Beitrittsanfragen warten auf dich</h2>
+        <ul class="anfragen-liste">
+          <li v-for="v in wartendeAnfragenBeiMir" :key="v.organisation_id">
+            <span>{{ v.name }}</span>
+            <span class="badge warn">{{ v.offene_beitrittsanfragen }} offen</span>
+            <button type="button" class="klein" @click="zuOrganisation(v)">Bearbeiten</button>
+          </li>
+        </ul>
+      </section>
+
       <section v-if="mitgliedVereine.length || laden" class="karte">
         <h2>Deine Vereine</h2>
         <p class="hint">Wähle einen Verein, um zu Organisation, Mitgliedern und Lagern zu gelangen.</p>
@@ -331,6 +345,11 @@ main { max-width: 1000px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
   margin-bottom: 0.9rem;
 }
 .karte h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+.anfragen-karte { border-color: #c98a3f; border-width: 2px; }
+.anfragen-liste { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.anfragen-liste li { display: flex; align-items: center; gap: 0.6rem; }
+.anfragen-liste .badge.warn { background: #c98a3f; color: #fff; padding: 0.15rem 0.5rem; border-radius: var(--radius-pill); font-size: 0.78rem; }
+button.klein { font-size: 0.8rem; padding: 0.3rem 0.7rem; }
 .einstieg-karte { border-color: var(--color-accent); border-width: 2px; padding: 1.25rem 1.4rem; }
 .einstieg-karte h2 { font-size: 1.3rem; }
 .einstieg-karte h3 { margin: 1.25rem 0 0.5rem; font-size: 1rem; }
