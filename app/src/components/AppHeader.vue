@@ -204,6 +204,8 @@ async function logout() {
   color: #fdfbf3;
 }
 .lager-name {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 0.95rem;
   color: var(--color-text-muted);
   overflow: hidden;

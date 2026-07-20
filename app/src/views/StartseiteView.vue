@@ -98,7 +98,7 @@ async function ladeDaten() {
 
 async function sucheVereine() {
   joinOrgId.value = ''
-  if (suche.value.trim().length < 2) {
+  if (suche.value.trim().length < 1) {
     treffer.value = []
     return
   }
