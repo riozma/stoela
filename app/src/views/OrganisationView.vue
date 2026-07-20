@@ -17,6 +17,7 @@ import {
   type OrgRessourceForm,
   type OrgRessourceTyp,
 } from '../lib/orgRessourcen'
+import { kategorieLabel } from '../lib/quittungenKategorien'
 
 interface VereinMitgliedschaft {
   organisation_id: string
@@ -197,8 +198,93 @@ const vergangeneLager = computed(() => {
 /** Für den Jahresfahrplan-Tab: nächstes/laufendes Lager, sonst das zuletzt vergangene. */
 const relevantesLager = computed(() => kommendeOderLaufendeLager.value[0] ?? vergangeneLager.value[0] ?? null)
 
-type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'kalender' | 'ressourcen' | 'lager-erstellen'
+type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'kalender' | 'ressourcen' | 'lager-erstellen' | 'quittungen'
 const aktivBereich = ref<VereinBereich>('lager')
+
+interface OrgQuittung {
+  id: string
+  betrag: number
+  zweck: string
+  status: 'pending' | 'bezahlt' | 'abgelehnt'
+  kategorie: string | null
+  richtung: 'ausgabe' | 'einnahme'
+  created_at: string
+  lager_id: string
+  lager_name: string
+  lager_jahr: number
+  einreicher_name: string
+}
+
+const orgQuittungen = ref<OrgQuittung[]>([])
+const orgQuittungenLaden = ref(false)
+const orgQuittungenGeladenFuer = ref<string | null>(null)
+const quittungFilterLager = ref('')
+const quittungFilterStatus = ref('')
+
+const orgQuittungenGefiltert = computed(() =>
+  orgQuittungen.value.filter(
+    (q) =>
+      (!quittungFilterLager.value || q.lager_id === quittungFilterLager.value) &&
+      (!quittungFilterStatus.value || q.status === quittungFilterStatus.value),
+  ),
+)
+
+const orgQuittungenSumme = computed(() => {
+  let ausgaben = 0
+  let einnahmen = 0
+  for (const q of orgQuittungenGefiltert.value) {
+    if (q.status !== 'bezahlt') continue
+    if (q.richtung === 'ausgabe') ausgaben += q.betrag
+    else einnahmen += q.betrag
+  }
+  return { ausgaben, einnahmen }
+})
+
+async function ladeOrgQuittungen() {
+  if (!orgAuswahl.value || !lager.value.length) return
+  if (orgQuittungenGeladenFuer.value === orgAuswahl.value) return
+  orgQuittungenLaden.value = true
+  const { data, error } = await supabase
+    .from('quittungen')
+    .select(`
+      id, betrag, zweck, status, kategorie, richtung, created_at, lager_id,
+      lager:lager_id ( name, jahr ),
+      profiles:einreicher_id ( vorname, nachname, email )
+    `)
+    .in('lager_id', lager.value.map((l) => l.id))
+    .order('created_at', { ascending: false })
+  orgQuittungenLaden.value = false
+  if (error) return
+  orgQuittungen.value = (data ?? []).map((row: any) => {
+    const l = Array.isArray(row.lager) ? row.lager[0] : row.lager
+    const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+    return {
+      id: row.id,
+      betrag: row.betrag,
+      zweck: row.zweck,
+      status: row.status,
+      kategorie: row.kategorie,
+      richtung: row.richtung,
+      created_at: row.created_at,
+      lager_id: row.lager_id,
+      lager_name: l?.name ?? '–',
+      lager_jahr: l?.jahr ?? 0,
+      einreicher_name: p?.vorname ? `${p.vorname} ${p.nachname ?? ''}`.trim() : (p?.email ?? 'Unbekannt'),
+    }
+  })
+  orgQuittungenGeladenFuer.value = orgAuswahl.value
+}
+
+watch(aktivBereich, (b) => {
+  if (b === 'quittungen') ladeOrgQuittungen()
+})
+watch(orgAuswahl, () => {
+  orgQuittungenGeladenFuer.value = null
+})
+
+function formatBetragOrg(b: number) {
+  return new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' }).format(b)
+}
 
 function profilVon(m: VereinsMitglied) {
   if (m.vorname !== undefined || m.nachname !== undefined || m.email !== undefined) {
@@ -898,6 +984,7 @@ onMounted(async () => {
           <button type="button" :class="{ aktiv: aktivBereich === 'kalender' }" @click="aktivBereich = 'kalender'">Kalender</button>
           <button v-if="istVereinsleitung" type="button" :class="{ aktiv: aktivBereich === 'lager-erstellen' }" @click="aktivBereich = 'lager-erstellen'">Lager erstellen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
+          <button type="button" :class="{ aktiv: aktivBereich === 'quittungen' }" @click="aktivBereich = 'quittungen'">Quittungen</button>
         </nav>
 
         <section v-if="aktivBereich === 'lager' && relevantesLager && !relevantesLager.can_edit" class="karte einstieg-karte">
@@ -1057,6 +1144,49 @@ onMounted(async () => {
               </div>
             </form>
           </div>
+        </section>
+
+        <section v-if="aktivBereich === 'quittungen'" class="karte">
+          <h2>Quittungen – alle Lager</h2>
+          <p class="hint">Übersicht über alle Quittungen aus den Lagern dieses Vereins. Einreichen/bearbeiten läuft weiterhin über das jeweilige Lager selbst.</p>
+
+          <p v-if="orgQuittungenLaden">Lade…</p>
+          <template v-else>
+            <div class="quittungen-filter">
+              <label>Lager
+                <select v-model="quittungFilterLager">
+                  <option value="">Alle</option>
+                  <option v-for="l in lager" :key="l.id" :value="l.id">{{ l.name }} ({{ l.jahr }})</option>
+                </select>
+              </label>
+              <label>Status
+                <select v-model="quittungFilterStatus">
+                  <option value="">Alle</option>
+                  <option value="pending">Ausstehend</option>
+                  <option value="bezahlt">Bezahlt</option>
+                  <option value="abgelehnt">Abgelehnt</option>
+                </select>
+              </label>
+            </div>
+
+            <p class="hint">
+              Bezahlt – Ausgaben: <strong>{{ formatBetragOrg(orgQuittungenSumme.ausgaben) }}</strong> ·
+              Einnahmen: <strong>{{ formatBetragOrg(orgQuittungenSumme.einnahmen) }}</strong>
+            </p>
+
+            <div v-if="orgQuittungenGefiltert.length" class="q-liste">
+              <article v-for="q in orgQuittungenGefiltert" :key="q.id" class="q-karte" :class="'status-' + q.status">
+                <div class="q-kopf">
+                  <span class="status">{{ q.status === 'pending' ? '🟡 Ausstehend' : q.status === 'bezahlt' ? '✅ Bezahlt' : '🔴 Abgelehnt' }}</span>
+                  <strong>{{ formatBetragOrg(q.betrag) }}</strong>
+                </div>
+                <p><strong>{{ q.lager_name }}</strong> ({{ q.lager_jahr }}) · {{ q.einreicher_name }}</p>
+                <p>{{ q.zweck }}</p>
+                <p v-if="q.kategorie" class="hint">{{ q.richtung === 'einnahme' ? 'Einnahme' : 'Ausgabe' }} · {{ kategorieLabel(q.kategorie) }}</p>
+              </article>
+            </div>
+            <p v-else class="hint">Keine Quittungen gefunden.</p>
+          </template>
         </section>
 
         <section v-if="aktivBereich === 'kalender' && orgKalenderBereit" class="karte">
@@ -1445,4 +1575,12 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .termin-zeile .klein-btn { white-space: nowrap; text-decoration: none; }
 .kopiert { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #2e7d32 !important; }
 .ressource-admin { margin-top: 0.5rem; }
+.quittungen-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; }
+.quittungen-filter label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; color: var(--color-text-muted); }
+.q-liste { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+.q-karte { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; }
+.q-karte.status-pending { border-left: 4px solid #c98a3f; }
+.q-karte.status-bezahlt { border-left: 4px solid #5a9a5a; }
+.q-karte.status-abgelehnt { border-left: 4px solid var(--color-danger); }
+.q-kopf { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; }
 </style>
