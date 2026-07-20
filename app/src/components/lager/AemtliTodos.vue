@@ -16,13 +16,12 @@ const laden = ref(true)
 const fehler = ref('')
 
 const organisationId = ref<string | null>(null)
-const vorlageBearbeiten = ref(false)
-const vorlage = ref<AemtliTodo[]>([])
-const neuerVorlagenText = ref('')
-const vorlageSpeichern = ref(false)
 
 const offen = computed(() => todos.value.filter((t) => !t.done).length)
 const erledigt = computed(() => todos.value.filter((t) => t.done).length)
+const vorlageLink = computed(() =>
+  organisationId.value ? `/organisation?org=${organisationId.value}&aemtli=${props.aemtliId}` : '',
+)
 
 function istPlatzhalter(liste: AemtliTodo[]) {
   return liste.length === 1 && liste[0].text.startsWith('Aufgaben für ')
@@ -52,12 +51,10 @@ async function ladeOrgUndVorlage(): Promise<AemtliTodo[]> {
 
   const bestehende = (meta?.default_checkliste as AemtliTodo[]) ?? []
   if (bestehende.length) {
-    vorlage.value = bestehende
     return bestehende
   }
 
   const fallback = initialTodosForAemtli(props.aemtliName)
-  vorlage.value = fallback
   if (organisationId.value) {
     await supabase.from('org_aemtli_meta').upsert(
       { organisation_id: organisationId.value, aemtli_id: props.aemtliId, default_checkliste: fallback },
@@ -65,28 +62,6 @@ async function ladeOrgUndVorlage(): Promise<AemtliTodo[]> {
     )
   }
   return fallback
-}
-
-async function vorlageSpeichernUndSchliessen() {
-  if (!organisationId.value) return
-  vorlageSpeichern.value = true
-  await supabase.from('org_aemtli_meta').upsert(
-    { organisation_id: organisationId.value, aemtli_id: props.aemtliId, default_checkliste: vorlage.value },
-    { onConflict: 'organisation_id,aemtli_id' },
-  )
-  vorlageSpeichern.value = false
-  vorlageBearbeiten.value = false
-}
-
-function vorlageTodoHinzufuegen() {
-  const text = neuerVorlagenText.value.trim()
-  if (!text) return
-  vorlage.value.push({ id: crypto.randomUUID(), text, done: false })
-  neuerVorlagenText.value = ''
-}
-
-function vorlageTodoEntfernen(id: string) {
-  vorlage.value = vorlage.value.filter((t) => t.id !== id)
 }
 
 async function ensureZuweisung() {
@@ -191,29 +166,9 @@ onMounted(async () => {
       <button type="submit">Hinzufügen</button>
     </form>
 
-    <button type="button" class="secondary vorlage-link" @click="vorlageBearbeiten = !vorlageBearbeiten">
-      {{ vorlageBearbeiten ? 'Vorlage schliessen' : 'Standard-Vorlage fürs nächste Jahr bearbeiten' }}
-    </button>
-
-    <div v-if="vorlageBearbeiten" class="vorlage-box">
-      <p class="hint">
-        Diese Liste gilt für alle künftigen Lagerjahre als Ausgangspunkt für dieses Ämtli – unabhängig von den
-        Häkchen oben.
-      </p>
-      <ul class="todo-liste">
-        <li v-for="t in vorlage" :key="t.id">
-          <input class="text-input" v-model="t.text" />
-          <button type="button" class="secondary klein" @click="vorlageTodoEntfernen(t.id)">×</button>
-        </li>
-      </ul>
-      <form class="inline-form" @submit.prevent="vorlageTodoHinzufuegen">
-        <input v-model="neuerVorlagenText" placeholder="Neuer Vorlage-Punkt..." />
-        <button type="submit">Hinzufügen</button>
-      </form>
-      <button type="button" @click="vorlageSpeichernUndSchliessen" :disabled="vorlageSpeichern">
-        {{ vorlageSpeichern ? 'Speichere...' : 'Vorlage speichern' }}
-      </button>
-    </div>
+    <router-link v-if="vorlageLink" :to="vorlageLink" class="secondary vorlage-link">
+      Standard-Vorlage fürs nächste Jahr in Organisation bearbeiten →
+    </router-link>
   </section>
 </template>
 
@@ -253,12 +208,5 @@ header h3 { margin: 0; font-size: 1rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
 .error { color: var(--color-danger); }
 button.klein { font-size: 0.75rem; padding: 0.2rem 0.45rem; }
-.vorlage-link { margin-top: 0.9rem; font-size: 0.82rem; }
-.vorlage-box {
-  margin-top: 0.75rem;
-  padding: 0.85rem;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
+.vorlage-link { display: inline-block; margin-top: 0.9rem; font-size: 0.82rem; text-decoration: none; }
 </style>

@@ -6,6 +6,7 @@ import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
+import AemtliVorlagenEditor from '../components/organisation/AemtliVorlagenEditor.vue'
 import { ECAMP_URL } from '../lib/constants'
 import { downloadIcs } from '../lib/ics'
 import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../lib/orgKalender'
@@ -214,8 +215,14 @@ const vergangeneLager = computed(() => {
 /** Für den Jahresfahrplan-Tab: nächstes/laufendes Lager, sonst das zuletzt vergangene. */
 const relevantesLager = computed(() => kommendeOderLaufendeLager.value[0] ?? vergangeneLager.value[0] ?? null)
 
-type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'kalender' | 'ressourcen' | 'lager-erstellen' | 'quittungen'
+type VereinBereich = 'lager' | 'team' | 'fahrplan' | 'kalender' | 'ressourcen' | 'lager-erstellen' | 'quittungen' | string
 const aktivBereich = ref<VereinBereich>('lager')
+
+const meineOrgAemtli = computed(() =>
+  aemtliBesetzung.value
+    .filter((a) => a.leute.some((l) => l.profile_id === session.value?.user.id))
+    .map((a) => ({ aemtli_id: a.aemtli_id, aemtli_name: a.aemtli_name })),
+)
 
 interface OrgQuittung {
   id: string
@@ -408,20 +415,29 @@ function formatBetragOrg(b: number) {
 }
 
 // --- Org-weite Ämtli-Besetzung (vererbt an kommende Lager) ---
-interface AemtliBesetzungZeile {
+interface AemtliBesetzungPerson {
+  profile_id: string
+  name: string
+  quelle: 'organisation' | 'letztes_lager'
+}
+interface AemtliBesetzungGruppe {
   aemtli_id: string
   aemtli_name: string
-  profile_id: string | null
-  name: string
-  quelle: 'organisation' | 'letztes_lager' | 'keine'
+  leute: AemtliBesetzungPerson[]
 }
 
-const aemtliBesetzung = ref<AemtliBesetzungZeile[]>([])
+const aemtliBesetzung = ref<AemtliBesetzungGruppe[]>([])
 const aemtliBesetzungLaden = ref(false)
 const aemtliBesetzungGeladenFuer = ref<string | null>(null)
 const aemtliBesetzungSpeichern = ref<Record<string, boolean>>({})
+const neueZuweisungAuswahl = ref<Record<string, string>>({})
 
 const leiterPool = computed(() => vereinsLeiterListe.value.filter((z): z is typeof z & { profile_id: string } => !!z.profile_id))
+
+function leiterPoolFuer(gruppe: AemtliBesetzungGruppe) {
+  const vergeben = new Set(gruppe.leute.map((l) => l.profile_id))
+  return leiterPool.value.filter((z) => !vergeben.has(z.profile_id))
+}
 
 async function ladeAemtliBesetzung() {
   if (!orgAuswahl.value) return
@@ -430,29 +446,43 @@ async function ladeAemtliBesetzung() {
   const { data, error } = await supabase.rpc('resolve_org_aemtli_besetzung', { p_organisation_id: orgAuswahl.value })
   aemtliBesetzungLaden.value = false
   if (error) return
-  aemtliBesetzung.value = (data ?? []).map((r: any) => ({
-    aemtli_id: r.aemtli_id,
-    aemtli_name: r.aemtli_name,
-    profile_id: r.profile_id,
-    name: r.profile_id ? `${r.vorname ?? ''} ${r.nachname ?? ''}`.trim() || r.email : '',
-    quelle: r.quelle,
-  }))
+  const gruppen = new Map<string, AemtliBesetzungGruppe>()
+  for (const r of (data ?? []) as any[]) {
+    if (!gruppen.has(r.aemtli_id)) gruppen.set(r.aemtli_id, { aemtli_id: r.aemtli_id, aemtli_name: r.aemtli_name, leute: [] })
+    if (r.profile_id) {
+      gruppen.get(r.aemtli_id)!.leute.push({
+        profile_id: r.profile_id,
+        name: `${r.vorname ?? ''} ${r.nachname ?? ''}`.trim() || r.email,
+        quelle: r.quelle,
+      })
+    }
+  }
+  aemtliBesetzung.value = [...gruppen.values()]
   aemtliBesetzungGeladenFuer.value = orgAuswahl.value
 }
 
-async function aemtliBesetzungAendern(aemtliId: string, profileId: string) {
-  if (!orgAuswahl.value || !session.value) return
+async function aemtliBesetzungHinzufuegen(aemtliId: string, profileId: string) {
+  if (!orgAuswahl.value || !profileId) return
   aemtliBesetzungSpeichern.value[aemtliId] = true
-  await supabase.from('org_aemtli_besetzung').upsert(
-    {
-      organisation_id: orgAuswahl.value,
-      aemtli_id: aemtliId,
-      profile_id: profileId || null,
-      updated_by: session.value.user.id,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'organisation_id,aemtli_id' },
-  )
+  await supabase.rpc('org_aemtli_besetzung_hinzufuegen', {
+    p_organisation_id: orgAuswahl.value,
+    p_aemtli_id: aemtliId,
+    p_profile_id: profileId,
+  })
+  neueZuweisungAuswahl.value[aemtliId] = ''
+  aemtliBesetzungSpeichern.value[aemtliId] = false
+  aemtliBesetzungGeladenFuer.value = null
+  await ladeAemtliBesetzung()
+}
+
+async function aemtliBesetzungEntfernen(aemtliId: string, profileId: string) {
+  if (!orgAuswahl.value) return
+  aemtliBesetzungSpeichern.value[aemtliId] = true
+  await supabase.rpc('org_aemtli_besetzung_entfernen', {
+    p_organisation_id: orgAuswahl.value,
+    p_aemtli_id: aemtliId,
+    p_profile_id: profileId,
+  })
   aemtliBesetzungSpeichern.value[aemtliId] = false
   aemtliBesetzungGeladenFuer.value = null
   await ladeAemtliBesetzung()
@@ -463,6 +493,7 @@ watch(aktivBereich, (b) => {
 })
 watch(orgAuswahl, () => {
   aemtliBesetzungGeladenFuer.value = null
+  ladeAemtliBesetzung()
 })
 
 function profilVon(m: VereinsMitglied) {
@@ -564,6 +595,10 @@ async function ladeVereine() {
     const byId = aktiveVereine.value.find((v) => v.organisation_id === ausQuery)
     const bySlug = aktiveVereine.value.find((v) => v.slug === ausQuery)
     orgAuswahl.value = byId?.organisation_id ?? bySlug?.organisation_id ?? aktiveVereine.value[0]?.organisation_id ?? ''
+  }
+  const aemtliQuery = typeof route.query.aemtli === 'string' ? route.query.aemtli : ''
+  if (aemtliQuery) {
+    aktivBereich.value = `aemtli:${aemtliQuery}`
   }
 }
 
@@ -1165,6 +1200,13 @@ onMounted(async () => {
           <button v-if="istVereinsleitung" type="button" :class="{ aktiv: aktivBereich === 'lager-erstellen' }" @click="aktivBereich = 'lager-erstellen'">Lager erstellen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'quittungen' }" @click="aktivBereich = 'quittungen'">Quittungen</button>
+          <button
+            v-for="a in meineOrgAemtli"
+            :key="a.aemtli_id"
+            type="button"
+            :class="{ aktiv: aktivBereich === `aemtli:${a.aemtli_id}` }"
+            @click="aktivBereich = `aemtli:${a.aemtli_id}`"
+          >{{ a.aemtli_name }}</button>
         </nav>
 
         <section v-if="aktivBereich === 'lager' && relevantesLager && !relevantesLager.can_edit" class="karte einstieg-karte">
@@ -1686,40 +1728,40 @@ onMounted(async () => {
             die Zuteilung des zuletzt vergangenen Lagers. Lagerleitung, Admin und Leiter können das anpassen.
           </p>
           <p v-if="aemtliBesetzungLaden">Lade…</p>
-          <table v-else-if="aemtliBesetzung.length" class="liste">
-            <thead>
-              <tr>
-                <th>Ämtli</th>
-                <th>Aktuell</th>
-                <th>Herkunft</th>
-                <th>Ändern</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in aemtliBesetzung" :key="a.aemtli_id">
-                <td>{{ a.aemtli_name }}</td>
-                <td>{{ a.name || '–' }}</td>
-                <td class="hint">
-                  {{ a.quelle === 'organisation' ? 'Verein (fix)' : a.quelle === 'letztes_lager' ? 'letztes Lager (übernommen)' : '–' }}
-                </td>
-                <td>
-                  <select
-                    :value="a.profile_id ?? ''"
-                    :disabled="aemtliBesetzungSpeichern[a.aemtli_id]"
-                    @change="aemtliBesetzungAendern(a.aemtli_id, ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">– niemand –</option>
-                    <option v-for="z in leiterPool" :key="z.profile_id" :value="z.profile_id!">
-                      {{ zeilenName(z.vorname, z.nachname, z.email) }}
-                    </option>
-                  </select>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-else-if="aemtliBesetzung.length" class="aemtli-besetzung-liste">
+            <article v-for="a in aemtliBesetzung" :key="a.aemtli_id" class="aemtli-besetzung-karte">
+              <strong>{{ a.aemtli_name }}</strong>
+              <ul v-if="a.leute.length" class="aemtli-leute">
+                <li v-for="p in a.leute" :key="p.profile_id">
+                  <span>{{ p.name }}</span>
+                  <span class="hint klein">{{ p.quelle === 'organisation' ? 'Verein (fix)' : 'letztes Lager (übernommen)' }}</span>
+                  <button type="button" class="secondary klein-btn" :disabled="aemtliBesetzungSpeichern[a.aemtli_id]" @click="aemtliBesetzungEntfernen(a.aemtli_id, p.profile_id)">Entfernen</button>
+                </li>
+              </ul>
+              <p v-else class="hint">Noch niemand zugeteilt.</p>
+              <div class="inline-aktionen">
+                <select v-model="neueZuweisungAuswahl[a.aemtli_id]" :disabled="aemtliBesetzungSpeichern[a.aemtli_id]">
+                  <option value="">Person auswählen…</option>
+                  <option v-for="z in leiterPoolFuer(a)" :key="z.profile_id" :value="z.profile_id!">
+                    {{ zeilenName(z.vorname, z.nachname, z.email) }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="secondary klein-btn"
+                  :disabled="aemtliBesetzungSpeichern[a.aemtli_id] || !neueZuweisungAuswahl[a.aemtli_id]"
+                  @click="aemtliBesetzungHinzufuegen(a.aemtli_id, neueZuweisungAuswahl[a.aemtli_id])"
+                >+ hinzufügen</button>
+              </div>
+            </article>
+          </div>
           <p v-else class="hint">Noch kein Ämtli-Katalog vorhanden.</p>
         </section>
       </template>
+
+      <section v-for="a in meineOrgAemtli" :key="a.aemtli_id" v-show="aktivBereich === `aemtli:${a.aemtli_id}`" class="karte">
+        <AemtliVorlagenEditor v-if="orgAuswahl" :organisation-id="orgAuswahl" :aemtli-id="a.aemtli_id" :aemtli-name="a.aemtli_name" />
+      </section>
 
       <p v-if="info" class="ok">{{ info }}</p>
       <p v-if="fehler" class="error">{{ fehler }}</p>
@@ -1823,6 +1865,11 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .modal-karte h3 { margin: 0 0 0.5rem; }
 .modal-aktionen { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
 .radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
+.aemtli-besetzung-liste { display: grid; gap: 0.65rem; margin: 0.75rem 0; }
+.aemtli-besetzung-karte { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem 0.85rem; }
+.aemtli-leute { list-style: none; margin: 0.5rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.aemtli-leute li { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.aemtli-besetzung-karte .inline-aktionen { margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .ressourcen-gruppe { margin: 1.25rem 0; }
 .ressourcen-gruppe h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .ressourcen-liste { display: grid; gap: 0.65rem; margin: 0.75rem 0; }
