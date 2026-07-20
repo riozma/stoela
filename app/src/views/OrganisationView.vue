@@ -7,6 +7,7 @@ import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import AemtliVorlagenEditor from '../components/organisation/AemtliVorlagenEditor.vue'
+import { aemtliSlug } from '../lib/aemtliSlug'
 import { ECAMP_URL } from '../lib/constants'
 import { downloadIcs } from '../lib/ics'
 import { orgKalenderHttpsUrl, orgKalenderWebcalUrl } from '../lib/orgKalender'
@@ -231,11 +232,15 @@ interface OrgQuittung {
   status: 'pending' | 'bezahlt' | 'abgelehnt'
   kategorie: string | null
   richtung: 'ausgabe' | 'einnahme'
+  ablehnungsgrund: string | null
   created_at: string
   lager_id: string
   lager_name: string
   lager_jahr: number
   einreicher_name: string
+  iban: string | null
+  iban_bezeichnung: string | null
+  dateien: { id: string; storage_path: string; dateiname: string | null }[]
 }
 
 const orgQuittungen = ref<OrgQuittung[]>([])
@@ -369,9 +374,11 @@ async function ladeOrgQuittungen() {
   const { data, error } = await supabase
     .from('quittungen')
     .select(`
-      id, betrag, zweck, status, kategorie, richtung, created_at, lager_id,
+      id, betrag, zweck, status, kategorie, richtung, ablehnungsgrund, created_at, lager_id,
       lager:lager_id ( name, jahr ),
-      profiles:einreicher_id ( vorname, nachname, email )
+      profiles:einreicher_id ( vorname, nachname, email ),
+      profile_ibans ( iban, bezeichnung ),
+      quittung_dateien ( id, storage_path, dateiname )
     `)
     .in('lager_id', lager.value.map((l) => l.id))
     .order('created_at', { ascending: false })
@@ -380,6 +387,7 @@ async function ladeOrgQuittungen() {
   orgQuittungen.value = (data ?? []).map((row: any) => {
     const l = Array.isArray(row.lager) ? row.lager[0] : row.lager
     const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+    const iban = Array.isArray(row.profile_ibans) ? row.profile_ibans[0] : row.profile_ibans
     return {
       id: row.id,
       betrag: row.betrag,
@@ -387,14 +395,55 @@ async function ladeOrgQuittungen() {
       status: row.status,
       kategorie: row.kategorie,
       richtung: row.richtung,
+      ablehnungsgrund: row.ablehnungsgrund,
       created_at: row.created_at,
       lager_id: row.lager_id,
       lager_name: l?.name ?? '–',
       lager_jahr: l?.jahr ?? 0,
       einreicher_name: p?.vorname ? `${p.vorname} ${p.nachname ?? ''}`.trim() : (p?.email ?? 'Unbekannt'),
+      iban: iban?.iban ?? null,
+      iban_bezeichnung: iban?.bezeichnung ?? null,
+      dateien: row.quittung_dateien ?? [],
     }
   })
   orgQuittungenGeladenFuer.value = orgAuswahl.value
+}
+
+const istFinanzenAemtli = computed(() => meineOrgAemtli.value.some((a) => aemtliSlug(a.aemtli_name) === 'finanzen'))
+
+const orgAblehnung = ref<{ id: string; grund: string } | null>(null)
+
+async function orgQuittungStatusSetzen(id: string, status: 'bezahlt' | 'abgelehnt', grund?: string) {
+  if (!session.value || !istFinanzenAemtli.value) return
+  const { error } = await supabase.from('quittungen').update({
+    status,
+    bearbeitet_von: session.value.user.id,
+    bearbeitet_am: new Date().toISOString(),
+    ablehnungsgrund: status === 'abgelehnt' ? grund ?? null : null,
+  }).eq('id', id)
+  if (error) { fehler.value = error.message; return }
+  orgAblehnung.value = null
+  orgQuittungenGeladenFuer.value = null
+  await ladeOrgQuittungen()
+}
+
+async function orgQuittungStatusZuruecksetzen(id: string) {
+  if (!istFinanzenAemtli.value) return
+  if (!confirm('Status auf «ausstehend» zurücksetzen?')) return
+  const { error } = await supabase.from('quittungen').update({
+    status: 'pending',
+    ablehnungsgrund: null,
+    bearbeitet_von: null,
+    bearbeitet_am: null,
+  }).eq('id', id)
+  if (error) { fehler.value = error.message; return }
+  orgQuittungenGeladenFuer.value = null
+  await ladeOrgQuittungen()
+}
+
+async function orgQuittungDateiOeffnen(path: string) {
+  const { data } = await supabase.storage.from('quittungen').createSignedUrl(path, 3600)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
 }
 
 watch(aktivBereich, (b) => {
@@ -1384,7 +1433,10 @@ onMounted(async () => {
 
         <section v-if="aktivBereich === 'quittungen'" class="karte">
           <h2>Quittungen – alle Lager</h2>
-          <p class="hint">Übersicht über alle Quittungen aus den Lagern dieses Vereins. Bearbeiten (bis zur Bestätigung) läuft weiterhin über das jeweilige Lager.</p>
+          <p class="hint">
+            Übersicht über alle Quittungen aus den Lagern dieses Vereins.
+            {{ istFinanzenAemtli ? 'Als Finanzen-Ämtli kannst du hier direkt Quittungen bestätigen, ablehnen oder Belege öffnen.' : 'Bearbeiten können nur Personen mit dem Finanzen-Ämtli.' }}
+          </p>
 
           <h3>Quittung einreichen</h3>
           <form class="form-grid" @submit.prevent="quittungEinreichen">
@@ -1458,6 +1510,28 @@ onMounted(async () => {
                 <p><strong>{{ q.lager_name }}</strong> ({{ q.lager_jahr }}) · {{ q.einreicher_name }}</p>
                 <p>{{ q.zweck }}</p>
                 <p v-if="q.kategorie" class="hint">{{ q.richtung === 'einnahme' ? 'Einnahme' : 'Ausgabe' }} · {{ kategorieLabel(q.kategorie) }}</p>
+                <p class="hint">IBAN: {{ q.iban ? `${q.iban_bezeichnung ? q.iban_bezeichnung + ': ' : ''}${q.iban}` : '–' }}</p>
+                <p v-if="q.status === 'abgelehnt' && q.ablehnungsgrund" class="ablehnung">Abgelehnt: {{ q.ablehnungsgrund }}</p>
+
+                <div v-if="istFinanzenAemtli" class="aktionen">
+                  <button
+                    v-for="d in q.dateien"
+                    :key="d.id"
+                    type="button"
+                    class="secondary klein-btn"
+                    @click="orgQuittungDateiOeffnen(d.storage_path)"
+                  >📎 {{ d.dateiname ?? 'Anhang' }}</button>
+                  <template v-if="q.status === 'pending'">
+                    <button type="button" class="klein-btn" @click="orgQuittungStatusSetzen(q.id, 'bezahlt')">Als bezahlt markieren</button>
+                    <button type="button" class="secondary klein-btn" @click="orgAblehnung = { id: q.id, grund: '' }">Ablehnen</button>
+                  </template>
+                  <button v-else type="button" class="secondary klein-btn" @click="orgQuittungStatusZuruecksetzen(q.id)">Rückgängig (ausstehend)</button>
+                </div>
+                <div v-if="orgAblehnung?.id === q.id" class="inline-aktionen">
+                  <input v-model="orgAblehnung.grund" placeholder="Begründung..." required />
+                  <button type="button" class="klein-btn" @click="orgQuittungStatusSetzen(q.id, 'abgelehnt', orgAblehnung.grund)">Ablehnung bestätigen</button>
+                  <button type="button" class="secondary klein-btn" @click="orgAblehnung = null">Abbrechen</button>
+                </div>
               </article>
             </div>
             <p v-else class="hint">Keine Quittungen gefunden.</p>
@@ -1905,4 +1979,6 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .q-karte.status-bezahlt { border-left: 4px solid #5a9a5a; }
 .q-karte.status-abgelehnt { border-left: 4px solid var(--color-danger); }
 .q-kopf { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; }
+.q-karte .ablehnung { color: var(--color-danger); font-size: 0.88rem; }
+.q-karte .aktionen { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 </style>
