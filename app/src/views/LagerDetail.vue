@@ -54,6 +54,7 @@ import { isNavSectionAllowed } from '../lib/lagerNavConfig'
 import { leiterAlsCsv, leiterCsvDownload, type LeiterExportZeile } from '../lib/leiterCsv'
 import { tnAlsCsv, tnCsvDownload } from '../lib/tnCsv'
 import LagerBearbeitung from '../components/lager/LagerBearbeitung.vue'
+import AppDialog from '../components/AppDialog.vue'
 import LeiterErgaenzenPopup from '../components/lager/LeiterErgaenzenPopup.vue'
 
 interface Programmabschnitt extends ProgrammabschnittMitZuordnung {}
@@ -914,6 +915,9 @@ const aemtliZuteilenListe = computed(() =>
   ),
 )
 const aemtliZuteilenAktuell = computed(() => aemtliZuteilenListe.value[aemtliZuteilenIndex.value] ?? null)
+const aemtliZuteilenTitel = computed(() =>
+  aemtliZuteilenSchritt.value === 'check' ? 'Ämtli neu zuteilen' : (aemtliZuteilenAktuell.value?.name ?? 'Ämtli neu zuteilen'),
+)
 const aemtliZuteilenZugewiesene = computed(() => {
   if (!aemtliZuteilenAktuell.value) return []
   const id = aemtliZuteilenAktuell.value.id
@@ -2644,48 +2648,44 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         <p v-if="leiterFehler" class="error">{{ leiterFehler }}</p>
         </template>
 
-        <div v-if="aemtliZuteilenOffen" class="modal-overlay" @click.self="aemtliZuteilenAbbrechen">
-          <div class="modal-karte" role="dialog" aria-labelledby="zuteilen-titel">
-            <template v-if="aemtliZuteilenSchritt === 'check'">
-              <h3 id="zuteilen-titel">Ämtli neu zuteilen</h3>
-              <p class="hint">
-                Bevor es losgeht: Sind alle Leiter/innen für dieses Lager bereits erfasst
-                (unter «Leiter hinzufügen»)? Das Kassier-/Finanzen-Ämtli läuft nicht ab und wird hier übersprungen.
-              </p>
-              <div class="modal-aktionen">
-                <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Abbrechen</button>
-                <button type="button" @click="aemtliZuteilenWeiterNachCheck">Ja, alle erfasst – weiter</button>
-              </div>
-            </template>
-            <template v-else-if="aemtliZuteilenAktuell">
-              <h3 id="zuteilen-titel">{{ aemtliZuteilenAktuell.name }}</h3>
-              <p class="hint">Ämtli {{ aemtliZuteilenIndex + 1 }} von {{ aemtliZuteilenListe.length }}</p>
+        <AppDialog :open="aemtliZuteilenOffen" :titel="aemtliZuteilenTitel" @close="aemtliZuteilenAbbrechen">
+          <template v-if="aemtliZuteilenSchritt === 'check'">
+            <p class="hint">
+              Bevor es losgeht: Sind alle Leiter/innen für dieses Lager bereits erfasst
+              (unter «Leiter hinzufügen»)? Das Kassier-/Finanzen-Ämtli läuft nicht ab und wird hier übersprungen.
+            </p>
+            <div class="modal-aktionen">
+              <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Abbrechen</button>
+              <button type="button" @click="aemtliZuteilenWeiterNachCheck">Ja, alle erfasst – weiter</button>
+            </div>
+          </template>
+          <template v-else-if="aemtliZuteilenAktuell">
+            <p class="hint">Ämtli {{ aemtliZuteilenIndex + 1 }} von {{ aemtliZuteilenListe.length }}</p>
 
-              <div v-if="aemtliZuteilenZugewiesene.length" class="zuteilen-zugewiesen">
-                <span v-for="l in aemtliZuteilenZugewiesene" :key="l.id" class="rollen-pill">
-                  {{ l.vorname }} {{ l.nachname }}
-                  <button type="button" class="rollen-entfernen" title="Entfernen" @click="aemtliZuteilenPersonEntfernen(l.id)">×</button>
-                </span>
-              </div>
-              <p v-else class="hint">Noch niemandem zugewiesen.</p>
+            <div v-if="aemtliZuteilenZugewiesene.length" class="zuteilen-zugewiesen">
+              <span v-for="l in aemtliZuteilenZugewiesene" :key="l.id" class="rollen-pill">
+                {{ l.vorname }} {{ l.nachname }}
+                <button type="button" class="rollen-entfernen" title="Entfernen" @click="aemtliZuteilenPersonEntfernen(l.id)">×</button>
+              </span>
+            </div>
+            <p v-else class="hint">Noch niemandem zugewiesen.</p>
 
-              <div class="modal-zuweisen-zeile">
-                <select v-model="aemtliZuteilenAuswahl">
-                  <option value="">Person wählen…</option>
-                  <option v-for="l in aemtliZuteilenAuswahlbar" :key="l.id" :value="l.id">{{ l.vorname }} {{ l.nachname }}</option>
-                </select>
-                <button type="button" class="secondary" :disabled="!aemtliZuteilenAuswahl" @click="aemtliZuteilenPersonZuweisen">Zuweisen</button>
-              </div>
+            <div class="modal-zuweisen-zeile">
+              <select v-model="aemtliZuteilenAuswahl">
+                <option value="">Person wählen…</option>
+                <option v-for="l in aemtliZuteilenAuswahlbar" :key="l.id" :value="l.id">{{ l.vorname }} {{ l.nachname }}</option>
+              </select>
+              <button type="button" class="secondary" :disabled="!aemtliZuteilenAuswahl" @click="aemtliZuteilenPersonZuweisen">Zuweisen</button>
+            </div>
 
-              <div class="modal-aktionen">
-                <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Später fortsetzen</button>
-                <button type="button" @click="aemtliZuteilenWeiter">
-                  {{ aemtliZuteilenIndex < aemtliZuteilenListe.length - 1 ? 'Überspringen / Weiter' : 'Fertig' }}
-                </button>
-              </div>
-            </template>
-          </div>
-        </div>
+            <div class="modal-aktionen">
+              <button type="button" class="secondary" @click="aemtliZuteilenAbbrechen">Später fortsetzen</button>
+              <button type="button" @click="aemtliZuteilenWeiter">
+                {{ aemtliZuteilenIndex < aemtliZuteilenListe.length - 1 ? 'Überspringen / Weiter' : 'Fertig' }}
+              </button>
+            </div>
+          </template>
+        </AppDialog>
       </section>
 
       <!-- Gruppen -->
@@ -2987,15 +2987,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .rollen-entfernen { background: none; border: none; color: var(--color-text-muted); padding: 0 0.2rem; font-size: 0.85rem; line-height: 1; cursor: pointer; }
 .rollen-entfernen:hover { color: var(--color-danger); }
 .neue-rolle-input { width: 110px; margin-left: 0.4rem; }
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 200;
-  display: flex; align-items: center; justify-content: center; padding: 1rem;
-}
-.modal-karte {
-  background: var(--color-surface); border-radius: var(--radius-md); padding: 1.25rem;
-  max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-.modal-karte h3 { margin: 0 0 0.5rem; }
 .modal-aktionen { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
 .zuteilen-zugewiesen { margin: 0.5rem 0; }
 .modal-zuweisen-zeile { display: flex; gap: 0.5rem; margin-top: 0.75rem; }

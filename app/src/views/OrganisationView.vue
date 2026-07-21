@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../composables/useAuth'
 import { useGooglePlaces } from '../composables/useGooglePlaces'
 import AppHeader from '../components/AppHeader.vue'
+import AppDialog from '../components/AppDialog.vue'
 import LagerFahrplan from '../components/lager/LagerFahrplan.vue'
 import AemtliVorlagenEditor from '../components/organisation/AemtliVorlagenEditor.vue'
 import { aemtliSlug } from '../lib/aemtliSlug'
@@ -1602,38 +1603,35 @@ onMounted(async () => {
             <button type="submit" :disabled="lagerSpeichern">{{ lagerSpeichern ? 'Speichere...' : 'Lager erstellen' }}</button>
           </form>
 
-          <div v-if="laleiModalOffen" class="modal-overlay" @click.self="laleiModalAbbrechen">
-            <div class="modal-karte" role="dialog" aria-labelledby="lalei-modal-titel">
-              <h3 id="lalei-modal-titel">Lagerleitung (Lalei) festlegen</h3>
-              <p class="hint">Wer ist Lagerleitung für «{{ lagerForm.name }}»?</p>
-              <fieldset class="lalei-feld">
-                <label class="radio-label">
-                  <input v-model="laleiModal.modus" type="radio" value="selbst" />
-                  Ich bin Lagerleitung (Lalei)
-                </label>
-                <label class="radio-label">
-                  <input v-model="laleiModal.modus" type="radio" value="verein" />
-                  Person aus dem Verein als Lalei wählen
-                </label>
-                <label v-if="laleiModal.modus === 'verein'">
-                  Lalei
-                  <select v-model="laleiModal.personId" required>
-                    <option value="">– Person wählen –</option>
-                    <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
-                      {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
-                    </option>
-                  </select>
-                </label>
-                <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend.</p>
-              </fieldset>
-              <div class="modal-aktionen">
-                <button type="button" class="secondary" @click="laleiModalAbbrechen">Abbrechen</button>
-                <button type="button" :disabled="lagerSpeichern" @click="lagerErstellen">
-                  {{ lagerSpeichern ? 'Erstelle…' : 'Lager erstellen' }}
-                </button>
-              </div>
+          <AppDialog :open="laleiModalOffen" titel="Lagerleitung (Lalei) festlegen" @close="laleiModalAbbrechen">
+            <p class="hint">Wer ist Lagerleitung für «{{ lagerForm.name }}»?</p>
+            <fieldset class="lalei-feld">
+              <label class="radio-label">
+                <input v-model="laleiModal.modus" type="radio" value="selbst" />
+                Ich bin Lagerleitung (Lalei)
+              </label>
+              <label class="radio-label">
+                <input v-model="laleiModal.modus" type="radio" value="verein" />
+                Person aus dem Verein als Lalei wählen
+              </label>
+              <label v-if="laleiModal.modus === 'verein'">
+                Lalei
+                <select v-model="laleiModal.personId" required>
+                  <option value="">– Person wählen –</option>
+                  <option v-for="p in lagerPersonenPool" :key="p.id" :value="p.id">
+                    {{ p.vorname }} {{ p.nachname }}{{ p.email ? ` (${p.email})` : '' }}
+                  </option>
+                </select>
+              </label>
+              <p class="hint">Die Lalei ist standardmässig über die ganze Lagerzeit anwesend.</p>
+            </fieldset>
+            <div class="modal-aktionen">
+              <button type="button" class="secondary" @click="laleiModalAbbrechen">Abbrechen</button>
+              <button type="button" :disabled="lagerSpeichern" @click="lagerErstellen">
+                {{ lagerSpeichern ? 'Erstelle…' : 'Lager erstellen' }}
+              </button>
             </div>
-          </div>
+          </AppDialog>
         </section>
 
         <section v-if="aktivBereich === 'fahrplan'" class="karte">
@@ -1928,15 +1926,6 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .ok { color: #2e7d32; }
 .error { color: var(--color-danger); }
 .lalei-feld { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 200;
-  display: flex; align-items: center; justify-content: center; padding: 1rem;
-}
-.modal-karte {
-  background: var(--color-surface); border-radius: var(--radius-md); padding: 1.25rem;
-  max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-.modal-karte h3 { margin: 0 0 0.5rem; }
 .modal-aktionen { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
 .radio-label { flex-direction: row !important; align-items: center; gap: 0.5rem; color: var(--color-text) !important; }
 .aemtli-besetzung-liste { display: grid; gap: 0.65rem; margin: 0.75rem 0; }

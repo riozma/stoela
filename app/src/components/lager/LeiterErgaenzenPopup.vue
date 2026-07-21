@@ -4,6 +4,7 @@ import { supabase } from '../../supabaseClient'
 import { useAuth } from '../../composables/useAuth'
 import { ahvBeimTippen, ESSENS_OPTIONEN, essensLabel } from '../../lib/tnAnmeldung'
 import { speichereProfilLeiterDaten } from '../../lib/profileNames'
+import AppDialog from '../AppDialog.vue'
 
 const props = defineProps<{
   lagerId: string
@@ -110,64 +111,52 @@ async function speichernHandler() {
 </script>
 
 <template>
-  <div v-if="offen" class="popup-overlay">
-    <div class="popup-karte">
-      <h3>Bitte noch ergänzen</h3>
-      <p class="hint">Diese Angaben fehlen noch für deine Anmeldung in diesem Lager: {{ fehlt.join(', ') }}.</p>
+  <AppDialog :open="offen" titel="Bitte noch ergänzen" @close="offen = false">
+    <p class="hint">Diese Angaben fehlen noch für deine Anmeldung in diesem Lager: {{ fehlt.join(', ') }}.</p>
 
-      <form @submit.prevent="speichernHandler">
-        <label v-if="config.geburtsdatum && !anmeldung?.geburtsdatum">
-          Geburtsdatum <input v-model="form.geburtsdatum" type="date" />
+    <form @submit.prevent="speichernHandler">
+      <label v-if="config.geburtsdatum && !anmeldung?.geburtsdatum">
+        Geburtsdatum <input v-model="form.geburtsdatum" type="date" />
+      </label>
+      <label v-if="config.geschlecht && !anmeldung?.geschlecht">
+        Geschlecht
+        <select v-model="form.geschlecht">
+          <option value="">–</option>
+          <option value="m">männlich</option>
+          <option value="w">weiblich</option>
+          <option value="d">divers</option>
+        </select>
+      </label>
+      <label v-if="config.ahv_nr && !anmeldung?.ahv_nr">
+        AHV-Nummer
+        <input :value="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" @input="form.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" />
+      </label>
+      <fieldset v-if="config.essensgewohnheiten && !anmeldung?.essensgewohnheiten" class="essen-feld">
+        <legend>Essensgewohnheiten</legend>
+        <label v-for="o in ESSENS_OPTIONEN" :key="o.id" class="checkbox-label">
+          <input type="checkbox" :checked="form.essensgewohnheiten.includes(o.id)" @change="toggleEssens(o.id)" />
+          {{ o.label }}
         </label>
-        <label v-if="config.geschlecht && !anmeldung?.geschlecht">
-          Geschlecht
-          <select v-model="form.geschlecht">
-            <option value="">–</option>
-            <option value="m">männlich</option>
-            <option value="w">weiblich</option>
-            <option value="d">divers</option>
-          </select>
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="form.essensgewohnheiten_keine" />
+          Keine besonderen Gewohnheiten
         </label>
-        <label v-if="config.ahv_nr && !anmeldung?.ahv_nr">
-          AHV-Nummer
-          <input :value="form.ahv_nr" type="text" placeholder="756.xxxx.xxxx.xx" @input="form.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" />
-        </label>
-        <fieldset v-if="config.essensgewohnheiten && !anmeldung?.essensgewohnheiten" class="essen-feld">
-          <legend>Essensgewohnheiten</legend>
-          <label v-for="o in ESSENS_OPTIONEN" :key="o.id" class="checkbox-label">
-            <input type="checkbox" :checked="form.essensgewohnheiten.includes(o.id)" @change="toggleEssens(o.id)" />
-            {{ o.label }}
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="form.essensgewohnheiten_keine" />
-            Keine besonderen Gewohnheiten
-          </label>
-        </fieldset>
-        <template v-if="!anmeldung?.anwesend_von || !anmeldung?.anwesend_bis">
-          <label>Anwesend von <input v-model="form.anwesend_von" type="date" /></label>
-          <label>Anwesend bis <input v-model="form.anwesend_bis" type="date" /></label>
-        </template>
+      </fieldset>
+      <template v-if="!anmeldung?.anwesend_von || !anmeldung?.anwesend_bis">
+        <label>Anwesend von <input v-model="form.anwesend_von" type="date" /></label>
+        <label>Anwesend bis <input v-model="form.anwesend_bis" type="date" /></label>
+      </template>
 
-        <p v-if="fehler" class="error">{{ fehler }}</p>
-        <div class="aktionen">
-          <button type="button" class="secondary" @click="offen = false">Später</button>
-          <button type="submit" :disabled="speichern">{{ speichern ? 'Speichere…' : 'Speichern' }}</button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <p v-if="fehler" class="error">{{ fehler }}</p>
+      <div class="aktionen">
+        <button type="button" class="secondary" @click="offen = false">Später</button>
+        <button type="submit" :disabled="speichern">{{ speichern ? 'Speichere…' : 'Speichern' }}</button>
+      </div>
+    </form>
+  </AppDialog>
 </template>
 
 <style scoped>
-.popup-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 250;
-  display: flex; align-items: center; justify-content: center; padding: 1rem;
-}
-.popup-karte {
-  background: var(--color-surface); border-radius: var(--radius-md); padding: 1.25rem;
-  max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-.popup-karte h3 { margin: 0 0 0.35rem; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; margin: 0 0 0.85rem; }
 form { display: flex; flex-direction: column; gap: 0.75rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
