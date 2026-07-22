@@ -4,10 +4,13 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { supabase } from '../supabaseClient'
 import FeedbackButton from './FeedbackButton.vue'
+import AppDialog from './AppDialog.vue'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     lagerName?: string
+    organisationId?: string
+    organisationName?: string
     showAlleLager?: boolean
     showNavToggle?: boolean
     navOpen?: boolean
@@ -20,6 +23,143 @@ defineEmits<{ toggleNav: [] }>()
 const { session, signOut } = useAuth()
 const router = useRouter()
 const profil = ref<{ vorname: string | null; nachname: string | null; telefon: string | null } | null>(null)
+
+interface VereinEintrag {
+  organisation_id: string
+  name: string
+  mein_status: 'angefragt' | 'mitglied' | 'abgelehnt'
+  meine_rolle: 'mitglied' | 'leitung' | 'admin'
+}
+
+const wechslerOffen = ref(false)
+const vereine = ref<VereinEintrag[]>([])
+const vereineGeladen = ref(false)
+const meineVereine = computed(() => vereine.value.filter((v) => v.mein_status === 'mitglied'))
+
+const neuVereinOffen = ref(false)
+const neuVereinForm = ref({ name: '' })
+const neuVereinSpeichern = ref(false)
+
+const beitretenOffen = ref(false)
+const suche = ref('')
+const treffer = ref<{ id: string; name: string }[]>([])
+const joinOrgId = ref('')
+const joinSaving = ref(false)
+
+const wechslerInfo = ref('')
+const wechslerFehler = ref('')
+
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+async function ladeVereine() {
+  if (!session.value) return
+  vereineGeladen.value = false
+  const { data } = await supabase.rpc('list_meine_vereine')
+  vereine.value = (data ?? []) as VereinEintrag[]
+  vereineGeladen.value = true
+}
+
+function wechslerOeffnen() {
+  wechslerOffen.value = true
+  neuVereinOffen.value = false
+  beitretenOffen.value = false
+  wechslerInfo.value = ''
+  wechslerFehler.value = ''
+  suche.value = ''
+  treffer.value = []
+  void ladeVereine()
+}
+
+function zuVerein(orgId: string) {
+  wechslerOffen.value = false
+  router.push(`/organisation?org=${orgId}`)
+}
+
+function neuesLagerBei(orgId: string) {
+  wechslerOffen.value = false
+  router.push(`/organisation?org=${orgId}&neu=lager`)
+}
+
+async function vereinErstellen() {
+  if (!session.value) return
+  const name = neuVereinForm.value.name.trim()
+  if (!name) return
+  neuVereinSpeichern.value = true
+  wechslerFehler.value = ''
+  const slug = slugify(name)
+  const { data: org, error: orgErr } = await supabase
+    .from('organisation')
+    .insert({ name, slug })
+    .select('id')
+    .single()
+  if (orgErr || !org) {
+    neuVereinSpeichern.value = false
+    wechslerFehler.value = orgErr?.message ?? 'Verein konnte nicht erstellt werden.'
+    return
+  }
+  const { error: memErr } = await supabase.from('organisation_mitglieder').upsert({
+    organisation_id: org.id,
+    profile_id: session.value.user.id,
+    rolle: 'admin',
+    status: 'mitglied',
+    bestaetigt_am: new Date().toISOString(),
+    bestaetigt_von: session.value.user.id,
+  }, { onConflict: 'organisation_id,profile_id' })
+  neuVereinSpeichern.value = false
+  if (memErr) {
+    wechslerFehler.value = memErr.message
+    return
+  }
+  neuVereinForm.value.name = ''
+  wechslerOffen.value = false
+  await router.push(`/organisation?org=${org.id}&neu=lager`)
+}
+
+async function sucheVereine() {
+  joinOrgId.value = ''
+  if (suche.value.trim().length < 1) {
+    treffer.value = []
+    return
+  }
+  const { data } = await supabase
+    .from('organisation')
+    .select('id, name')
+    .ilike('name', `%${suche.value.trim()}%`)
+    .order('name')
+    .limit(8)
+  treffer.value = (data ?? []) as { id: string; name: string }[]
+}
+
+async function beitrittAnfragen() {
+  if (!joinOrgId.value) return
+  joinSaving.value = true
+  wechslerFehler.value = ''
+  const { error } = await supabase.rpc('verein_beitrittsanfrage_stellen', { p_organisation_id: joinOrgId.value })
+  joinSaving.value = false
+  if (error) {
+    wechslerFehler.value = error.message
+    return
+  }
+  wechslerInfo.value = 'Beitrittsanfrage gesendet.'
+  suche.value = ''
+  treffer.value = []
+  joinOrgId.value = ''
+  beitretenOffen.value = false
+}
+
+const kontextLabel = computed(() => {
+  if (props.lagerName && props.organisationName) return `${props.organisationName} · ${props.lagerName}`
+  if (props.organisationName) return props.organisationName
+  if (props.lagerName) return props.lagerName
+  return 'Vereine'
+})
 
 const SNOOZE_KEY = 'stoela_profil_hinweis_snooze'
 const hinweisSichtbar = ref(false)
@@ -111,11 +251,11 @@ async function logout() {
         <span class="burger-line" />
         <span class="burger-line" />
       </button>
-      <router-link v-if="showAlleLager" to="/" class="alle-lager-btn">
-        ← Start
-      </router-link>
       <h1 v-if="!showAlleLager" class="app-titel">Stöckli Lager</h1>
-      <span v-if="lagerName" class="lager-name">{{ lagerName }}</span>
+      <button v-if="session && showAlleLager" type="button" class="kontext-btn" @click="wechslerOeffnen">
+        {{ kontextLabel }}
+      </button>
+      <button v-if="session" type="button" class="neu-btn" title="Verein oder Lager erstellen/beitreten" @click="wechslerOeffnen">+</button>
     </div>
     <div class="app-header-right">
       <FeedbackButton v-if="session" />
@@ -139,6 +279,67 @@ async function logout() {
       </form>
     </div>
   </div>
+
+  <AppDialog :open="wechslerOffen" titel="Verein &amp; Lager" @close="wechslerOffen = false">
+    <p v-if="!vereineGeladen" class="hint">Lade…</p>
+    <template v-else>
+      <template v-if="meineVereine.length">
+        <h3>Meine Vereine</h3>
+        <ul class="wechsler-liste">
+          <li v-for="v in meineVereine" :key="v.organisation_id">
+            <button type="button" class="wechsler-item" @click="zuVerein(v.organisation_id)">
+              {{ v.name }}
+              <span class="hint klein">{{ v.meine_rolle }}</span>
+            </button>
+            <button
+              v-if="v.meine_rolle === 'leitung' || v.meine_rolle === 'admin'"
+              type="button"
+              class="secondary klein-btn"
+              @click="neuesLagerBei(v.organisation_id)"
+            >
+              + Lager
+            </button>
+          </li>
+        </ul>
+      </template>
+
+      <div class="wechsler-aktionen">
+        <button type="button" class="secondary" @click="neuVereinOffen = !neuVereinOffen; beitretenOffen = false">
+          Neuen Verein erstellen
+        </button>
+        <button type="button" class="secondary" @click="beitretenOffen = !beitretenOffen; neuVereinOffen = false">
+          Verein beitreten
+        </button>
+      </div>
+
+      <form v-if="neuVereinOffen" class="inline-form" @submit.prevent="vereinErstellen">
+        <input v-model="neuVereinForm.name" placeholder="Vereinsname" required />
+        <button type="submit" :disabled="neuVereinSpeichern">{{ neuVereinSpeichern ? 'Erstelle…' : 'Erstellen' }}</button>
+      </form>
+
+      <div v-if="beitretenOffen" class="inline-form">
+        <input v-model="suche" placeholder="Verein suchen…" @input="sucheVereine" />
+        <div v-if="treffer.length" class="wechsler-treffer">
+          <button
+            v-for="t in treffer"
+            :key="t.id"
+            type="button"
+            class="treffer-item"
+            :class="{ aktiv: joinOrgId === t.id }"
+            @click="joinOrgId = t.id"
+          >
+            {{ t.name }}
+          </button>
+        </div>
+        <button type="button" :disabled="!joinOrgId || joinSaving" @click="beitrittAnfragen">
+          {{ joinSaving ? 'Sende…' : 'Beitrittsanfrage senden' }}
+        </button>
+      </div>
+
+      <p v-if="wechslerInfo" class="ok">{{ wechslerInfo }}</p>
+      <p v-if="wechslerFehler" class="error">{{ wechslerFehler }}</p>
+    </template>
+  </AppDialog>
 </template>
 
 <style scoped>
@@ -182,36 +383,73 @@ async function logout() {
   font-size: 1.15rem;
   font-weight: 700;
 }
-.alle-lager-btn {
+.kontext-btn {
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 40vw;
+  flex-shrink: 1;
   font-weight: 700;
-  font-size: 0.88rem;
-  color: #fdfbf3;
-  text-decoration: none;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.75rem;
   white-space: nowrap;
-  padding: 0.45rem 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kontext-btn:hover { background: var(--color-surface-muted); }
+.neu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fdfbf3;
   background: var(--color-accent);
   border: 2px solid var(--color-accent);
   border-radius: var(--radius-md);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
-.alle-lager-btn:hover {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
-  text-decoration: none;
-  color: #fdfbf3;
+.neu-btn:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.wechsler-liste { list-style: none; margin: 0.4rem 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.wechsler-liste li { display: flex; align-items: center; gap: 0.5rem; }
+.wechsler-item {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
 }
-.lager-name {
-  min-width: 0;
-  flex: 1 1 auto;
-  font-size: 0.95rem;
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.wechsler-item:hover { background: var(--color-surface-muted); }
+.wechsler-aktionen { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.wechsler-treffer { display: grid; gap: 0.3rem; margin: 0.4rem 0; }
+.treffer-item {
+  text-align: left;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
 }
+.treffer-item.aktiv { border-color: var(--color-accent); }
+.inline-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.6rem; }
+.klein-btn { font-size: 0.78rem; padding: 0.3rem 0.6rem; }
+.ok { color: #2e7d32; }
+.error { color: var(--color-danger); }
+.hint { color: var(--color-text-muted); font-size: 0.85rem; }
+.hint.klein { font-size: 0.78rem; }
 .app-header-right {
   display: flex;
   align-items: center;
@@ -243,7 +481,7 @@ async function logout() {
 .feedback-export-link:hover { background: var(--color-surface-muted); }
 @media (max-width: 768px) {
   .burger-btn { display: flex; }
-  .lager-name { display: none; }
+  .kontext-btn { max-width: 45vw; font-size: 0.82rem; padding: 0.4rem 0.6rem; }
 }
 .profil-hinweis {
   width: 100%;

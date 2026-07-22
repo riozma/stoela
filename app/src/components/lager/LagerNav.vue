@@ -248,7 +248,7 @@ function navKlick() {
   z-index: 30;
   min-width: 11rem;
   padding: 0.35rem;
-  margin-top: 0.15rem;
+  margin-top: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

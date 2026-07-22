@@ -140,6 +140,7 @@ const lagerForm = ref({
 const lagerPersonenPool = ref<{ id: string; profile_id: string | null; vorname: string; nachname: string; email: string | null }[]>([])
 const lagerSpeichern = ref(false)
 const laleiModalOffen = ref(false)
+const lagerErstellenOffen = ref(false)
 const laleiModal = ref({ modus: 'selbst' as 'selbst' | 'verein', personId: '' })
 
 const orgRessourcen = ref<OrgRessource[]>([])
@@ -649,6 +650,10 @@ async function ladeVereine() {
   const aemtliQuery = typeof route.query.aemtli === 'string' ? route.query.aemtli : ''
   if (aemtliQuery) {
     aktivBereich.value = `aemtli:${aemtliQuery}`
+  }
+  if (route.query.neu === 'lager') {
+    aktivBereich.value = 'lager-erstellen'
+    lagerErstellenOffen.value = true
   }
 }
 
@@ -1210,7 +1215,11 @@ onMounted(async () => {
 <template>
   <div class="org-page">
     <div class="top-full">
-      <AppHeader :show-alle-lager="true" />
+      <AppHeader
+        :show-alle-lager="true"
+        :organisation-id="orgAuswahl || undefined"
+        :organisation-name="aktuellerVerein?.name"
+      />
     </div>
 
     <main>
@@ -1282,7 +1291,7 @@ onMounted(async () => {
           <button type="button" :class="{ aktiv: aktivBereich === 'team' }" @click="aktivBereich = 'team'">Team</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'fahrplan' }" @click="aktivBereich = 'fahrplan'">Jahresfahrplan</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'kalender' }" @click="aktivBereich = 'kalender'">Kalender</button>
-          <button v-if="istVereinsleitung" type="button" :class="{ aktiv: aktivBereich === 'lager-erstellen' }" @click="aktivBereich = 'lager-erstellen'">Lager erstellen</button>
+          <button v-if="istVereinsleitung" type="button" @click="aktivBereich = 'lager-erstellen'; lagerErstellenOffen = true">Lager erstellen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'ressourcen' }" @click="aktivBereich = 'ressourcen'">Ressourcen</button>
           <button type="button" :class="{ aktiv: aktivBereich === 'quittungen' }" @click="aktivBereich = 'quittungen'">Quittungen</button>
           <button
@@ -1621,8 +1630,7 @@ onMounted(async () => {
           <p class="hint">Kalender wird geladen…</p>
         </section>
 
-        <section v-if="aktivBereich === 'lager-erstellen' && istVereinsleitung" class="karte">
-          <h2>Neues Lager erfassen</h2>
+        <AppDialog :open="lagerErstellenOffen && istVereinsleitung" titel="Neues Lager erfassen" @close="lagerErstellenOffen = false">
           <form class="lager-form" @submit.prevent="lagerFormularAbsenden">
             <label>Jahr <input v-model.number="lagerForm.jahr" type="number" required min="2020" /></label>
             <label>Name <input v-model="lagerForm.name" required /></label>
@@ -1667,7 +1675,7 @@ onMounted(async () => {
               </button>
             </div>
           </AppDialog>
-        </section>
+        </AppDialog>
 
         <section v-if="aktivBereich === 'fahrplan'" class="karte">
           <h2>Jahresfahrplan</h2>

@@ -1837,6 +1837,8 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
     <div class="lager-top-full">
       <AppHeader
         :lager-name="lager?.name"
+        :organisation-id="lager?.organisation_id ?? undefined"
+        :organisation-name="organisationName"
         :show-alle-lager="true"
         show-nav-toggle
         :nav-open="navOffen"
