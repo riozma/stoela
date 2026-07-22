@@ -992,6 +992,41 @@ async function personLoeschen(personId: string) {
   await ladeVereinDaten()
 }
 
+interface PersonLagerRolle { lager_id: string; lager_name: string; jahr: number; rolle: string; status: string }
+interface PersonAemtli { lager_id: string; lager_name: string; jahr: number; aemtli_name: string }
+
+const personDetailOffen = ref(false)
+const personDetailLaden = ref(false)
+const personDetailFehler = ref('')
+const personDetailZeile = ref<VereinsLeiterZeile | null>(null)
+const personDetailLagerRollen = ref<PersonLagerRolle[]>([])
+const personDetailAemtli = ref<PersonAemtli[]>([])
+
+function lagerRolleLabel(rolle: string): string {
+  if (rolle === 'leiter') return 'Leiter'
+  if (rolle === 'lagerleitung') return 'Lagerleitung (Lalei)'
+  if (rolle === 'kueche') return 'Küche'
+  return rolle
+}
+
+async function personDetailOeffnen(z: VereinsLeiterZeile) {
+  personDetailZeile.value = z
+  personDetailOffen.value = true
+  personDetailFehler.value = ''
+  personDetailLagerRollen.value = []
+  personDetailAemtli.value = []
+  if (!z.org_person_id) return
+  personDetailLaden.value = true
+  const { data, error } = await supabase.rpc('person_uebersicht', { p_person_id: z.org_person_id })
+  personDetailLaden.value = false
+  if (error) {
+    personDetailFehler.value = error.message
+    return
+  }
+  personDetailLagerRollen.value = (data?.lager_rollen ?? []) as PersonLagerRolle[]
+  personDetailAemtli.value = (data?.aemtli ?? []) as PersonAemtli[]
+}
+
 async function beitrittEntscheiden(
   profileId: string,
   entscheidung: 'genehmigen' | 'ablehnen',
@@ -1668,6 +1703,7 @@ onMounted(async () => {
                 <th>Telefon</th>
                 <th>Rolle</th>
                 <th>Quelle</th>
+                <th></th>
                 <th v-if="istOrgAdmin">Aktionen</th>
               </tr>
             </thead>
@@ -1714,6 +1750,9 @@ onMounted(async () => {
                   <span v-else-if="z.verknuepft">Login (verknüpft)</span>
                   <span v-else>Manuell</span>
                 </td>
+                <td>
+                  <button type="button" class="secondary klein-btn" @click="personDetailOeffnen(z)">Details</button>
+                </td>
                 <td v-if="istOrgAdmin">
                   <div v-if="z.profile_id && mitgliedEdit[z.profile_id] && z.typ === 'login'" class="inline-aktionen">
                     <button
@@ -1753,6 +1792,33 @@ onMounted(async () => {
             </tbody>
           </table>
           <p v-else class="hint">Noch keine Leiter erfasst.</p>
+
+          <AppDialog
+            :open="personDetailOffen"
+            :titel="personDetailZeile ? zeilenName(personDetailZeile.vorname, personDetailZeile.nachname, personDetailZeile.email) : 'Details'"
+            @close="personDetailOffen = false"
+          >
+            <p v-if="personDetailLaden" class="hint">Lade…</p>
+            <p v-else-if="personDetailFehler" class="error">{{ personDetailFehler }}</p>
+            <template v-else>
+              <h3>Lager-Zuteilungen</h3>
+              <ul v-if="personDetailLagerRollen.length" class="person-detail-liste">
+                <li v-for="r in personDetailLagerRollen" :key="`${r.lager_id}-${r.rolle}`">
+                  {{ r.lager_name }} ({{ r.jahr }}) – {{ lagerRolleLabel(r.rolle) }}
+                  <span class="hint klein" v-if="r.status !== 'bestaetigt'">({{ r.status }})</span>
+                </li>
+              </ul>
+              <p v-else class="hint">Keine Lager-Zuteilungen.</p>
+
+              <h3>Ämtli</h3>
+              <ul v-if="personDetailAemtli.length" class="person-detail-liste">
+                <li v-for="(a, i) in personDetailAemtli" :key="`${a.lager_id}-${a.aemtli_name}-${i}`">
+                  {{ a.aemtli_name }} – {{ a.lager_name }} ({{ a.jahr }})
+                </li>
+              </ul>
+              <p v-else class="hint">Keine Ämtli zugeteilt.</p>
+            </template>
+          </AppDialog>
 
           <details class="rollen-info">
             <summary>Rollen im Verein: Mitglied, Leitung, Admin</summary>
@@ -1943,6 +2009,8 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.84rem;
 .zugang-zeile span { color: var(--color-text-muted); margin-right: 0.35rem; }
 .ressource-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.65rem; margin-top: 0.75rem; align-items: end; }
 .mitglieder-auswahl { grid-column: 1 / -1; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.65rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.person-detail-liste { list-style: none; margin: 0.4rem 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.klein { font-size: 0.78rem; }
 .mitglieder-auswahl legend { font-weight: 600; width: 100%; }
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.4rem; color: var(--color-text) !important; font-size: 0.85rem !important; }
 .unterabschnitt { margin: 1.5rem 0 0.65rem; font-size: 1rem; }
