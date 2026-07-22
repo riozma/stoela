@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '../../supabaseClient'
+import AppDialog from '../AppDialog.vue'
 import {
   QUITTUNG_KATEGORIEN,
   kategorieLabel,
@@ -66,6 +67,7 @@ const form = ref({
 
 const kategorieOptionen = computed(() => kategorienFuerRichtung(form.value.richtung))
 
+const neuOffen = ref(false)
 const bearbeitung = ref<{ id: string; betrag: string; zweck: string } | null>(null)
 const ablehnung = ref<{ id: string; grund: string } | null>(null)
 const dateiInput = ref<HTMLInputElement | null>(null)
@@ -222,6 +224,7 @@ async function einreichen() {
   if (dateiInput.value) dateiInput.value.value = ''
   nachricht.value = 'Quittung eingereicht.'
   speichern.value = false
+  neuOffen.value = false
   await laden()
 }
 
@@ -301,52 +304,57 @@ async function loeschen(id: string) {
     <p v-if="fehler" class="error">{{ fehler }}</p>
     <p v-if="nachricht" class="hint ok">{{ nachricht }}</p>
 
-    <!-- Einreichen -->
+    <!-- Meine Quittungen -->
     <div v-if="ansicht === 'meine'" class="einreichen-box">
-      <h3>Quittung einreichen</h3>
-      <p class="hint">Beim ersten Mal IBAN angeben – danach kannst du gespeicherte IBANs wählen.</p>
-
-      <div v-if="ibans.length" class="iban-liste">
-        <label v-for="i in ibans" :key="i.id" class="iban-option">
-          <input v-model="form.ibanId" type="radio" :value="i.id" />
-          {{ i.bezeichnung ? `${i.bezeichnung}: ` : '' }}{{ i.iban }}
-          <button type="button" class="secondary klein" @click.stop="ibanLoeschen(i.id)">Löschen</button>
-        </label>
+      <div class="q-kopfzeile">
+        <h3>Meine Quittungen</h3>
+        <button type="button" @click="neuOffen = true">+ Neue Quittung erfassen</button>
       </div>
 
-      <details class="neue-iban">
-        <summary>Neue IBAN erfassen</summary>
-        <div class="inline-form">
-          <input v-model="form.neueIban" placeholder="CH..." />
-          <input v-model="form.neueIbanBezeichnung" placeholder="Bezeichnung (optional)" />
-          <button type="button" class="secondary" @click="ibanHinzufuegen">IBAN speichern</button>
+      <AppDialog :open="neuOffen" titel="Quittung einreichen" @close="neuOffen = false">
+        <p class="hint">Beim ersten Mal IBAN angeben – danach kannst du gespeicherte IBANs wählen.</p>
+
+        <div v-if="ibans.length" class="iban-liste">
+          <label v-for="i in ibans" :key="i.id" class="iban-option">
+            <input v-model="form.ibanId" type="radio" :value="i.id" />
+            {{ i.bezeichnung ? `${i.bezeichnung}: ` : '' }}{{ i.iban }}
+            <button type="button" class="secondary klein" @click.stop="ibanLoeschen(i.id)">Löschen</button>
+          </label>
         </div>
-      </details>
 
-      <form class="form-grid" @submit.prevent="einreichen">
-        <label>Art
-          <select v-model="form.richtung" @change="form.kategorie = ''">
-            <option value="ausgabe">Ausgabe</option>
-            <option value="einnahme">Einnahme</option>
-          </select>
-        </label>
-        <label>Kategorie
-          <select v-model="form.kategorie" required>
-            <option value="">– wählen –</option>
-            <option v-for="k in kategorieOptionen" :key="k.id" :value="k.id">{{ k.label }}</option>
-          </select>
-        </label>
-        <label>Betrag (CHF) <input v-model="form.betrag" type="number" step="0.05" min="0" required /></label>
-        <label class="full">Verwendungszweck <input v-model="form.zweck" required placeholder="Wofür wurde es verwendet?" /></label>
-        <label class="full">
-          Bilder (Quittung)
-          <input ref="dateiInput" type="file" accept="image/*" multiple @change="dateienAuswaehlen" />
-        </label>
-        <p v-if="ausgewaehlteDateien.length" class="hint">{{ ausgewaehlteDateien.length }} Datei(en) ausgewählt</p>
-        <button type="submit" :disabled="speichern">{{ speichern ? 'Reiche ein...' : 'Quittung einreichen' }}</button>
-      </form>
+        <details class="neue-iban">
+          <summary>Neue IBAN erfassen</summary>
+          <div class="inline-form">
+            <input v-model="form.neueIban" placeholder="CH..." />
+            <input v-model="form.neueIbanBezeichnung" placeholder="Bezeichnung (optional)" />
+            <button type="button" class="secondary" @click="ibanHinzufuegen">IBAN speichern</button>
+          </div>
+        </details>
 
-      <h3>Meine Quittungen</h3>
+        <form class="form-grid" @submit.prevent="einreichen">
+          <label>Art
+            <select v-model="form.richtung" @change="form.kategorie = ''">
+              <option value="ausgabe">Ausgabe</option>
+              <option value="einnahme">Einnahme</option>
+            </select>
+          </label>
+          <label>Kategorie
+            <select v-model="form.kategorie" required>
+              <option value="">– wählen –</option>
+              <option v-for="k in kategorieOptionen" :key="k.id" :value="k.id">{{ k.label }}</option>
+            </select>
+          </label>
+          <label>Betrag (CHF) <input v-model="form.betrag" type="number" step="0.05" min="0" required /></label>
+          <label class="full">Verwendungszweck <input v-model="form.zweck" required placeholder="Wofür wurde es verwendet?" /></label>
+          <label class="full">
+            Bilder (Quittung)
+            <input ref="dateiInput" type="file" accept="image/*" multiple @change="dateienAuswaehlen" />
+          </label>
+          <p v-if="ausgewaehlteDateien.length" class="hint">{{ ausgewaehlteDateien.length }} Datei(en) ausgewählt</p>
+          <button type="submit" :disabled="speichern">{{ speichern ? 'Reiche ein...' : 'Quittung einreichen' }}</button>
+        </form>
+      </AppDialog>
+
       <div v-if="meineQuittungen.length" class="q-liste">
         <article v-for="q in meineQuittungen" :key="q.id" class="q-karte" :class="'status-' + q.status">
           <div class="q-kopf">
@@ -436,6 +444,8 @@ header h2 { margin: 0 0 0.5rem; }
 }
 .sub-tabs button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
 .einreichen-box, .kassier-box { margin-top: 1rem; }
+.q-kopfzeile { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.q-kopfzeile h3 { margin: 0; }
 .hint { color: var(--color-text-muted); font-size: 0.88rem; }
 .hint.ok { color: var(--color-accent); }
 .error { color: var(--color-danger); }
