@@ -2298,7 +2298,12 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :end-datum="lager.end_datum"
         />
         <div v-if="isLeitung" class="leiter-anmeldung-verwaltung">
-          <h3>Leiteranmeldung</h3>
+          <h3>
+            Leiteranmeldung –
+            <span :class="lager.leiter_anmeldung_status === 'offen' ? 'status-offen' : 'status-geschlossen'">
+              {{ lager.leiter_anmeldung_status === 'offen' ? 'offen' : 'geschlossen' }}
+            </span>
+          </h3>
           <label class="checkbox-label">
             <input
               type="checkbox"
@@ -2308,55 +2313,60 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
             />
             Leiteranmeldung eröffnen
           </label>
-          <p class="hint">Abgefragte Felder (Name/Telefon immer dabei):</p>
-          <div class="feld-toggles">
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="lager.leiter_anmeldung_config.geburtsdatum" @change="leiterAnmeldungConfigAendern('geburtsdatum', ($event.target as HTMLInputElement).checked)" />
-              Geburtsdatum
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="lager.leiter_anmeldung_config.geschlecht" @change="leiterAnmeldungConfigAendern('geschlecht', ($event.target as HTMLInputElement).checked)" />
-              Geschlecht
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="lager.leiter_anmeldung_config.ahv_nr" @change="leiterAnmeldungConfigAendern('ahv_nr', ($event.target as HTMLInputElement).checked)" />
-              AHV-Nummer
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="lager.leiter_anmeldung_config.essensgewohnheiten" @change="leiterAnmeldungConfigAendern('essensgewohnheiten', ($event.target as HTMLInputElement).checked)" />
-              Essensgewohnheiten
-            </label>
-          </div>
-          <p v-if="lager.leiter_anmeldung_status === 'offen'" class="hint">
-            Bewerbungslink: <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
-          </p>
-          <p v-else class="hint">Anmeldung ist geschlossen – Link ist erst nach dem Eröffnen aktiv.</p>
 
-          <h4>Zusatzfelder</h4>
-          <ul v-if="leiterAnmeldungFelder.length" class="zusatzfelder-liste">
-            <li v-for="f in leiterAnmeldungFelder" :key="f.id">
-              <span>{{ f.label }} <span class="hint klein">({{ f.typ }}{{ f.pflicht ? ', Pflicht' : '' }})</span></span>
-              <button type="button" class="secondary klein" @click="zusatzfeldLoeschen(f.id)">Löschen</button>
-            </li>
-          </ul>
-          <form class="zusatzfeld-form" @submit.prevent="zusatzfeldHinzufuegen">
-            <input v-model="zusatzfeldForm.label" placeholder="Frage / Feldname" required />
-            <select v-model="zusatzfeldForm.typ">
-              <option value="text">Text</option>
-              <option value="einzelauswahl">Einzelauswahl</option>
-              <option value="mehrfachauswahl">Mehrfachauswahl</option>
-            </select>
-            <input
-              v-if="zusatzfeldForm.typ !== 'text'"
-              v-model="zusatzfeldForm.optionenText"
-              placeholder="Optionen, mit Komma getrennt"
-            />
-            <label class="checkbox-label">
-              <input type="checkbox" v-model="zusatzfeldForm.pflicht" />
-              Pflichtfeld
-            </label>
-            <button type="submit">+ Feld</button>
-          </form>
+          <details class="anmeldung-konfig">
+            <summary>Konfiguration (Felder, Zusatzfragen, Bewerbungslink)</summary>
+
+            <p class="hint">Abgefragte Felder (Name/Telefon immer dabei):</p>
+            <div class="feld-toggles">
+              <label class="checkbox-label">
+                <input type="checkbox" :checked="lager.leiter_anmeldung_config.geburtsdatum" @change="leiterAnmeldungConfigAendern('geburtsdatum', ($event.target as HTMLInputElement).checked)" />
+                Geburtsdatum
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" :checked="lager.leiter_anmeldung_config.geschlecht" @change="leiterAnmeldungConfigAendern('geschlecht', ($event.target as HTMLInputElement).checked)" />
+                Geschlecht
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" :checked="lager.leiter_anmeldung_config.ahv_nr" @change="leiterAnmeldungConfigAendern('ahv_nr', ($event.target as HTMLInputElement).checked)" />
+                AHV-Nummer
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" :checked="lager.leiter_anmeldung_config.essensgewohnheiten" @change="leiterAnmeldungConfigAendern('essensgewohnheiten', ($event.target as HTMLInputElement).checked)" />
+                Essensgewohnheiten
+              </label>
+            </div>
+            <p v-if="lager.leiter_anmeldung_status === 'offen'" class="hint">
+              Bewerbungslink: <router-link :to="`/lager/${lagerId}/anmelden-leiter`">/anmelden-leiter</router-link>
+            </p>
+            <p v-else class="hint">Anmeldung ist geschlossen – Link ist erst nach dem Eröffnen aktiv.</p>
+
+            <h4>Zusatzfelder</h4>
+            <ul v-if="leiterAnmeldungFelder.length" class="zusatzfelder-liste">
+              <li v-for="f in leiterAnmeldungFelder" :key="f.id">
+                <span>{{ f.label }} <span class="hint klein">({{ f.typ }}{{ f.pflicht ? ', Pflicht' : '' }})</span></span>
+                <button type="button" class="secondary klein" @click="zusatzfeldLoeschen(f.id)">Löschen</button>
+              </li>
+            </ul>
+            <form class="zusatzfeld-form" @submit.prevent="zusatzfeldHinzufuegen">
+              <input v-model="zusatzfeldForm.label" placeholder="Frage / Feldname" required />
+              <select v-model="zusatzfeldForm.typ">
+                <option value="text">Text</option>
+                <option value="einzelauswahl">Einzelauswahl</option>
+                <option value="mehrfachauswahl">Mehrfachauswahl</option>
+              </select>
+              <input
+                v-if="zusatzfeldForm.typ !== 'text'"
+                v-model="zusatzfeldForm.optionenText"
+                placeholder="Optionen, mit Komma getrennt"
+              />
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="zusatzfeldForm.pflicht" />
+                Pflichtfeld
+              </label>
+              <button type="submit">+ Feld</button>
+            </form>
+          </details>
         </div>
         <p v-else class="hint">Leiterbewerbung: {{ lager.leiter_anmeldung_status === 'offen' ? 'geöffnet' : 'geschlossen' }}</p>
         <p v-if="isLeitung" class="hint geschuetzt-hinweis">
@@ -2992,6 +3002,10 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .modal-zuweisen-zeile select { flex: 1; }
 .leiter-anmeldung-verwaltung { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin: 0.75rem 0 1.25rem; }
 .leiter-anmeldung-verwaltung h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.status-offen { color: #2e7d32; font-weight: 700; }
+.status-geschlossen { color: var(--color-text-muted); font-weight: 700; }
+.anmeldung-konfig { margin-top: 0.75rem; }
+.anmeldung-konfig summary { cursor: pointer; color: var(--color-text-muted); font-size: 0.88rem; }
 .feld-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0.4rem 0 0.6rem; }
 .zusatzfelder-liste { list-style: none; padding: 0; margin: 0.5rem 0; }
 .zusatzfelder-liste li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.88rem; }

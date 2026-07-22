@@ -78,6 +78,8 @@ interface VereinsLager {
   end_datum: string | null
   status: string
   can_edit: boolean
+  leiter_anmeldung_status: string | null
+  im_team: boolean
 }
 
 interface OrgTodoVorlage {
@@ -206,13 +208,17 @@ const istOrgAdmin = computed(() => aktuellerVerein.value?.meine_rolle === 'admin
 
 const anfragen = computed(() => mitglieder.value.filter((m) => m.status === 'angefragt'))
 const mitgliederAktiv = computed(() => mitglieder.value.filter((m) => m.status === 'mitglied'))
+/** Lager mit geschlossener Leiteranmeldung sind für Nicht-Team-Mitglieder/Nicht-Admins noch nicht sichtbar. */
+const sichtbareLager = computed(() =>
+  lager.value.filter((l) => l.leiter_anmeldung_status === 'offen' || l.im_team || istOrgAdmin.value),
+)
 const kommendeOderLaufendeLager = computed(() => {
   const heute = new Date().toISOString().slice(0, 10)
-  return lager.value.filter((l) => !l.end_datum || l.end_datum >= heute).sort((a, b) => (a.start_datum ?? '').localeCompare(b.start_datum ?? ''))
+  return sichtbareLager.value.filter((l) => !l.end_datum || l.end_datum >= heute).sort((a, b) => (a.start_datum ?? '').localeCompare(b.start_datum ?? ''))
 })
 const vergangeneLager = computed(() => {
   const heute = new Date().toISOString().slice(0, 10)
-  return lager.value.filter((l) => !!l.end_datum && l.end_datum < heute).sort((a, b) => (b.start_datum ?? '').localeCompare(a.start_datum ?? ''))
+  return sichtbareLager.value.filter((l) => !!l.end_datum && l.end_datum < heute).sort((a, b) => (b.start_datum ?? '').localeCompare(a.start_datum ?? ''))
 })
 
 /** Für den Jahresfahrplan-Tab: nächstes/laufendes Lager, sonst das zuletzt vergangene. */
