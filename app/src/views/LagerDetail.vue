@@ -265,6 +265,7 @@ const zuordnungNachricht = ref('')
 const lagerForm = ref({ name: '', ort: '', start_datum: '', end_datum: '', jahr: 0 })
 const altersregelForm = ref({ tn_min_alter_jahre: 8, tn_hl_ab_jahre: 14 })
 const altersregelSpeichernLaden = ref(false)
+const altersregelOffen = ref(false)
 const vorLagerIdForm = ref('')
 const andereLager = ref<{ id: string; name: string; jahr: number }[]>([])
 const lagerSpeichern = ref(false)
@@ -2045,7 +2046,25 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'detail' }" @click="tnListenAnsicht = 'detail'">Detailansicht</button>
           <button type="button" :class="{ aktiv: tnListenAnsicht === 'verwaltung' }" @click="tnListenAnsicht = 'verwaltung'">Verwaltung</button>
           <button v-if="tnListe.length" type="button" class="secondary" @click="tnCsvHerunterladen">CSV herunterladen</button>
+          <button v-if="isLeitung" type="button" class="secondary" @click="altersregelOffen = true">Altersregel</button>
         </nav>
+
+        <AppDialog :open="altersregelOffen" titel="TN-Anmeldung: Altersregel (TN / HL)" @close="altersregelOffen = false">
+          <p class="hint">
+            Gilt vereinsweit für alle Lager. Aktuell (Lagerjahr {{ lager.jahr }}):
+            Anmeldung ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_min_alter_jahre }}</strong>,
+            HL ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_hl_ab_jahre }}</strong> oder älter.
+          </p>
+          <form class="inline-form" @submit.prevent="altersregelSpeichern">
+            <label>Mindestalter (Jahre)
+              <input v-model.number="altersregelForm.tn_min_alter_jahre" type="number" min="0" class="feld-klein" />
+            </label>
+            <label>HL ab (Jahre)
+              <input v-model.number="altersregelForm.tn_hl_ab_jahre" type="number" min="0" class="feld-klein" />
+            </label>
+            <button type="submit" :disabled="altersregelSpeichernLaden">{{ altersregelSpeichernLaden ? 'Speichere...' : 'Speichern' }}</button>
+          </form>
+        </AppDialog>
 
         <!-- Übersicht -->
         <table v-if="tnListenAnsicht === 'uebersicht' && tnListe.length" class="liste">
@@ -2852,22 +2871,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           Aktuell: <strong>{{ lager.status }}</strong> –
           TN-Anmeldung aktivieren unter <button type="button" class="link-like" @click="zuPflichtTab('teilnehmer')">Teilnehmer</button>.
         </p>
-
-        <h3>TN-Anmeldung: Altersregel (TN / HL)</h3>
-        <p class="hint">
-          Gilt vereinsweit für alle Lager. Aktuell (Lagerjahr {{ lager.jahr }}):
-          Anmeldung ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_min_alter_jahre }}</strong>,
-          HL ab Jahrgang <strong>{{ lager.jahr - altersregelForm.tn_hl_ab_jahre }}</strong> oder älter.
-        </p>
-        <form class="inline-form" @submit.prevent="altersregelSpeichern">
-          <label>Mindestalter (Jahre)
-            <input v-model.number="altersregelForm.tn_min_alter_jahre" type="number" min="0" class="feld-klein" />
-          </label>
-          <label>HL ab (Jahre)
-            <input v-model.number="altersregelForm.tn_hl_ab_jahre" type="number" min="0" class="feld-klein" />
-          </label>
-          <button type="submit" :disabled="altersregelSpeichernLaden">{{ altersregelSpeichernLaden ? 'Speichere...' : 'Speichern' }}</button>
-        </form>
 
         <h3>Willkommens-Link für TN</h3>
         <p class="hint">Teilnehmer/innen sehen nur diese Seite – kein Programm:</p>
