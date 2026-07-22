@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
+import AppDialog from '../AppDialog.vue'
 import {
   KALENDER_DATUM_EDITIERBAR,
   TERMIN_TYP_LABELS,
@@ -27,6 +28,7 @@ const termine = ref<Partial<Record<LagerTerminTyp, LagerTermin>>>({})
 const formular = ref<Partial<Record<LagerTerminTyp, TerminForm>>>({})
 const speichern = ref<LagerTerminTyp | null>(null)
 const fehler = ref('')
+const bearbeitenTyp = ref<LagerTerminTyp | null>(null)
 
 const typen = KALENDER_DATUM_EDITIERBAR
 
@@ -92,8 +94,14 @@ async function speichernTyp(typ: LagerTerminTyp) {
     fehler.value = error.message
     return
   }
+  bearbeitenTyp.value = null
   await laden()
   emit('gespeichert')
+}
+
+function bearbeitenStarten(typ: LagerTerminTyp) {
+  fehler.value = ''
+  bearbeitenTyp.value = typ
 }
 
 defineExpose({ laden })
@@ -112,41 +120,55 @@ defineExpose({ laden })
       <p class="hint">Gleiche Daten wie im Kalender – erscheinen im Anmeldeformular.</p>
     </header>
 
-    <div class="termin-grid">
+    <div v-if="isLeitung" class="termin-liste">
+      <div v-for="typ in typen" :key="typ" class="termin-zeile">
+        <div class="termin-info">
+          <strong>{{ TERMIN_TYP_LABELS[typ] }}</strong>
+          <span v-if="termine[typ]?.start_datum" class="hint">
+            {{ termine[typ]!.start_datum }}
+            <template v-if="termine[typ]!.start_zeit"> · {{ termine[typ]!.start_zeit?.slice(0, 5) }}</template>
+            <template v-if="termine[typ]!.ort"> · {{ termine[typ]!.ort }}</template>
+          </span>
+          <span v-else class="hint">Noch nicht gesetzt</span>
+        </div>
+        <button type="button" class="stift-btn" title="Anpassen" @click="bearbeitenStarten(typ)">✏️</button>
+      </div>
+    </div>
+    <div v-else class="termin-grid">
       <article v-for="typ in typen" :key="typ" class="termin-karte">
         <h4>{{ TERMIN_TYP_LABELS[typ] }}</h4>
-        <template v-if="isLeitung">
-          <label>
-            Datum
-            <input v-model="formular[typ]!.start_datum" type="date" />
-          </label>
-          <label>
-            Uhrzeit
-            <input v-model="formular[typ]!.start_zeit" type="time" />
-          </label>
-          <label>
-            Ort
-            <input v-model="formular[typ]!.ort" placeholder="Ort" />
-          </label>
-          <button
-            type="button"
-            class="secondary klein"
-            :disabled="speichern === typ"
-            @click="speichernTyp(typ)"
-          >
-            {{ speichern === typ ? 'Speichere…' : (formular[typ]?.id ? 'Speichern' : 'Hinzufügen') }}
-          </button>
-        </template>
-        <template v-else>
-          <p v-if="termine[typ]?.start_datum">
-            {{ termine[typ]!.start_datum }}
-            <span v-if="termine[typ]!.start_zeit"> · {{ termine[typ]!.start_zeit?.slice(0, 5) }}</span>
-            <span v-if="termine[typ]!.ort"> · {{ termine[typ]!.ort }}</span>
-          </p>
-          <p v-else class="hint">Noch nicht gesetzt</p>
-        </template>
+        <p v-if="termine[typ]?.start_datum">
+          {{ termine[typ]!.start_datum }}
+          <span v-if="termine[typ]!.start_zeit"> · {{ termine[typ]!.start_zeit?.slice(0, 5) }}</span>
+          <span v-if="termine[typ]!.ort"> · {{ termine[typ]!.ort }}</span>
+        </p>
+        <p v-else class="hint">Noch nicht gesetzt</p>
       </article>
     </div>
+
+    <AppDialog
+      :open="bearbeitenTyp !== null"
+      :titel="bearbeitenTyp ? TERMIN_TYP_LABELS[bearbeitenTyp] + ' anpassen' : 'Anpassen'"
+      @close="bearbeitenTyp = null"
+    >
+      <form v-if="bearbeitenTyp" class="bearbeiten-form" @submit.prevent="speichernTyp(bearbeitenTyp)">
+        <label>
+          Datum
+          <input v-model="formular[bearbeitenTyp]!.start_datum" type="date" />
+        </label>
+        <label>
+          Uhrzeit
+          <input v-model="formular[bearbeitenTyp]!.start_zeit" type="time" />
+        </label>
+        <label>
+          Ort
+          <input v-model="formular[bearbeitenTyp]!.ort" placeholder="Ort" />
+        </label>
+        <button type="submit" :disabled="speichern === bearbeitenTyp">
+          {{ speichern === bearbeitenTyp ? 'Speichere…' : (formular[bearbeitenTyp]?.id ? 'Speichern' : 'Hinzufügen') }}
+        </button>
+      </form>
+    </AppDialog>
     <p v-if="fehler" class="error">{{ fehler }}</p>
   </section>
 </template>
@@ -179,4 +201,13 @@ defineExpose({ laden })
 .kompakt .termin-grid { grid-template-columns: 1fr; }
 button.klein { align-self: flex-start; font-size: 0.78rem; padding: 0.25rem 0.5rem; }
 .error { color: var(--color-danger); font-size: 0.85rem; }
+.termin-liste { display: flex; flex-direction: column; gap: 0.4rem; }
+.termin-zeile {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.6rem 0.85rem;
+}
+.termin-info { display: flex; flex-direction: column; gap: 0.15rem; }
+.stift-btn { background: none; border: none; cursor: pointer; font-size: 0.95rem; padding: 0.15rem 0.3rem; flex-shrink: 0; }
+.bearbeiten-form { display: flex; flex-direction: column; gap: 0.65rem; }
+.bearbeiten-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--color-text-muted); }
 </style>
