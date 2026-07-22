@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../../supabaseClient'
 import { useAuth } from '../../composables/useAuth'
+import AppDialog from '../AppDialog.vue'
 
 interface Leiter {
   id: string
@@ -509,6 +510,7 @@ async function eigeneRolleHinzufuegen() {
     })
   }
   eigeneRolleNeu.value = ''
+  neueRolleOffen.value = false
 }
 
 async function eigeneRolleLoeschen(rolleId: string) {
@@ -588,6 +590,8 @@ const hoeckErfassenForm = ref({
 })
 const hoeckErfassenLaden = ref(false)
 const hoeckErfassenErfolg = ref(false)
+const hoeckErfassenOffen = ref(false)
+const neueRolleOffen = ref(false)
 
 async function hoeckErfassen() {
   if (!hoeckErfassenForm.value.start_datum) return
@@ -647,8 +651,11 @@ onMounted(ladeDaten)
       </button>
     </nav>
 
-    <div v-if="isLeitung" class="hoeck-erfassen-box">
-      <h4>Weiteren Höck erfassen</h4>
+    <div v-if="isLeitung" class="hoeck-erfassen-trigger">
+      <button type="button" class="sekundaer klein" @click="hoeckErfassenOffen = true">+ Weiteren Höck erfassen</button>
+    </div>
+
+    <AppDialog :open="hoeckErfassenOffen" titel="Weiteren Höck erfassen" @close="hoeckErfassenOffen = false">
       <p class="hint klein">z.B. Planungshöck vor dem Lager – erscheint auch im Kalender.</p>
       <form class="hoeck-erfassen-form" @submit.prevent="hoeckErfassen">
         <label>Titel <input v-model="hoeckErfassenForm.titel" placeholder="Höck" /></label>
@@ -661,7 +668,7 @@ onMounted(ladeDaten)
         <button type="submit" :disabled="hoeckErfassenLaden">{{ hoeckErfassenLaden ? 'Speichere…' : 'Speichern' }}</button>
         <span v-if="hoeckErfassenErfolg" class="hint klein ok">✓ Im Kalender erfasst.</span>
       </form>
-    </div>
+    </AppDialog>
 
     <div v-if="laden" class="hint">Lade...</div>
 
@@ -780,13 +787,16 @@ onMounted(ladeDaten)
           </div>
         </div>
 
-        <div class="eigene-rolle-form">
-          <select v-model="neueRolleAbschnitt" class="abschnitt-select">
-            <option v-for="a in ZEITABSCHNITTE" :key="a.key" :value="a.key">{{ a.label }}</option>
-          </select>
-          <input v-model="eigeneRolleNeu" placeholder="Neue Rolle..." @keyup.enter="eigeneRolleHinzufuegen" />
-          <button type="button" class="sekundaer klein" @click="eigeneRolleHinzufuegen">+</button>
-        </div>
+        <button type="button" class="sekundaer klein" @click="neueRolleOffen = true">+ Neue Rolle</button>
+        <AppDialog :open="neueRolleOffen" titel="Neue Rolle" @close="neueRolleOffen = false">
+          <div class="eigene-rolle-form">
+            <select v-model="neueRolleAbschnitt" class="abschnitt-select">
+              <option v-for="a in ZEITABSCHNITTE" :key="a.key" :value="a.key">{{ a.label }}</option>
+            </select>
+            <input v-model="eigeneRolleNeu" placeholder="Name der Rolle..." @keyup.enter="eigeneRolleHinzufuegen" />
+            <button type="button" @click="eigeneRolleHinzufuegen">Erstellen</button>
+          </div>
+        </AppDialog>
       </div>
 
       <div class="dienste-section">
