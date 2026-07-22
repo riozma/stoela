@@ -11,7 +11,6 @@ export const LAGER_NAV_SECTIONS = [
   'fahrplan',
   'vorweekend',
   'elterninfo',
-  'statistik',
   'gemini',
   'einkauf',
   'kueche',

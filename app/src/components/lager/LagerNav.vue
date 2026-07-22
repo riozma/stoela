@@ -171,13 +171,10 @@ function navKlick() {
       v-if="isLeitung || hatAppAdmin"
       class="nav-dropdown"
       data-label="Leitung"
-      :class="{ 'gruppe-aktiv': gruppeAktiv(['statistik', 'gemini', 'einstellungen']) }"
+      :class="{ 'gruppe-aktiv': gruppeAktiv(['gemini', 'einstellungen']) }"
     >
       <span class="nav-dropdown-label">Leitung</span>
       <div class="nav-dropdown-menu">
-        <router-link v-if="isLeitung" :to="sectionPath('statistik')" class="nav-link" :class="{ aktiv: isActive('statistik') }" @click="navKlick">
-          Statistik
-        </router-link>
         <router-link :to="sectionPath('gemini')" class="nav-link" :class="{ aktiv: isActive('gemini') }" @click="navKlick">
           Gemini
         </router-link>

@@ -32,7 +32,6 @@ import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import AemtliFoto from '../components/lager/AemtliFoto.vue'
 import HoeckBereich from '../components/lager/HoeckBereich.vue'
 import RezeptionPanel from '../components/lager/RezeptionPanel.vue'
-import StatistikPanel from '../components/lager/StatistikPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
@@ -203,7 +202,7 @@ const router = useRouter()
 const { session } = useAuth()
 const lagerId = computed(() => route.params.id as string)
 
-type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'statistik' | 'gemini' | 'hoeck' | 'kueche' | string
+type Tab = 'dashboard' | 'chatbot' | 'programm' | 'teilnehmer' | 'leiter' | 'gruppen' | 'einkauf' | 'team' | 'einstellungen' | 'quittungen' | 'fahrplan' | 'vorweekend' | 'elterninfo' | 'gemini' | 'hoeck' | 'kueche' | string
 
 const TEAM_ROLLE_LABELS: Record<string, string> = {
   lagerleitung: 'Lagerleitung',
@@ -2807,11 +2806,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           :user-id="session.user.id"
           :ist-kassier="hatFinanzenAemtli"
         />
-      </section>
-
-      <!-- Statistik -->
-      <section v-if="activeTab === 'statistik' && isLeitung">
-        <StatistikPanel :lager-id="lagerId" :start-datum="lager.start_datum" :end-datum="lager.end_datum" />
       </section>
 
       <!-- Gemini (nur Lalei / App Admin) -->
