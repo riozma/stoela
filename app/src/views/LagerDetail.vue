@@ -31,7 +31,6 @@ import AemtliMotto from '../components/lager/AemtliMotto.vue'
 import AemtliMaterial from '../components/lager/AemtliMaterial.vue'
 import AemtliFoto from '../components/lager/AemtliFoto.vue'
 import HoeckBereich from '../components/lager/HoeckBereich.vue'
-import RezeptionPanel from '../components/lager/RezeptionPanel.vue'
 import LagerGeminiPanel from '../components/lager/LagerGeminiPanel.vue'
 import LagerChatbotPanel from '../components/lager/LagerChatbotPanel.vue'
 import QuittungenPanel from '../components/lager/QuittungenPanel.vue'
@@ -122,6 +121,12 @@ interface TN {
   eltern_adresse?: string | null
   eltern_plz?: string | null
   eltern_ort?: string | null
+  angekommen: boolean
+}
+interface TnFinanz {
+  anmeldung_tn_id: string
+  bezahlt: boolean
+  bemerkung: string | null
 }
 interface LeiterAnmeldung {
   id: string
@@ -420,15 +425,65 @@ const tnSpeichern = ref(false)
 const tnFehler = ref('')
 const tnBearbeitenId = ref<string | null>(null)
 const tnEditForm = ref({
-  vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', ahv_nr: '',
+  vorname: '', nachname: '', geburtsdatum: '', geschlecht: '', ahv_nr: '', rolle: 'TN' as 'TN' | 'HL',
   notfallkontakt: '', eltern_email: '', eltern_aufenthaltsort: '',
   allergien: '', essensgewohnheiten: '', essensgewohnheiten_sonstiges: '',
-  medikamente: '', gesundheit_bemerkungen: '', sonstige_info: '',
+  medikamente: '', gesundheit_bemerkungen: '', sonstige_info: '', rezeption_notiz: '',
+  anwesend_von: '', anwesend_bis: '',
   eltern_vorname: '', eltern_nachname: '', eltern_telefon: '', eltern_adresse: '', eltern_plz: '', eltern_ort: '',
 })
 const tnDokumente = ref<Record<string, { typ: string; url: string }[]>>({})
+const tnFinanzen = ref<Record<string, TnFinanz>>({})
 
 const darfTnBearbeiten = computed(() => isLeitung.value || hatAppAdminAemtli.value)
+
+const TN_SPALTEN_OPTIONAL = [
+  { key: 'geburtsdatum', label: 'Geburtsdatum' },
+  { key: 'geschlecht', label: 'Geschlecht' },
+  { key: 'ahv_nr', label: 'AHV-Nr.' },
+  { key: 'notfallkontakt', label: 'Notfallkontakt' },
+  { key: 'allergien', label: 'Allergien' },
+  { key: 'essensgewohnheiten', label: 'Essensgewohnheiten' },
+  { key: 'medikamente', label: 'Medikamente' },
+  { key: 'gesundheit', label: 'Gesundheit' },
+  { key: 'eltern', label: 'Eltern-Kontakt' },
+  { key: 'anwesend', label: 'Anwesend von/bis' },
+  { key: 'bezahlt', label: 'Bezahlt' },
+  { key: 'dokumente', label: 'Dokumente' },
+  { key: 'sonstiges', label: 'Sonstiges' },
+] as const
+type TnSpalteKey = (typeof TN_SPALTEN_OPTIONAL)[number]['key']
+const TN_SPALTEN_STANDARD: TnSpalteKey[] = []
+const tnSpaltenSichtbar = ref<Set<TnSpalteKey>>(new Set(TN_SPALTEN_STANDARD))
+const tnSpaltenOffen = ref(false)
+function tnSpalteToggeln(key: TnSpalteKey) {
+  const set = new Set(tnSpaltenSichtbar.value)
+  if (set.has(key)) set.delete(key)
+  else set.add(key)
+  tnSpaltenSichtbar.value = set
+}
+
+function tnFehlendeAngaben(tn: TN): string[] {
+  const fehlt: string[] = []
+  if (!tn.notfallkontakt?.trim()) fehlt.push('Notfallkontakt')
+  if (!tn.ahv_nr?.trim()) fehlt.push('AHV-Nr.')
+  if (!tn.eltern_email?.trim()) fehlt.push('E-Mail Eltern')
+  return fehlt
+}
+function tnBezahlt(tnId: string): boolean {
+  return tnFinanzen.value[tnId]?.bezahlt ?? false
+}
+function tnFinanzBemerkung(tnId: string): string | null {
+  return tnFinanzen.value[tnId]?.bemerkung?.trim() || null
+}
+async function tnAngekommenSetzen(tn: TN, wert: boolean) {
+  tn.angekommen = wert
+  await supabase.from('anmeldungen_tn').update({ angekommen: wert }).eq('id', tn.id)
+}
+const tnBereitAnzahl = computed(() => tnListe.value.filter((t) => !tnFehlendeAngaben(t).length && tnBezahlt(t.id)).length)
+const tnAngekommenAnzahl = computed(() => tnListe.value.filter((t) => t.angekommen).length)
+
+const tnDetailOffen = ref<TN | null>(null)
 
 function tnSonstiges(tn: TN): string {
   const teile: string[] = []
@@ -438,17 +493,18 @@ function tnSonstiges(tn: TN): string {
 }
 
 function tnBearbeitenStart(tn: TN) {
-  if (tnBearbeitenId.value === tn.id) { tnBearbeitenId.value = null; return }
+  tnDetailOffen.value = null
   tnBearbeitenId.value = tn.id
   tnEditForm.value = {
     vorname: tn.vorname, nachname: tn.nachname, geburtsdatum: tn.geburtsdatum ?? '',
-    geschlecht: tn.geschlecht ?? '', ahv_nr: tn.ahv_nr ?? '',
+    geschlecht: tn.geschlecht ?? '', ahv_nr: tn.ahv_nr ?? '', rolle: tn.rolle,
     notfallkontakt: tn.notfallkontakt ?? '', eltern_email: tn.eltern_email ?? '',
     eltern_aufenthaltsort: tn.eltern_aufenthaltsort ?? '',
     allergien: tn.allergien ?? '', essensgewohnheiten: tn.essensgewohnheiten ?? '',
     essensgewohnheiten_sonstiges: tn.essensgewohnheiten_sonstiges ?? '',
     medikamente: tn.medikamente ?? '', gesundheit_bemerkungen: tn.gesundheit_bemerkungen ?? '',
-    sonstige_info: tn.sonstige_info ?? '',
+    sonstige_info: tn.sonstige_info ?? '', rezeption_notiz: tn.rezeption_notiz ?? '',
+    anwesend_von: tn.anwesend_von ?? '', anwesend_bis: tn.anwesend_bis ?? '',
     eltern_vorname: tn.eltern_vorname ?? '', eltern_nachname: tn.eltern_nachname ?? '',
     eltern_telefon: tn.eltern_telefon ?? '', eltern_adresse: tn.eltern_adresse ?? '',
     eltern_plz: tn.eltern_plz ?? '', eltern_ort: tn.eltern_ort ?? '',
@@ -464,6 +520,7 @@ async function tnBearbeitenSpeichern(tn: TN) {
     geburtsdatum: f.geburtsdatum || null,
     geschlecht: f.geschlecht || null,
     ahv_nr: f.ahv_nr.trim() || null,
+    rolle: f.rolle,
     notfallkontakt: f.notfallkontakt.trim() || null,
     eltern_email: f.eltern_email.trim() || null,
     eltern_aufenthaltsort: f.eltern_aufenthaltsort.trim() || null,
@@ -473,6 +530,7 @@ async function tnBearbeitenSpeichern(tn: TN) {
     medikamente: f.medikamente.trim() || null,
     gesundheit_bemerkungen: f.gesundheit_bemerkungen.trim() || null,
     sonstige_info: f.sonstige_info.trim() || null,
+    rezeption_notiz: f.rezeption_notiz.trim() || null,
   }).eq('id', tn.id)
   if (error) { tnFehler.value = error.message; return }
 
@@ -488,15 +546,25 @@ async function tnBearbeitenSpeichern(tn: TN) {
     if (kErr) { tnFehler.value = kErr.message; return }
   }
 
+  if (isLeitung.value && (f.anwesend_von !== (tn.anwesend_von ?? '') || f.anwesend_bis !== (tn.anwesend_bis ?? ''))) {
+    const { error: aErr } = await supabase.rpc('tn_anwesenheit_speichern', {
+      p_tn_id: tn.id,
+      p_anwesend_von: f.anwesend_von || null,
+      p_anwesend_bis: f.anwesend_bis || null,
+    })
+    if (aErr) { tnFehler.value = aErr.message; return }
+  }
+
   Object.assign(tn, {
     vorname: f.vorname.trim(), nachname: f.nachname.trim(), geburtsdatum: f.geburtsdatum || null,
-    geschlecht: f.geschlecht || null, ahv_nr: f.ahv_nr.trim() || null,
+    geschlecht: f.geschlecht || null, ahv_nr: f.ahv_nr.trim() || null, rolle: f.rolle,
     notfallkontakt: f.notfallkontakt.trim() || null, eltern_email: f.eltern_email.trim() || null,
     eltern_aufenthaltsort: f.eltern_aufenthaltsort.trim() || null,
     allergien: f.allergien.trim() || null, essensgewohnheiten: f.essensgewohnheiten.trim() || null,
     essensgewohnheiten_sonstiges: f.essensgewohnheiten_sonstiges.trim() || null,
     medikamente: f.medikamente.trim() || null, gesundheit_bemerkungen: f.gesundheit_bemerkungen.trim() || null,
-    sonstige_info: f.sonstige_info.trim() || null,
+    sonstige_info: f.sonstige_info.trim() || null, rezeption_notiz: f.rezeption_notiz.trim() || null,
+    anwesend_von: f.anwesend_von || null, anwesend_bis: f.anwesend_bis || null,
     eltern_vorname: f.eltern_vorname.trim() || null, eltern_nachname: f.eltern_nachname.trim() || null,
     eltern_telefon: f.eltern_telefon.trim() || null, eltern_adresse: f.eltern_adresse.trim() || null,
     eltern_plz: f.eltern_plz.trim() || null, eltern_ort: f.eltern_ort.trim() || null,
@@ -530,7 +598,7 @@ const TN_DOK_LABEL: Record<string, string> = {
 async function ladeTeilnehmer() {
   const { data } = await supabase
     .from('anmeldungen_tn')
-    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info, rezeption_notiz, eltern_kontakt_id')
+    .select('id, vorname, nachname, geburtsdatum, geschlecht, ahv_nr, rolle, status, notfallkontakt, eltern_email, anwesend_von, anwesend_bis, allergien, essensgewohnheiten, essensgewohnheiten_sonstiges, medikamente, gesundheit_bemerkungen, eltern_aufenthaltsort, sonstige_info, rezeption_notiz, eltern_kontakt_id, angekommen')
     .eq('lager_id', lagerId.value)
     .order('nachname')
   const liste = (data ?? []) as TN[]
@@ -553,6 +621,19 @@ async function ladeTeilnehmer() {
     }
   }
   tnListe.value = liste
+
+  const tnIds = liste.map((t) => t.id)
+  if (tnIds.length) {
+    const { data: fin } = await supabase
+      .from('tn_finanzen')
+      .select('anmeldung_tn_id, bezahlt, bemerkung')
+      .in('anmeldung_tn_id', tnIds)
+    const map: Record<string, TnFinanz> = {}
+    for (const f of fin ?? []) map[f.anmeldung_tn_id] = f
+    tnFinanzen.value = map
+  } else {
+    tnFinanzen.value = {}
+  }
 }
 
 async function tnHinzufuegen() {
@@ -620,7 +701,6 @@ const orgPersonenPool = ref<OrgPersonPool[]>([])
 const orgPersonAuswahl = ref('')
 const leiterBearbeitenId = ref<string | null>(null)
 const leiterListenAnsicht = ref<'grob' | 'detail' | 'verwaltung'>('grob')
-const tnListenAnsicht = ref<'uebersicht' | 'detail' | 'verwaltung'>('uebersicht')
 const leiterEditForm = ref({
   vorname: '',
   nachname: '',
@@ -676,9 +756,12 @@ function leiterCsvHerunterladen() {
   leiterCsvDownload(`${name}_leiter.csv`, leiterAlsCsv(leiterExportZeilen.value))
 }
 
+const tnCsvOffen = ref(false)
+const tnCsvSpalten = ref<TnSpalteKey[]>([...TN_SPALTEN_OPTIONAL.map((s) => s.key)])
+
 function tnCsvHerunterladen() {
   const name = (lager.value?.name ?? 'lager').replace(/\s+/g, '_')
-  tnCsvDownload(`${name}_teilnehmer.csv`, tnAlsCsv(tnListe.value))
+  tnCsvDownload(`${name}_teilnehmer.csv`, tnAlsCsv(tnListe.value, tnCsvSpalten.value))
 }
 
 const leiterZusatzangaben = ref<Record<string, string>>({})
@@ -1977,10 +2060,6 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
         />
       </section>
 
-      <section v-if="activeTab === 'rezeption'">
-        <RezeptionPanel :lager-id="lagerId" />
-      </section>
-
       <!-- Programm -->
       <section v-if="activeTab === 'programm'">
         <p v-if="bloeckeLaden && !bloeckeVollGeladen" class="hint">Lade Programmdetails…</p>
@@ -2040,12 +2119,13 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
       <!-- Teilnehmer -->
       <section v-if="activeTab === 'teilnehmer'">
         <h3>Angemeldete Teilnehmer/innen ({{ tnListe.length }})</h3>
+        <p v-if="tnListe.length" class="hint">
+          {{ tnBereitAnzahl }} / {{ tnListe.length }} vollständig und bezahlt · {{ tnAngekommenAnzahl }} / {{ tnListe.length }} angekommen
+        </p>
 
         <nav class="leiter-ansicht-nav">
-          <button type="button" :class="{ aktiv: tnListenAnsicht === 'uebersicht' }" @click="tnListenAnsicht = 'uebersicht'">Übersicht</button>
-          <button type="button" :class="{ aktiv: tnListenAnsicht === 'detail' }" @click="tnListenAnsicht = 'detail'">Detailansicht</button>
-          <button type="button" :class="{ aktiv: tnListenAnsicht === 'verwaltung' }" @click="tnListenAnsicht = 'verwaltung'">Verwaltung</button>
-          <button v-if="tnListe.length" type="button" class="secondary" @click="tnCsvHerunterladen">CSV herunterladen</button>
+          <button type="button" class="secondary" @click="tnSpaltenOffen = true">Spalten</button>
+          <button v-if="tnListe.length" type="button" class="secondary" @click="tnCsvOffen = true">CSV herunterladen</button>
           <button v-if="isLeitung" type="button" class="secondary" @click="altersregelOffen = true">Altersregel</button>
         </nav>
 
@@ -2066,128 +2146,34 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
           </form>
         </AppDialog>
 
-        <!-- Übersicht -->
-        <table v-if="tnListenAnsicht === 'uebersicht' && tnListe.length" class="liste">
-          <thead>
-            <tr><th>Name</th><th>Alter</th><th>Gruppe</th><th>Rolle</th><th>Status</th><th v-if="isLeitung">Anwesend</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="tn in tnListe" :key="tn.id">
-              <td>{{ tn.vorname }} {{ tn.nachname }}</td>
-              <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
-              <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
-              <td>{{ tn.rolle }}</td>
-              <td>{{ tn.status }}</td>
-              <td v-if="isLeitung">{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppDialog :open="tnSpaltenOffen" titel="Spalten auswählen" @close="tnSpaltenOffen = false">
+          <div class="spalten-liste">
+            <label v-for="s in TN_SPALTEN_OPTIONAL" :key="s.key" class="checkbox-label">
+              <input type="checkbox" :checked="tnSpaltenSichtbar.has(s.key)" @change="tnSpalteToggeln(s.key)" />
+              {{ s.label }}
+            </label>
+          </div>
+        </AppDialog>
 
-        <!-- Detailansicht -->
-        <div v-if="tnListenAnsicht === 'detail' && tnListe.length" class="detail-scroll">
-          <table class="liste tn-detail-tabelle">
+        <div class="detail-scroll">
+          <table v-if="tnListe.length" class="liste">
             <thead>
               <tr>
-                <th>Name</th><th>Geburtsdatum</th><th>Alter</th><th>Geschlecht</th><th>AHV-Nr.</th><th>Gruppe</th><th>Rolle</th>
-                <th>Status</th><th>Notfallkontakt</th><th>Allergien</th><th>Essensgewohnheiten</th><th>Medikamente</th><th>Gesundheit</th>
-                <th>Eltern</th><th>Eltern E-Mail</th><th>Eltern Telefon</th><th>Eltern Adresse</th><th>Anwesend</th><th>Dokumente</th><th>Sonstiges</th>
-                <th v-if="darfTnBearbeiten">Aktionen</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="tn in tnListe" :key="tn.id">
-              <tr>
-                <td>{{ tn.vorname }} {{ tn.nachname }}</td>
-                <td>{{ tn.geburtsdatum ?? '–' }}</td>
-                <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
-                <td>{{ tn.geschlecht ?? '–' }}</td>
-                <td>{{ tn.ahv_nr ?? '–' }}</td>
-                <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
-                <td>{{ tn.rolle }}</td>
-                <td>{{ tn.status }}</td>
-                <td>{{ tn.notfallkontakt ?? '–' }}</td>
-                <td>{{ tn.allergien ?? '–' }}</td>
-                <td>
-                  {{ tn.essensgewohnheiten ?? '–' }}
-                  <span v-if="tn.essensgewohnheiten_sonstiges" class="hint klein">({{ tn.essensgewohnheiten_sonstiges }})</span>
-                </td>
-                <td>{{ tn.medikamente ?? '–' }}</td>
-                <td>{{ tn.gesundheit_bemerkungen ?? '–' }}</td>
-                <td>{{ [tn.eltern_vorname, tn.eltern_nachname].filter(Boolean).join(' ') || '–' }}</td>
-                <td>{{ tn.eltern_email ?? '–' }}</td>
-                <td>{{ tn.eltern_telefon ?? '–' }}</td>
-                <td>
-                  {{ tn.eltern_adresse ?? '–' }}<span v-if="tn.eltern_plz || tn.eltern_ort"><br />{{ tn.eltern_plz }} {{ tn.eltern_ort }}</span>
-                  <span v-if="tn.eltern_aufenthaltsort" class="hint klein"><br />Aufenthaltsort: {{ tn.eltern_aufenthaltsort }}</span>
-                </td>
-                <td>{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
-                <td>
-                  <span v-if="(tnDokumente[tn.id] ?? []).length" class="tn-dok-links">
-                    <a v-for="(d, i) in tnDokumente[tn.id]" :key="i" :href="d.url" target="_blank" rel="noopener">{{ TN_DOK_LABEL[d.typ] ?? d.typ }}</a>
-                  </span>
-                  <span v-else class="hint">–</span>
-                </td>
-                <td>{{ tnSonstiges(tn) }}</td>
-                <td v-if="darfTnBearbeiten">
-                  <button type="button" class="secondary klein" @click="tnBearbeitenStart(tn)">
-                    {{ tnBearbeitenId === tn.id ? 'Schliessen' : 'Bearbeiten' }}
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="tnBearbeitenId === tn.id">
-                <td :colspan="darfTnBearbeiten ? 21 : 20">
-                  <div class="tn-bearbeiten-form">
-                    <label>Vorname <input v-model="tnEditForm.vorname" /></label>
-                    <label>Nachname <input v-model="tnEditForm.nachname" /></label>
-                    <label>Geburtsdatum <input v-model="tnEditForm.geburtsdatum" type="date" /></label>
-                    <label>Geschlecht
-                      <select v-model="tnEditForm.geschlecht">
-                        <option value="">–</option>
-                        <option value="m">männlich</option>
-                        <option value="w">weiblich</option>
-                        <option value="d">divers</option>
-                      </select>
-                    </label>
-                    <label>AHV-Nr. <input :value="tnEditForm.ahv_nr" @input="tnEditForm.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" /></label>
-                    <label>Notfallkontakt <input v-model="tnEditForm.notfallkontakt" /></label>
-                    <label>Eltern Vorname <input v-model="tnEditForm.eltern_vorname" /></label>
-                    <label>Eltern Nachname <input v-model="tnEditForm.eltern_nachname" /></label>
-                    <label>Eltern E-Mail <input v-model="tnEditForm.eltern_email" type="email" /></label>
-                    <label>Eltern Telefon <input v-model="tnEditForm.eltern_telefon" /></label>
-                    <label>Eltern Adresse <input v-model="tnEditForm.eltern_adresse" /></label>
-                    <label>Eltern PLZ <input v-model="tnEditForm.eltern_plz" /></label>
-                    <label>Eltern Ort <input v-model="tnEditForm.eltern_ort" /></label>
-                    <label>Aufenthaltsort Eltern (während Lager) <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
-                    <label>Allergien <input v-model="tnEditForm.allergien" /></label>
-                    <label>Essensgewohnheiten <input v-model="tnEditForm.essensgewohnheiten" /></label>
-                    <label>Essen Sonstiges <input v-model="tnEditForm.essensgewohnheiten_sonstiges" /></label>
-                    <label>Medikamente <input v-model="tnEditForm.medikamente" /></label>
-                    <label class="full">Gesundheitsbemerkungen <textarea v-model="tnEditForm.gesundheit_bemerkungen" rows="2"></textarea></label>
-                    <label class="full">Sonstiges <textarea v-model="tnEditForm.sonstige_info" rows="2"></textarea></label>
-                    <div class="inline-aktionen">
-                      <button type="button" @click="tnBearbeitenSpeichern(tn)">Speichern</button>
-                      <button type="button" class="secondary" @click="tnBearbeitenId = null">Abbrechen</button>
-                      <button type="button" class="secondary danger" @click="tnLoeschen(tn.id)">Teilnehmer/in löschen</button>
-                    </div>
-                    <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
-                  </div>
-                </td>
-              </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Verwaltung -->
-        <template v-if="tnListenAnsicht === 'verwaltung'">
-          <p class="hint">
-            Standard-Anwesenheit: Alle TN sind standardmässig das ganze Lager anwesend.
-            Die Lalei kann die Anwesenheitsdauer pro Person anpassen.
-          </p>
-          <table v-if="tnListe.length" class="liste tn-verwaltung-tabelle">
-            <thead>
-              <tr>
-                <th>Name</th><th>Alter</th><th>Gruppe</th><th>Anwesend von</th><th>Anwesend bis</th><th>Aktionen</th>
+                <th>Name</th><th>Alter</th><th>Gruppe</th><th>Status</th><th>Bereit</th>
+                <th v-if="tnSpaltenSichtbar.has('geburtsdatum')">Geburtsdatum</th>
+                <th v-if="tnSpaltenSichtbar.has('geschlecht')">Geschlecht</th>
+                <th v-if="tnSpaltenSichtbar.has('ahv_nr')">AHV-Nr.</th>
+                <th v-if="tnSpaltenSichtbar.has('notfallkontakt')">Notfallkontakt</th>
+                <th v-if="tnSpaltenSichtbar.has('allergien')">Allergien</th>
+                <th v-if="tnSpaltenSichtbar.has('essensgewohnheiten')">Essensgewohnheiten</th>
+                <th v-if="tnSpaltenSichtbar.has('medikamente')">Medikamente</th>
+                <th v-if="tnSpaltenSichtbar.has('gesundheit')">Gesundheit</th>
+                <th v-if="tnSpaltenSichtbar.has('eltern')">Eltern</th>
+                <th v-if="tnSpaltenSichtbar.has('anwesend')">Anwesend</th>
+                <th v-if="tnSpaltenSichtbar.has('bezahlt')">Bezahlt</th>
+                <th v-if="tnSpaltenSichtbar.has('dokumente')">Dokumente</th>
+                <th v-if="tnSpaltenSichtbar.has('sonstiges')">Sonstiges</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -2195,21 +2181,145 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
                 <td>{{ tn.vorname }} {{ tn.nachname }}</td>
                 <td>{{ berechneAlter(tn.geburtsdatum) ?? '–' }}</td>
                 <td><span v-if="gruppeTagTn[tn.id]" class="gruppen-tag">{{ gruppeTagTn[tn.id] }}</span><span v-else>–</span></td>
+                <td>{{ tn.status }}</td>
                 <td>
-                  <input v-if="isLeitung" v-model="tn.anwesend_von" type="date" class="inline-inp" title="Anwesend von" />
-                  <span v-else>{{ tn.anwesend_von ?? '–' }}</span>
+                  <span v-if="tnFehlendeAngaben(tn).length" class="fehlt-badge" :title="'Fehlt: ' + tnFehlendeAngaben(tn).join(', ')">{{ tnFehlendeAngaben(tn).join(', ') }}</span>
+                  <span v-else class="ok-badge">vollständig</span>
                 </td>
-                <td>
-                  <input v-if="isLeitung" v-model="tn.anwesend_bis" type="date" class="inline-inp" title="Anwesend bis" />
-                  <span v-else>{{ tn.anwesend_bis ?? '–' }}</span>
+                <td v-if="tnSpaltenSichtbar.has('geburtsdatum')">{{ tn.geburtsdatum ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('geschlecht')">{{ tn.geschlecht ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('ahv_nr')">{{ tn.ahv_nr ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('notfallkontakt')">{{ tn.notfallkontakt ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('allergien')">{{ tn.allergien ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('essensgewohnheiten')">
+                  {{ tn.essensgewohnheiten ?? '–' }}
+                  <span v-if="tn.essensgewohnheiten_sonstiges" class="hint klein">({{ tn.essensgewohnheiten_sonstiges }})</span>
                 </td>
-                <td v-if="isLeitung">
-                  <button type="button" class="secondary klein" @click="tnAnwesenheitSpeichern(tn)">Speichern</button>
+                <td v-if="tnSpaltenSichtbar.has('medikamente')">{{ tn.medikamente ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('gesundheit')">{{ tn.gesundheit_bemerkungen ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('eltern')">
+                  {{ [tn.eltern_vorname, tn.eltern_nachname].filter(Boolean).join(' ') || '–' }}
+                  <span v-if="tn.eltern_email" class="hint klein"><br />{{ tn.eltern_email }}</span>
+                  <span v-if="tn.eltern_telefon" class="hint klein"><br />{{ tn.eltern_telefon }}</span>
+                </td>
+                <td v-if="tnSpaltenSichtbar.has('anwesend')">{{ tn.anwesend_von ?? '–' }} – {{ tn.anwesend_bis ?? '–' }}</td>
+                <td v-if="tnSpaltenSichtbar.has('bezahlt')">
+                  <span :class="tnBezahlt(tn.id) ? 'ok-badge' : 'fehlt-badge'">{{ tnBezahlt(tn.id) ? 'bezahlt' : 'offen' }}</span>
+                  <span v-if="tnFinanzBemerkung(tn.id)" class="hint klein" :title="tnFinanzBemerkung(tn.id)!"><br />📝 {{ tnFinanzBemerkung(tn.id) }}</span>
+                </td>
+                <td v-if="tnSpaltenSichtbar.has('dokumente')">
+                  <span v-if="(tnDokumente[tn.id] ?? []).length" class="tn-dok-links">
+                    <a v-for="(d, i) in tnDokumente[tn.id]" :key="i" :href="d.url" target="_blank" rel="noopener">{{ TN_DOK_LABEL[d.typ] ?? d.typ }}</a>
+                  </span>
+                  <span v-else class="hint">–</span>
+                </td>
+                <td v-if="tnSpaltenSichtbar.has('sonstiges')">{{ tnSonstiges(tn) }}</td>
+                <td class="aktionen-zelle">
+                  <label class="checkbox-label angekommen-toggle" title="Angekommen">
+                    <input type="checkbox" :checked="tn.angekommen" @change="tnAngekommenSetzen(tn, ($event.target as HTMLInputElement).checked)" />
+                    Angekommen
+                  </label>
+                  <button type="button" class="secondary klein" @click="tnDetailOffen = tn">Details</button>
+                  <button v-if="darfTnBearbeiten" type="button" class="secondary klein" @click="tnBearbeitenStart(tn)">Bearbeiten</button>
                 </td>
               </tr>
             </tbody>
           </table>
-        </template>
+        </div>
+
+        <AppDialog :open="tnDetailOffen !== null" :titel="tnDetailOffen ? tnDetailOffen.vorname + ' ' + tnDetailOffen.nachname : 'Details'" @close="tnDetailOffen = null">
+          <dl v-if="tnDetailOffen" class="detail-liste">
+            <div><dt>Geburtsdatum</dt><dd>{{ tnDetailOffen.geburtsdatum ?? '–' }} ({{ berechneAlter(tnDetailOffen.geburtsdatum) ?? '–' }})</dd></div>
+            <div><dt>Geschlecht</dt><dd>{{ tnDetailOffen.geschlecht ?? '–' }}</dd></div>
+            <div><dt>AHV-Nr.</dt><dd>{{ tnDetailOffen.ahv_nr ?? '–' }}</dd></div>
+            <div><dt>Rolle</dt><dd>{{ tnDetailOffen.rolle }}</dd></div>
+            <div><dt>Status</dt><dd>{{ tnDetailOffen.status }}</dd></div>
+            <div><dt>Notfallkontakt</dt><dd>{{ tnDetailOffen.notfallkontakt ?? '–' }}</dd></div>
+            <div><dt>Allergien</dt><dd>{{ tnDetailOffen.allergien ?? '–' }}</dd></div>
+            <div><dt>Essensgewohnheiten</dt><dd>{{ tnDetailOffen.essensgewohnheiten ?? '–' }} {{ tnDetailOffen.essensgewohnheiten_sonstiges ? `(${tnDetailOffen.essensgewohnheiten_sonstiges})` : '' }}</dd></div>
+            <div><dt>Medikamente</dt><dd>{{ tnDetailOffen.medikamente ?? '–' }}</dd></div>
+            <div><dt>Gesundheit</dt><dd>{{ tnDetailOffen.gesundheit_bemerkungen ?? '–' }}</dd></div>
+            <div><dt>Eltern</dt><dd>{{ [tnDetailOffen.eltern_vorname, tnDetailOffen.eltern_nachname].filter(Boolean).join(' ') || '–' }}</dd></div>
+            <div><dt>Eltern E-Mail</dt><dd>{{ tnDetailOffen.eltern_email ?? '–' }}</dd></div>
+            <div><dt>Eltern Telefon</dt><dd>{{ tnDetailOffen.eltern_telefon ?? '–' }}</dd></div>
+            <div><dt>Eltern Adresse</dt><dd>{{ tnDetailOffen.eltern_adresse ?? '–' }} {{ tnDetailOffen.eltern_plz }} {{ tnDetailOffen.eltern_ort }}</dd></div>
+            <div><dt>Aufenthaltsort Eltern</dt><dd>{{ tnDetailOffen.eltern_aufenthaltsort ?? '–' }}</dd></div>
+            <div><dt>Anwesend</dt><dd>{{ tnDetailOffen.anwesend_von ?? '–' }} – {{ tnDetailOffen.anwesend_bis ?? '–' }}</dd></div>
+            <div><dt>Bezahlt</dt><dd>{{ tnBezahlt(tnDetailOffen.id) ? 'Ja' : 'Nein' }} {{ tnFinanzBemerkung(tnDetailOffen.id) ? `(${tnFinanzBemerkung(tnDetailOffen.id)})` : '' }}</dd></div>
+            <div><dt>Dokumente</dt>
+              <dd>
+                <span v-if="(tnDokumente[tnDetailOffen.id] ?? []).length" class="tn-dok-links">
+                  <a v-for="(d, i) in tnDokumente[tnDetailOffen.id]" :key="i" :href="d.url" target="_blank" rel="noopener">{{ TN_DOK_LABEL[d.typ] ?? d.typ }}</a>
+                </span>
+                <span v-else>–</span>
+              </dd>
+            </div>
+            <div><dt>Sonstiges</dt><dd>{{ tnDetailOffen.sonstige_info ?? '–' }}</dd></div>
+          </dl>
+          <div v-if="tnDetailOffen" class="inline-aktionen">
+            <button v-if="darfTnBearbeiten" type="button" @click="tnBearbeitenStart(tnDetailOffen)">Bearbeiten</button>
+          </div>
+        </AppDialog>
+
+        <AppDialog :open="tnBearbeitenId !== null" titel="Teilnehmer/in bearbeiten" @close="tnBearbeitenId = null">
+          <div v-if="tnBearbeitenId" class="tn-bearbeiten-form">
+            <label>Vorname <input v-model="tnEditForm.vorname" /></label>
+            <label>Nachname <input v-model="tnEditForm.nachname" /></label>
+            <label>Geburtsdatum <input v-model="tnEditForm.geburtsdatum" type="date" /></label>
+            <label>Geschlecht
+              <select v-model="tnEditForm.geschlecht">
+                <option value="">–</option>
+                <option value="m">männlich</option>
+                <option value="w">weiblich</option>
+                <option value="d">divers</option>
+              </select>
+            </label>
+            <label>Rolle
+              <select v-model="tnEditForm.rolle">
+                <option value="TN">TN</option>
+                <option value="HL">HL</option>
+              </select>
+            </label>
+            <label>AHV-Nr. <input :value="tnEditForm.ahv_nr" @input="tnEditForm.ahv_nr = ahvBeimTippen(($event.target as HTMLInputElement).value)" /></label>
+            <label>Notfallkontakt <input v-model="tnEditForm.notfallkontakt" /></label>
+            <label v-if="isLeitung">Anwesend von <input v-model="tnEditForm.anwesend_von" type="date" /></label>
+            <label v-if="isLeitung">Anwesend bis <input v-model="tnEditForm.anwesend_bis" type="date" /></label>
+            <label>Eltern Vorname <input v-model="tnEditForm.eltern_vorname" /></label>
+            <label>Eltern Nachname <input v-model="tnEditForm.eltern_nachname" /></label>
+            <label>Eltern E-Mail <input v-model="tnEditForm.eltern_email" type="email" /></label>
+            <label>Eltern Telefon <input v-model="tnEditForm.eltern_telefon" /></label>
+            <label>Eltern Adresse <input v-model="tnEditForm.eltern_adresse" /></label>
+            <label>Eltern PLZ <input v-model="tnEditForm.eltern_plz" /></label>
+            <label>Eltern Ort <input v-model="tnEditForm.eltern_ort" /></label>
+            <label>Aufenthaltsort Eltern (während Lager) <input v-model="tnEditForm.eltern_aufenthaltsort" /></label>
+            <label>Allergien <input v-model="tnEditForm.allergien" /></label>
+            <label>Essensgewohnheiten <input v-model="tnEditForm.essensgewohnheiten" /></label>
+            <label>Essen Sonstiges <input v-model="tnEditForm.essensgewohnheiten_sonstiges" /></label>
+            <label>Medikamente <input v-model="tnEditForm.medikamente" /></label>
+            <label class="full">Gesundheitsbemerkungen <textarea v-model="tnEditForm.gesundheit_bemerkungen" rows="2"></textarea></label>
+            <label class="full">Sonstiges <textarea v-model="tnEditForm.sonstige_info" rows="2"></textarea></label>
+            <label class="full">Rezeptions-Notiz <textarea v-model="tnEditForm.rezeption_notiz" rows="2" placeholder="Was Eltern am Anreisetag mitgeteilt haben..."></textarea></label>
+            <div class="inline-aktionen">
+              <button type="button" @click="tnBearbeitenSpeichern(tnListe.find((t) => t.id === tnBearbeitenId)!)">Speichern</button>
+              <button type="button" class="secondary" @click="tnBearbeitenId = null">Abbrechen</button>
+              <button type="button" class="secondary danger" @click="tnLoeschen(tnBearbeitenId)">Teilnehmer/in löschen</button>
+            </div>
+            <p v-if="tnFehler" class="error">{{ tnFehler }}</p>
+          </div>
+        </AppDialog>
+
+        <AppDialog :open="tnCsvOffen" titel="CSV-Export" @close="tnCsvOffen = false">
+          <p class="hint">Was soll exportiert werden?</p>
+          <div class="spalten-liste">
+            <label v-for="s in TN_SPALTEN_OPTIONAL" :key="s.key" class="checkbox-label">
+              <input type="checkbox" v-model="tnCsvSpalten" :value="s.key" />
+              {{ s.label }}
+            </label>
+          </div>
+          <div class="inline-aktionen">
+            <button type="button" @click="tnCsvHerunterladen(); tnCsvOffen = false">Herunterladen</button>
+          </div>
+        </AppDialog>
 
         <p v-if="!tnListe.length" class="hint">Noch keine Teilnehmer.</p>
         <h3>Manuell erfassen</h3>
@@ -2926,6 +3036,15 @@ watch(activeTab, (tab) => { void ladeTabDaten(tab) })
 .tn-bearbeiten-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .tn-bearbeiten-form label.full { grid-column: 1 / -1; }
 .tn-bearbeiten-form .inline-aktionen { grid-column: 1 / -1; display: flex; gap: 0.5rem; }
+.spalten-liste { display: flex; flex-direction: column; gap: 0.5rem; }
+.detail-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.6rem 1rem; margin: 0 0 1rem; padding: 0; }
+.detail-liste div { display: flex; flex-direction: column; gap: 0.1rem; }
+.detail-liste dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text-muted); }
+.detail-liste dd { margin: 0; font-size: 0.9rem; }
+.fehlt-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: #fdf3e0; color: #8a5a1f; font-size: 0.78rem; }
+.ok-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: #eaf3ec; color: #2f6b40; font-size: 0.78rem; }
+.aktionen-zelle { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.angekommen-toggle { flex-direction: row !important; align-items: center; gap: 0.3rem !important; font-size: 0.78rem !important; white-space: nowrap; }
 .leiter-detail-tabelle { font-size: 0.8rem; min-width: 900px; }
 .anmeldung-aktivierung { margin: 0 0 1rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .anmeldung-aktivierung label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }

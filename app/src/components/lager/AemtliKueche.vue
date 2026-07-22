@@ -761,7 +761,7 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
     </div>
 
     <div v-if="ansicht === 'dessertaktien'">
-      <DessertaktienUebersicht :lager-id="lagerId" />
+      <DessertaktienUebersicht :lager-id="lagerId" bearbeitbar />
     </div>
 
   </section>
