@@ -4,6 +4,7 @@ import { supabase } from '../../supabaseClient'
 import LagerEinkauf from './LagerEinkauf.vue'
 import AemtliShell from './AemtliShell.vue'
 import DessertaktienUebersicht from './DessertaktienUebersicht.vue'
+import AppDialog from '../AppDialog.vue'
 
 type MahlzeitTyp = 'fruehstueck' | 'zmittag' | 'znacht' | 'jause' | 'dessert'
 type DashboardTab = 'uebersicht' | 'menuplaner' | 'personen' | 'einkauf' | 'dessertaktien'
@@ -73,8 +74,11 @@ const props = defineProps<{
 }>()
 
 const ansicht = ref<DashboardTab>('uebersicht')
-const menuTeil = ref<'plan' | 'wiederkehrend' | 'einzeln'>('plan')
 const ausgewaehlterTag = ref<string>('')
+const menuErgaenzenOffen = ref(false)
+const menuErgaenzenModus = ref<'einmalig' | 'wiederkehrend'>('einmalig')
+const slotBearbeitenOffen = ref(false)
+const slotBearbeitenTyp = ref<MahlzeitTyp | null>(null)
 const vorlagen = ref<Vorlage[]>([])
 const mahlzeiten = ref<Mahlzeit[]>([])
 const ausnahmen = ref<Ausnahme[]>([])
@@ -106,7 +110,7 @@ const mahlzeitLabels: Record<MahlzeitTyp, string> = {
   fruehstueck: 'Frühstück',
   zmittag: 'Zmorgen',
   znacht: 'Znacht',
-  jause: 'Pause',
+  jause: 'Sonstiges',
   dessert: 'Dessert',
 }
 
@@ -325,7 +329,34 @@ async function vorlageSpeichern() {
   })
   if (error) { fehler.value = error.message; return }
   vorlageForm.value = { name: '', mahlzeit: 'zmittag', wochentag: 1, uhrzeit: '12:00', beschreibung: '', materialText: '' }
+  menuErgaenzenOffen.value = false
   await laden()
+}
+
+function menuErgaenzenSpeichern() {
+  if (menuErgaenzenModus.value === 'einmalig') return einzelSpeichern()
+  return vorlageSpeichern()
+}
+
+function menuErgaenzenOeffnen() {
+  einzelForm.value = { tag: ausgewaehlterTag.value, mahlzeit: 'zmittag', uhrzeit: defaultUhrzeit.zmittag, titel: '', beschreibung: '', materialText: '' }
+  vorlageForm.value = { name: '', mahlzeit: 'zmittag', wochentag: 1, uhrzeit: '12:00', beschreibung: '', materialText: '' }
+  menuErgaenzenModus.value = 'einmalig'
+  menuErgaenzenOffen.value = true
+}
+
+function slotBearbeitenStarten(typ: MahlzeitTyp) {
+  const plan = planFuerSlot(ausgewaehlterTag.value, typ)
+  einzelForm.value = {
+    tag: ausgewaehlterTag.value,
+    mahlzeit: typ,
+    uhrzeit: plan?.uhrzeit ?? defaultUhrzeit[typ],
+    titel: plan?.titel ?? '',
+    beschreibung: plan?.beschreibung ?? '',
+    materialText: (plan?.material ?? []).map((m) => [m.menge, m.einheit, m.name].filter(Boolean).join(' ')).join('\n'),
+  }
+  slotBearbeitenTyp.value = typ
+  slotBearbeitenOffen.value = true
 }
 
 async function vorlageLoeschen(id: string) {
@@ -352,6 +383,8 @@ async function einzelSpeichern() {
   )
   if (error) { fehler.value = error.message; return }
   einzelForm.value = { tag: '', mahlzeit: 'zmittag', uhrzeit: '12:00', titel: '', beschreibung: '', materialText: '' }
+  menuErgaenzenOffen.value = false
+  slotBearbeitenOffen.value = false
   await laden()
 }
 
@@ -485,35 +518,33 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 
     <!-- Menüplaner -->
     <div v-if="ansicht === 'menuplaner'">
-      <nav class="sub-tabs">
-        <button :class="{ aktiv: menuTeil === 'plan' }" @click="menuTeil = 'plan'">Tagesplan</button>
-        <button :class="{ aktiv: menuTeil === 'wiederkehrend' }" @click="menuTeil = 'wiederkehrend'">Wiederkehrend</button>
-        <button :class="{ aktiv: menuTeil === 'einzeln' }" @click="menuTeil = 'einzeln'">Einzelmahlzeit</button>
-      </nav>
+      <p v-if="!tage.length" class="hint">Lager-Start und -Ende in den Einstellungen setzen.</p>
 
-      <div v-if="menuTeil === 'plan'">
-        <p v-if="!tage.length" class="hint">Lager-Start und -Ende in den Einstellungen setzen.</p>
-
-        <nav v-else class="tage-nav">
-          <button
-            v-for="tag in tage"
-            :key="tag"
-            :class="{ aktiv: tag === ausgewaehlterTag, heute: tag === heute }"
-            @click="ausgewaehlterTag = tag"
-          >
-            {{ formatTag(tag) }}
-          </button>
-        </nav>
+      <template v-else>
+        <div class="menuplaner-kopf">
+          <nav class="tage-nav">
+            <button
+              v-for="tag in tage"
+              :key="tag"
+              :class="{ aktiv: tag === ausgewaehlterTag, heute: tag === heute }"
+              @click="ausgewaehlterTag = tag"
+            >
+              {{ formatTag(tag) }}
+            </button>
+          </nav>
+          <button type="button" class="secondary klein" @click="menuErgaenzenOeffnen">+ Menü ergänzen</button>
+        </div>
 
         <div v-if="ausgewaehlterTag" class="tag-plan">
           <div
-            v-for="typ in (['fruehstueck', 'zmittag', 'jause', 'znacht'] as MahlzeitTyp[])"
+            v-for="typ in (['fruehstueck', 'zmittag', 'znacht', 'jause'] as MahlzeitTyp[])"
             :key="typ"
             class="mahlzeit-karte"
           >
             <div class="mahlzeit-kopf">
               <span class="uhrzeit-badge">{{ formatUhrzeit(planFuerSlot(ausgewaehlterTag, typ)?.uhrzeit ?? null, typ) }}</span>
               <h4>{{ mahlzeitLabels[typ] }}</h4>
+              <button type="button" class="stift-btn" title="Bearbeiten" @click="slotBearbeitenStarten(typ)">✏️</button>
             </div>
             <template v-if="planFuerSlot(ausgewaehlterTag, typ)">
               <p class="was-label">Was gibt es?</p>
@@ -553,56 +584,30 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
             <p v-else class="hint">Noch nichts geplant.</p>
           </div>
         </div>
-      </div>
+      </template>
 
-      <div v-if="menuTeil === 'wiederkehrend'">
-        <p class="hint">Wiederkehrende Mahlzeiten erscheinen automatisch an jedem passenden Wochentag im Tagesplan.</p>
-        <div v-if="vorlagen.length" class="vorlagen-liste">
-          <div v-for="v in vorlagen" :key="v.id" class="vorlage-karte">
-            <div class="mahlzeit-kopf">
-              <span class="uhrzeit-badge">{{ formatUhrzeit(v.uhrzeit, v.mahlzeit) }}</span>
-              <strong>{{ v.name }}</strong>
-            </div>
-            <span class="meta">{{ mahlzeitLabels[v.mahlzeit] }} · jeden {{ wochentage[v.wochentag ?? 0] }}</span>
-            <p class="was-label">Was gibt es?</p>
-            <p>{{ v.name }}</p>
-            <p v-if="v.beschreibung">{{ v.beschreibung }}</p>
-            <ul v-if="v.material.length">
-              <li v-for="(m, i) in v.material" :key="i">{{ m.menge }} {{ m.einheit }} {{ m.name }}</li>
-            </ul>
-            <button class="secondary klein" @click="vorlageLoeschen(v.id)">Löschen</button>
-          </div>
-        </div>
-        <p v-else class="hint">Noch keine wiederkehrenden Mahlzeiten.</p>
-
-        <h3>Neue wiederkehrende Mahlzeit</h3>
-        <form class="form-grid" @submit.prevent="vorlageSpeichern">
-          <label>Was gibt es? (Name) <input v-model="vorlageForm.name" required placeholder="z.B. Rösti und Salat" /></label>
-          <label>Mahlzeit
-            <select v-model="vorlageForm.mahlzeit" @change="onMahlzeitTypChange('vorlage')">
-              <option v-for="(label, key) in mahlzeitLabels" :key="key" :value="key">{{ label }}</option>
-            </select>
-          </label>
-          <label>Uhrzeit <input v-model="vorlageForm.uhrzeit" type="time" required /></label>
-          <label>Wochentag
-            <select v-model.number="vorlageForm.wochentag">
-              <option v-for="(wd, i) in wochentage" :key="i" :value="i">{{ wd }}</option>
-            </select>
-          </label>
-          <label class="full">Beschreibung / Zubereitung
-            <textarea v-model="vorlageForm.beschreibung" rows="2" placeholder="Optional: Details zur Zubereitung"></textarea>
+      <AppDialog :open="slotBearbeitenOffen" :titel="slotBearbeitenTyp ? mahlzeitLabels[slotBearbeitenTyp] + ' bearbeiten' : 'Bearbeiten'" @close="slotBearbeitenOffen = false">
+        <form class="form-grid" @submit.prevent="einzelSpeichern">
+          <label>Uhrzeit <input v-model="einzelForm.uhrzeit" type="time" required /></label>
+          <label>Was gibt es? <input v-model="einzelForm.titel" required placeholder="z.B. Grillabend mit Burger" /></label>
+          <label class="full">Beschreibung
+            <textarea v-model="einzelForm.beschreibung" rows="2"></textarea>
           </label>
           <label class="full">Zutaten (eine Zeile pro Zutat)
-            <textarea v-model="vorlageForm.materialText" rows="4" placeholder="2 kg Kartoffeln&#10;1 Bund Schnittlauch"></textarea>
+            <textarea v-model="einzelForm.materialText" rows="4"></textarea>
           </label>
-          <button type="submit">Wiederkehrend speichern</button>
+          <button type="submit">Speichern</button>
         </form>
-      </div>
+      </AppDialog>
 
-      <div v-if="menuTeil === 'einzeln'">
-        <p class="hint">Einzelmahlzeiten überschreiben die wiederkehrende Planung an einem bestimmten Tag.</p>
-        <form class="form-grid" @submit.prevent="einzelSpeichern">
-          <label>Tag <input v-model="einzelForm.tag" type="date" /></label>
+      <AppDialog :open="menuErgaenzenOffen" titel="Menü ergänzen" @close="menuErgaenzenOffen = false">
+        <div class="modus-umschalter">
+          <button type="button" :class="{ aktiv: menuErgaenzenModus === 'einmalig' }" @click="menuErgaenzenModus = 'einmalig'">An einem Tag</button>
+          <button type="button" :class="{ aktiv: menuErgaenzenModus === 'wiederkehrend' }" @click="menuErgaenzenModus = 'wiederkehrend'">Wiederkehrend</button>
+        </div>
+
+        <form v-if="menuErgaenzenModus === 'einmalig'" class="form-grid" @submit.prevent="menuErgaenzenSpeichern">
+          <label>Tag <input v-model="einzelForm.tag" type="date" required /></label>
           <label>Mahlzeit
             <select v-model="einzelForm.mahlzeit" @change="onMahlzeitTypChange('einzel')">
               <option v-for="(label, key) in mahlzeitLabels" :key="key" :value="key">{{ label }}</option>
@@ -616,9 +621,45 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
           <label class="full">Zutaten
             <textarea v-model="einzelForm.materialText" rows="4"></textarea>
           </label>
-          <button type="submit">Einzelmahlzeit speichern</button>
+          <button type="submit">Speichern</button>
         </form>
-      </div>
+
+        <template v-else>
+          <form class="form-grid" @submit.prevent="menuErgaenzenSpeichern">
+            <label>Was gibt es? (Name) <input v-model="vorlageForm.name" required placeholder="z.B. Rösti und Salat" /></label>
+            <label>Mahlzeit
+              <select v-model="vorlageForm.mahlzeit" @change="onMahlzeitTypChange('vorlage')">
+                <option v-for="(label, key) in mahlzeitLabels" :key="key" :value="key">{{ label }}</option>
+              </select>
+            </label>
+            <label>Uhrzeit <input v-model="vorlageForm.uhrzeit" type="time" required /></label>
+            <label>Wochentag
+              <select v-model.number="vorlageForm.wochentag">
+                <option v-for="(wd, i) in wochentage" :key="i" :value="i">{{ wd }}</option>
+              </select>
+            </label>
+            <label class="full">Beschreibung / Zubereitung
+              <textarea v-model="vorlageForm.beschreibung" rows="2" placeholder="Optional: Details zur Zubereitung"></textarea>
+            </label>
+            <label class="full">Zutaten (eine Zeile pro Zutat)
+              <textarea v-model="vorlageForm.materialText" rows="4" placeholder="2 kg Kartoffeln&#10;1 Bund Schnittlauch"></textarea>
+            </label>
+            <button type="submit">Speichern</button>
+          </form>
+
+          <h3 v-if="vorlagen.length">Bestehende wiederkehrende Mahlzeiten</h3>
+          <div v-if="vorlagen.length" class="vorlagen-liste">
+            <div v-for="v in vorlagen" :key="v.id" class="vorlage-karte">
+              <div class="mahlzeit-kopf">
+                <span class="uhrzeit-badge">{{ formatUhrzeit(v.uhrzeit, v.mahlzeit) }}</span>
+                <strong>{{ v.name }}</strong>
+              </div>
+              <span class="meta">{{ mahlzeitLabels[v.mahlzeit] }} · jeden {{ wochentage[v.wochentag ?? 0] }}</span>
+              <button class="secondary klein" @click="vorlageLoeschen(v.id)">Löschen</button>
+            </div>
+          </div>
+        </template>
+      </AppDialog>
     </div>
 
     <!-- Personen & Allergien -->
@@ -764,9 +805,11 @@ async function materialZuEinkauf(material: MaterialZeile[]) {
 .heute-liste li:last-child, .kurz-liste li:last-child { border-bottom: none; }
 .zeit { font-weight: 700; margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
 .mahlzeit-label { color: var(--color-text-muted); margin-right: 0.35rem; font-size: 0.85rem; }
-.sub-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
-.sub-tabs button { background: var(--color-surface); border: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-text); }
-.sub-tabs button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
+.menuplaner-kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+.modus-umschalter { display: flex; gap: 0.4rem; margin-bottom: 0.85rem; }
+.modus-umschalter button { background: var(--color-surface); border: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-text); padding: 0.35rem 0.7rem; border-radius: var(--radius-md); }
+.modus-umschalter button.aktiv { background: var(--color-accent); color: #fdfbf3; border-color: var(--color-accent); }
+.stift-btn { background: none; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.1rem 0.2rem; margin-left: auto; }
 .tage-nav { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem; }
 .tage-nav button { font-size: 0.8rem; padding: 0.35rem 0.6rem; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); }
 .tage-nav button.aktiv { background: var(--color-accent); color: #fdfbf3; }
